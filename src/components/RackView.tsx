@@ -118,7 +118,7 @@ export function RackView() {
     >
       <div className="mb-4 flex items-center gap-3">
         <h2 className="text-[15px] font-medium">{rack.name}</h2>
-        <span className="text-[12.5px] tabular-nums text-ink-400">
+        <span className="label text-[11.5px] tabular-nums text-ink-400">
           {usedTotal} of {totalHp} HP used · {rack.rows.length} row
           {rack.rows.length === 1 ? '' : 's'}
         </span>
@@ -204,7 +204,7 @@ export function RackView() {
                   <option value="1U-intellijel">1U Intellijel</option>
                   <option value="1U-pulplogic">1U Pulp Logic</option>
                 </select>
-                <span className="tabular-nums">
+                <span className="label tabular-nums">
                   {used}/{row.widthHp} HP
                   {row.widthHp - used > 0 ? ` · ${row.widthHp - used} free` : ''}
                 </span>

@@ -6,8 +6,8 @@ export function Field({ label, hint, children }: { label: string; hint?: string;
   return (
     <label className="block">
       <div className="mb-1 flex items-baseline justify-between gap-2">
-        <span className="text-[12.5px] font-medium uppercase tracking-wide text-ink-400">{label}</span>
-        {hint && <span className="text-[12.5px] tabular-nums text-ink-400">{hint}</span>}
+        <span className="label text-[12px] text-ink-400">{label}</span>
+        {hint && <span className="font-mono text-[12px] tabular-nums text-ink-400">{hint}</span>}
       </div>
       {children}
     </label>
@@ -65,11 +65,11 @@ export function NumberInput({
             commit(String(round(Number(draft || 0) + delta)));
           }
         }}
-        className="w-full rounded-md border border-ink-600 bg-ink-900 px-2 py-1.5 pr-8 text-[15px] tabular-nums
+        className="w-full rounded-md border border-ink-600 bg-ink-900 px-2 py-1.5 pr-8 font-mono text-[14px] tabular-nums
                    outline-none focus:border-accent disabled:opacity-40"
       />
       {suffix && (
-        <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[12.5px] text-ink-400">
+        <span className="label pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[11.5px] text-ink-400">
           {suffix}
         </span>
       )}
@@ -201,7 +201,7 @@ export function Section({
   return (
     <section className="border-b border-ink-800 px-4 py-4">
       <div className="mb-3 flex items-center justify-between gap-2">
-        <h3 className="text-[13.5px] font-semibold uppercase tracking-wider text-ink-300">{title}</h3>
+        <h3 className="label text-[12.5px] text-ink-300">{title}</h3>
         {right}
       </div>
       <div className="space-y-3">{children}</div>

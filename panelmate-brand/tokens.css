@@ -1,0 +1,13 @@
+:root {
+  --pm-rack-ink: #121418;
+  --pm-rack-ink-raised: #1B1E23;
+  --pm-brushed-alu: #E8E6DF;
+  --pm-alu-dim: #8E8C85;
+  --pm-signal-lime: #CDF24B;
+  --pm-patch-coral: #FF6B3D;
+  --pm-hairline: #2A2E35;
+  --pm-font-display: 'Bricolage Grotesque', sans-serif;
+  --pm-font-mono: 'IBM Plex Mono', monospace;
+}
+
+/* Fonts: https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&family=IBM+Plex+Mono:wght@400;500&display=swap */

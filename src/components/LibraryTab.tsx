@@ -100,7 +100,7 @@ export function LibraryTab() {
                   </div>
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-[13.5px] text-ink-100">{item.name}</p>
-                    <p className="text-[12.5px] tabular-nums text-ink-400">
+                    <p className="label text-[11.5px] tabular-nums text-ink-400">
                       {item.design.hp} HP · {item.design.features.length} cutouts
                     </p>
                   </div>

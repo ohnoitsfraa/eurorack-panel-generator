@@ -153,7 +153,7 @@ export const DEFAULT_DESIGN: PanelDesign = {
   format: '3U',
   thicknessMm: 2,
   cornerRadiusMm: 1.5,
-  backgroundColor: '#23262b',
+  backgroundColor: '#e8e6df',   // Brushed Alu, so a new panel starts on-brand
   backgroundImageOpacity: 1,
   backgroundImageFit: 'cover',
   includeMountSlots: true,

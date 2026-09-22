@@ -54,15 +54,21 @@ export default function Page() {
   return (
     <div className="flex h-dvh flex-col bg-ink-950">
       <header className="flex shrink-0 items-center gap-4 border-b border-ink-800 px-4 py-2.5">
-        {/* The wordmark is set to the mark's own height: 32px of box is 29px
-            of drawn ink (the mark leaves a margin), and this font's caps come
-            out at 0.705 of its size, so 41px puts the two on the same line
-            top and bottom. The negative margin swallows the tracking that
-            letter-spacing adds after the final E. */}
-        <h1 className="flex shrink-0 items-center gap-2.5">
-          <Logo className="h-8 w-8 text-accent" />
-          <span className="-mr-[0.14em] text-[41px] font-thin uppercase leading-none tracking-[0.14em]">
-            Panelmate
+        {/* The lockup, in the kit's proportions: the wordmark's ink is 0.63
+            of the mark's height and stands 0.385 of it away, both measured off
+            lockup-dark.svg. It is live text rather than the kit's outlined
+            copy — same face, same weight, same tracking, a fifth of the bytes
+            — and 23px is the size whose ink box comes out at that 0.63. */}
+        <h1 className="flex shrink-0 items-center gap-[12.3px]">
+          <Logo className="h-8 w-8" />
+          <span
+            className="text-[23px] font-bold leading-none tracking-[-0.045em] text-ink-100"
+            // The kit centres mark and wordmark on the same line. Live text
+            // centres its line box instead, and "panelmate" has more above the
+            // baseline than below, which leaves its ink sitting 1.2px low.
+            style={{ fontVariationSettings: "'opsz' 96", transform: 'translateY(-1.2px)' }}
+          >
+            panelmate
           </span>
         </h1>
 
@@ -76,7 +82,7 @@ export default function Page() {
               key={v}
               type="button"
               onClick={() => { setView(v); if (v === 'rack') setTab('library'); }}
-              className={`rounded px-3 py-1 text-[13.5px] transition-colors
+              className={`label rounded px-3 py-1 text-[12.5px] transition-colors
                 ${view === v ? 'bg-ink-700 text-ink-100' : 'text-ink-400 hover:text-ink-100'}`}
             >
               {label}
@@ -100,7 +106,7 @@ export default function Page() {
               {result.warnings.length} issue{result.warnings.length === 1 ? '' : 's'}
             </button>
           )}
-          <span className="tabular-nums">{result.stats.triangles.toLocaleString()} triangles</span>
+          <span className="label tabular-nums">{result.stats.triangles.toLocaleString()} triangles</span>
         </div>
       </header>
 
@@ -133,7 +139,7 @@ export default function Page() {
                 key={t.id}
                 type="button"
                 onClick={() => setTab(t.id)}
-                className={`flex-1 border-b-2 px-1 py-2.5 text-[12.5px] transition-colors
+                className={`flex-1 whitespace-nowrap border-b-2 px-1 py-2.5 text-[12px] transition-colors
                   ${tab === t.id
                     ? 'border-accent text-ink-100'
                     : 'border-transparent text-ink-400 hover:text-ink-100'}`}

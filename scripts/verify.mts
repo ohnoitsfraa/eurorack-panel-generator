@@ -1445,41 +1445,67 @@ console.log('\nExport containers');
   else fail('3MF is missing 3D/3dmodel.model');
 }
 
-// -------------------------------------------------------------------- 9. mark
-console.log('\nLogo');
+// ------------------------------------------------------------------- 9. brand
+console.log('\nBrand');
 {
-  // The mark exists twice: as a React component for the page and as a static
-  // SVG for the browser tab. Nothing at runtime notices when one is edited and
-  // the other is not, and a stale favicon is the kind of thing that ships.
-  const shapes = (src: string) =>
-    [...src.matchAll(/<(rect|circle|path)\s([^/>]*)\/?>/g)]
+  // The kit in panelmate-brand/ is the source, and the app holds copies:
+  // the mark is inlined as a component so it can take theme tokens, and the
+  // palette is transcribed into CSS. Nothing at runtime notices when the kit
+  // moves and a copy does not, which is exactly how a stale favicon ships.
+
+  /** Geometry of every drawn element, colours deliberately left out. */
+  const geometry = (src: string) =>
+    [...src.matchAll(/<(rect|circle|line|path)\s([^/>]*)\/?>/g)]
       .map(([, tag, attrs]) => {
         const pairs = [...attrs.matchAll(/([a-zA-Z-]+)=["{]([^"}]+)["}]/g)]
-          .map(([, k, v]) => [k.replace(/-([a-z])/g, (_, c) => c.toUpperCase()), v.trim()])
-          .filter(([k]) => k !== 'className' && k !== 'role' && k !== 'ariaHidden' && k !== 'ariaLabel')
+          .map(([, k, v]) => [k.replace(/-([a-z])/g, (_, c: string) => c.toUpperCase()), v.trim()])
+          .filter(([k, v]) => !/^(className|role|ariaHidden|ariaLabel|fill|stroke)$/.test(k)
+                             || (k === 'fill' && v === 'none'))
           .sort(([a], [b]) => a.localeCompare(b));
         return `${tag} ${pairs.map(([k, v]) => `${k}=${v}`).join(' ')}`;
-      })
-      .join('\n');
+      });
 
-  // The component keeps its path data in constants, so inline them first,
-  // or every d= would compare as the constant's name.
-  const src = readFileSync('src/components/Logo.tsx', 'utf8');
-  const consts = new Map<string, string>();
-  for (const [, name, body] of src.matchAll(/const ([A-Z_]+) =([\s\S]*?);\n/g)) {
-    consts.set(name, [...body.matchAll(/'([^']*)'/g)].map(([, lit]) => lit).join(''));
+  const kitMark = geometry(readFileSync('panelmate-brand/svg/mark-dark-small.svg', 'utf8'))
+    // The kit's artboard background; the page supplies its own.
+    .filter((el) => !el.startsWith('rect height=120 width=120'));
+  const appMark = geometry(readFileSync('src/components/Logo.tsx', 'utf8'));
+
+  if (appMark.length >= 15) pass(`the mark draws its ${appMark.length} parts`);
+  else fail(`the mark lost shapes: ${appMark.length} left`);
+
+  if (appMark.join('\n') === kitMark.join('\n')) pass('the mark matches the brand kit');
+  else fail(`the mark has drifted from the kit:\n${appMark.join('\n')}\n---\n${kitMark.join('\n')}`);
+
+  const favicon = readFileSync('src/app/icon.svg', 'utf8').replace(/<!--[\s\S]*?-->\s*/g, '');
+  const kitFavicon = readFileSync('panelmate-brand/svg/favicon.svg', 'utf8');
+  if (favicon.trim() === kitFavicon.trim()) pass('the favicon is the kit\'s, unedited');
+  else fail('the favicon has drifted from panelmate-brand/svg/favicon.svg');
+
+  // Every named brand colour has to appear in the stylesheet, or a palette
+  // that merely looks brand-ish has crept in.
+  const css = readFileSync('src/app/globals.css', 'utf8').toLowerCase();
+  const tokens = readFileSync('panelmate-brand/tokens.json', 'utf8');
+  const named = Object.entries(JSON.parse(tokens).color as Record<string, string>);
+  const missing = named.filter(([, hex]) => !css.includes(hex.toLowerCase()));
+  if (missing.length === 0) pass(`all ${named.length} brand colours are in the palette`);
+  else fail(`missing from the palette: ${missing.map(([n, h]) => `${n} ${h}`).join(', ')}`);
+
+  // Signal Lime is unreadable on Brushed Alu, so the light theme carries a
+  // darkened one. Whatever it is, it has to actually carry.
+  const { contrastRatio: ratioOf } = await import('../src/lib/color');
+  const themeAccent = (theme: 'dark' | 'light') => {
+    const at = css.indexOf(theme === 'dark' ? ":root[data-theme='dark']" : ":root[data-theme='light']");
+    return css.slice(at).match(/--accent:\s*(#[0-9a-f]{6})/)?.[1] ?? '';
+  };
+  const themeBg = (theme: 'dark' | 'light') => {
+    const at = css.indexOf(theme === 'dark' ? ":root[data-theme='dark']" : ":root[data-theme='light']");
+    return css.slice(at).match(/--ink-950:\s*(#[0-9a-f]{6})/)?.[1] ?? '';
+  };
+  for (const theme of ['dark', 'light'] as const) {
+    const ratio = ratioOf(themeAccent(theme), themeBg(theme));
+    if (ratio >= 4.5) pass(`${theme}: the accent carries on the page (${ratio.toFixed(2)}:1)`);
+    else fail(`${theme}: the accent reads ${ratio.toFixed(2)}:1 against the page`);
   }
-  const inlined = src.replace(/=\{([A-Z_]+)\}/g, (whole, name) =>
-    consts.has(name) ? `="${consts.get(name)}"` : whole);
-
-  const fromComponent = shapes(inlined);
-  const fromIcon = shapes(readFileSync('src/app/icon.svg', 'utf8'));
-
-  if (fromComponent.split('\n').length >= 6) pass('the mark draws a panel and a mate');
-  else fail(`the mark lost shapes: ${fromComponent}`);
-
-  if (fromComponent === fromIcon) pass('the favicon matches the mark');
-  else fail(`the favicon has drifted from the mark:\n${fromComponent}\n---\n${fromIcon}`);
 }
 
 console.log(

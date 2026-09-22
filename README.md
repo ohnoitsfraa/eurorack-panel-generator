@@ -127,6 +127,43 @@ readings are concentric, while a word's are smeared along its length. On a real
 30 HP panel the two together take the spurious cutouts from 24 down to a
 handful.
 
+### Branding
+
+The look comes from the kit in `panelmate-brand/`, and that folder is the
+source: the app holds copies rather than variations of it.
+
+Four colours are named — Rack Ink, Brushed Alu, Signal Lime, Patch Coral — and
+an interface needs more tones than four, so they are the fixed points of a
+scale running from the page background to the brightest text. Both ends are the
+kit's own values rather than approximations, which matters for more than
+fidelity: the kit's SVGs carry their knockouts as background-coloured shapes
+rather than as true holes, so the mark only sits cleanly on a page whose
+background is exactly Rack Ink, or exactly Brushed Alu.
+
+Signal Lime is the one colour that cannot be used as given in both themes. At
+full strength it reads 1.5:1 against Brushed Alu, which is invisible, so the
+light theme carries the same hue solved for 4.7:1 instead. Patch Coral does the
+destructive-action work in the interface; the kit assigns it to output jacks,
+which is panel artwork rather than chrome, so the two uses do not meet.
+
+Type follows the kit's division. Bricolage Grotesque sets the wordmark — at
+optical size 96, which is why the variable cut is the one loaded — along with
+names, buttons and prose. IBM Plex Mono, uppercase and tracked, sets panel
+labels, specs and interface metadata, and nothing longer: it is a label style,
+and a sentence set in it is unreadable. Both are self-hosted through
+`next/font`, so a page load asks nothing of Google.
+
+The header lockup is live text rather than the kit's outlined wordmark — same
+face, weight and tracking, a fifth of the bytes — placed in the kit's own
+proportions: the wordmark's ink is 0.63 of the mark's height and stands 0.385
+of it away, both measured off `lockup-dark.svg`. The mark itself is the kit's
+simplified cut, meant for use below 64px; the full one adds a knurl, a jack and
+HP ticks that close into grey at the 32px the header gives it.
+
+`npm run verify` compares all of this against the kit: the mark's geometry, the
+favicon byte for byte, every named colour's presence in the palette, and
+whether each theme's accent actually carries against its own background.
+
 ### Light and dark
 
 Follow the system, or pin it either way. The choice is applied by a small
@@ -435,6 +472,7 @@ src/
   components/         editor, 3D preview, rack, inspector
   app/api/            font resolution, image proxy, ModularGrid
 scripts/verify.mts    self-checks
+panelmate-brand/      the brand kit: tokens, logo files, design artboards
 ```
 
 ## Notes

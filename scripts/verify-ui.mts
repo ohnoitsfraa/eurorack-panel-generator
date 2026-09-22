@@ -66,15 +66,24 @@ async function open(colorScheme: 'light' | 'dark' = 'dark') {
 // --- the app renders and runs ---
 {
   const { page, problems } = await open();
-  // innerText reflects text-transform and the wordmark is set in caps, so
-  // read the source text too: what a screen reader announces should stay
-  // ordinary mixed case whatever the lockup does.
   const title = await page.locator('h1').first().innerText();
-  const spoken = (await page.locator('h1').first().textContent())?.trim();
   if (/^panelmate$/i.test(title.trim())) pass('the app loads');
   else fail(`unexpected heading: ${title}`);
-  if (spoken === 'Panelmate') pass('the heading is spelled normally underneath the caps');
+
+  // The kit sets the wordmark lowercase, and it is real lowercase text rather
+  // than a CSS transform over something else, so it stays lowercase to anyone
+  // reading the page rather than looking at it.
+  const spoken = (await page.locator('h1').first().textContent())?.trim();
+  if (spoken === 'panelmate') pass('the wordmark carries the brand spelling');
   else fail(`heading text is ${JSON.stringify(spoken)}`);
+
+  // Live text, so the brand face has to have actually arrived.
+  const face = await page.locator('h1 span').first().evaluate(async (el) => {
+    await document.fonts.ready;
+    return getComputedStyle(el).fontFamily;
+  });
+  if (/Bricolage/i.test(face)) pass('the wordmark is set in Bricolage Grotesque');
+  else fail(`the wordmark fell back to ${face}`);
   if (problems.length === 0) pass('no uncaught errors on load');
   else fail(`on load: ${[...new Set(problems)].join(' | ')}`);
   await page.close();

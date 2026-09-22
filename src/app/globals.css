@@ -1,10 +1,20 @@
 @import "tailwindcss";
 
-/* The palette is one scale from the page background (950) to the brightest
-   text (100), so the same token means the same thing in either theme and
-   components never need to know which one is in force. Dark is the default
-   because the work is mostly judging a rendered faceplate, and bright chrome
-   around it skews colour perception. */
+/* Panelmate's palette, from panelmate-brand/tokens.css.
+ *
+ * The brand names four colours — Rack Ink, Brushed Alu, Signal Lime, Patch
+ * Coral — and an interface needs more tones than that, so they are the fixed
+ * points of one scale running from the page background (950) to the brightest
+ * text (100). The same token means the same thing in either theme, and
+ * components never need to know which one is in force. Dark is the default
+ * because the work is mostly judging a rendered faceplate, and bright chrome
+ * around it skews colour perception.
+ *
+ * The two ends are the brand's own values, not approximations: dark's 950 is
+ * Rack Ink and light's 950 is Brushed Alu, so the kit's SVGs — which carry
+ * their knockouts as background-coloured shapes rather than true holes — sit
+ * on the page seamlessly instead of on a rectangle of the wrong grey.
+ */
 @theme {
   --color-ink-950: var(--ink-950);
   --color-ink-900: var(--ink-900);
@@ -18,63 +28,83 @@
   --color-accent: var(--accent);
   --color-accent-dim: var(--accent-dim);
   --color-danger: var(--danger);
+  --font-sans: var(--font-display), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-mono-face), ui-monospace, monospace;
 }
 
 :root,
 :root[data-theme='dark'] {
-  --ink-950: #0c0d10;
-  --ink-900: #131519;
-  --ink-850: #191c21;
-  --ink-800: #21252b;
-  --ink-700: #2d323a;
-  --ink-600: #3d444e;
-  --ink-400: #7c8593;
-  --ink-300: #a6aebb;
-  --ink-100: #e6e9ee;
-  --accent: #ffb454;
-  --accent-dim: #8a5f28;
-  --danger: #ff6b6b;
+  --ink-950: #121418;   /* Rack Ink */
+  --ink-900: #1b1e23;   /* Rack Ink raised */
+  --ink-850: #20242a;
+  --ink-800: #262b32;
+  --ink-700: #2a2e35;   /* Hairline */
+  --ink-600: #3a4049;
+  --ink-400: #8e8c85;   /* Alu Dim */
+  --ink-300: #b6b4ac;
+  --ink-100: #e8e6df;   /* Brushed Alu */
+  --accent: #cdf24b;    /* Signal Lime */
+  --accent-dim: #7e9630;
+  --danger: #ff6b3d;    /* Patch Coral */
   /* The surround behind the panel in both editors, and what shows through a
      cutout — because that is what a hole is: the background, seen through the
      panel. Tying them together means holes follow the theme for free, and read
      as openings rather than as black paint. */
-  --stage: #0c0d10;
-  --cutout: #08090b;
-  --panel-edge: #ffffff33;
-  --grid-line: #ffffff14;
+  --stage: #121418;
+  --cutout: #0b0d10;
+  --panel-edge: #e8e6df33;
+  --grid-line: #e8e6df14;
+  /* The brand's own two, for brand artwork rather than for interface state:
+     the mark keeps Signal Lime at full strength in both themes, and the
+     pointer on its bowl stays Rack Ink because it sits on the lime. */
+  --brand-lime: #cdf24b;
+  --brand-ink: #121418;
   color-scheme: dark;
 }
 
-/* Light runs the same scale the other way up. The accent is darkened because
-   the dark theme's amber is unreadable on white. */
+/* Light runs the same scale the other way up, off Brushed Alu rather than
+   white so the kit's light artwork matches the page. Signal Lime has to be
+   taken right down to carry as text here — it reads 1.5:1 against alu at full
+   strength — so the accent is the same hue solved for 4.7:1 instead. */
 :root[data-theme='light'] {
-  --ink-950: #f4f5f7;
-  --ink-900: #ffffff;
-  --ink-850: #ffffff;
-  --ink-800: #eceef1;
-  --ink-700: #dcdfe4;
-  --ink-600: #c3c8d0;
-  --ink-400: #6b7280;
-  --ink-300: #414852;
-  --ink-100: #14171c;
-  --accent: #b46a00;
-  --accent-dim: #e0a355;
-  --danger: #c0362c;
-  /* Deliberately a definite grey rather than near-white. The stage is also
-     what shows through every cutout, and against a white faceplate a
-     near-white hole would disappear. */
-  --stage: #d4d8de;
-  --cutout: #cdd2d9;
-  --panel-edge: #00000038;
-  --grid-line: #00000012;
+  --ink-950: #e8e6df;   /* Brushed Alu */
+  --ink-900: #f6f5f1;
+  --ink-850: #fbfaf7;
+  --ink-800: #dcd9d0;
+  --ink-700: #c9c6bc;
+  --ink-600: #ada9a0;
+  --ink-400: #63615b;
+  --ink-300: #3a3a37;
+  --ink-100: #121418;   /* Rack Ink */
+  --accent: #556d09;    /* Signal Lime, darkened to carry on alu */
+  --accent-dim: #8aa62c;
+  --danger: #b8350a;    /* Patch Coral, likewise */
+  /* Deliberately a definite tone rather than near-white. The stage is also
+     what shows through every cutout, and against a pale faceplate a near-white
+     hole would disappear. */
+  --stage: #c9c6bc;
+  --cutout: #bfbcb2;
+  --panel-edge: #12141838;
+  --grid-line: #12141812;
   color-scheme: light;
+}
+
+/* Panel labels, specs and interface metadata, per the brand: IBM Plex Mono,
+   uppercase, generously tracked. It is a label style and not a text style —
+   set a sentence in it and it becomes unreadable — so it is a class to be
+   applied deliberately rather than anything inherited. */
+.label {
+  font-family: var(--font-mono-face), ui-monospace, monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-weight: 500;
 }
 
 html, body {
   height: 100%;
   background: var(--color-ink-950);
   color: var(--color-ink-100);
-  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-family: var(--font-display), ui-sans-serif, system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
   overscroll-behavior: none;
 }
