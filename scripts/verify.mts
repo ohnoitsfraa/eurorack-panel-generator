@@ -1445,6 +1445,33 @@ console.log('\nExport containers');
   else fail('3MF is missing 3D/3dmodel.model');
 }
 
+// -------------------------------------------------------------------- 9. mark
+console.log('\nLogo');
+{
+  // The mark exists twice: as a React component for the page and as a static
+  // SVG for the browser tab. Nothing at runtime notices when one is edited and
+  // the other is not, and a stale favicon is the kind of thing that ships.
+  const shapes = (src: string) =>
+    [...src.matchAll(/<(rect|circle|path)\s([^/>]*)\/?>/g)]
+      .map(([, tag, attrs]) => {
+        const pairs = [...attrs.matchAll(/([a-zA-Z-]+)=["{]([^"}]+)["}]/g)]
+          .map(([, k, v]) => [k.replace(/-([a-z])/g, (_, c) => c.toUpperCase()), v.trim()])
+          .filter(([k]) => k !== 'className' && k !== 'role' && k !== 'ariaHidden' && k !== 'ariaLabel')
+          .sort(([a], [b]) => a.localeCompare(b));
+        return `${tag} ${pairs.map(([k, v]) => `${k}=${v}`).join(' ')}`;
+      })
+      .join('\n');
+
+  const fromComponent = shapes(readFileSync('src/components/Logo.tsx', 'utf8'));
+  const fromIcon = shapes(readFileSync('src/app/icon.svg', 'utf8'));
+
+  if (fromComponent.split('\n').length >= 6) pass('the mark draws a panel and a mate');
+  else fail(`the mark lost shapes: ${fromComponent}`);
+
+  if (fromComponent === fromIcon) pass('the favicon matches the mark');
+  else fail(`the favicon has drifted from the mark:\n${fromComponent}\n---\n${fromIcon}`);
+}
+
 console.log(
   failures === 0
     ? '\nAll checks passed.\n'
