@@ -131,6 +131,10 @@ interface State {
   addToRack: (designId: string, rowId?: string) => boolean;
   movePlacement: (placementId: string, toRowId: string, hp: number) => void;
   removePlacement: (placementId: string) => void;
+  /** Take every panel out of the rack, leaving the rows. */
+  emptyRack: () => void;
+  /** Remove every saved panel, the rack, and the panel being edited. */
+  clearEverything: () => Promise<void>;
   designWidthHp: (designId: string) => number;
 
   select: (ids: string[]) => void;
@@ -698,6 +702,48 @@ export const useStore = create<State>((set, get) => ({
     }
     set({ error: `No room for a ${width} HP panel. Add a row, or make one wider.` });
     return false;
+  },
+
+  emptyRack: () => {
+    const rack = touchRack({
+      ...get().rack,
+      rows: get().rack.rows.map((r) => ({ ...r, placements: [] })),
+    });
+    void dbSaveRack(rack);
+    set({ rack });
+  },
+
+  /**
+   * Start over completely.
+   *
+   * Everything lives in this browser and nothing is kept anywhere else, so
+   * this cannot be undone — which is why the button asks first and points at
+   * Export on the way past.
+   */
+  clearEverything: async () => {
+    const ids = get().library.map((d) => d.id);
+    const rack = touchRack({ name: 'My rack', rows: [emptyRow(), emptyRow()] });
+    set({
+      library: [],
+      rack,
+      activeDesignId: null,
+      designName: 'Untitled panel',
+      design: DEFAULT_DESIGN,
+      dirty: false,
+      selectedIds: [],
+      sourceImage: null,
+      sourceUrl: null,
+      sourceLabel: null,
+      sourceBlob: null,
+      crop: null,
+      mmPerPx: null,
+      lastImport: null,
+      restoredAt: null,
+      view: '2d',
+    });
+    await Promise.all(ids.map((id) => dbDeleteDesign(id)));
+    await dbSaveRack(rack);
+    await clearSession();
   },
 
   movePlacement: (placementId, toRowId, hp) => {

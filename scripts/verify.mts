@@ -811,11 +811,53 @@ console.log('\nEditor actions');
     else fail('a panel that cannot fit was reported as placed');
   }
 
+  // Emptying the rack takes the panels out of it but leaves the library, so
+  // they can be put back; clearing everything really does clear everything.
+  {
+    st().emptyRack();
+    const placedAfter = st().rack.rows.reduce((n, r) => n + r.placements.length, 0);
+    if (placedAfter === 0) pass('emptying the rack removes every panel from it');
+    else fail(`${placedAfter} panels left in the rack`);
+    if (st().rack.rows.length > 0) pass('and leaves the rows behind to fill again');
+    else fail('emptying the rack took the rows with it');
+    if (st().library.length > 0) pass('the library is untouched by emptying the rack');
+    else fail('emptying the rack deleted saved panels');
+  }
+
   // Deleting a design must also remove it from the rack.
   if (savedId) st().deleteDesign(savedId);
   const after = st().rack.rows.reduce((n, r) => n + r.placements.length, 0);
   if (after === 0 && st().library.length === 0) pass('deleting a design clears it from the rack');
   else fail(`after delete: ${st().library.length} in library, ${after} placed`);
+
+  // Clearing everything has to leave nothing behind, in memory or in storage,
+  // since there is no copy of any of it anywhere else.
+  {
+    const storage2 = await import('../src/lib/storage');
+    st().newDesign();
+    st().setDesignName('Doomed');
+    st().addFeature('circle', 10, 10);
+    st().saveCurrentDesign();
+    await new Promise((r) => setTimeout(r, 50));
+    if (st().library.length > 0) pass('there is something to clear');
+    else fail('nothing was saved to clear');
+
+    await st().clearEverything();
+    if (st().library.length === 0) pass('clearing empties the library');
+    else fail(`${st().library.length} panels survived`);
+    if (st().design.features.length === 0 && st().activeDesignId === null) {
+      pass('and the panel being edited goes back to empty');
+    } else {
+      fail('the edited panel survived clearing');
+    }
+    if ((await storage2.loadDesigns()).length === 0) pass('storage is emptied, not just the screen');
+    else fail('designs were left in storage');
+    if ((await storage2.loadSession()) === null) pass('the restore-on-refresh session goes too');
+    else fail('a session was left to restore the cleared work');
+    const rows = st().rack.rows.reduce((n, r) => n + r.placements.length, 0);
+    if (rows === 0) pass('the rack is emptied as well');
+    else fail('the rack still holds panels');
+  }
 }
 
 // --------------------------------------------- 6b. cutout shapes and standards

@@ -37,6 +37,9 @@ export function RackView() {
   const removeRow = useStore((s) => s.removeRow);
   const openDesign = useStore((s) => s.openDesign);
   const exportRack = useStore((s) => s.exportRack);
+  const emptyRack = useStore((s) => s.emptyRack);
+  const clearEverything = useStore((s) => s.clearEverything);
+  const [confirming, setConfirming] = useState<'rack' | 'all' | null>(null);
 
   const [zoom, setZoom] = useState(1);
   const [dragging, setDragging] = useState<string | null>(null);
@@ -103,8 +106,54 @@ export function RackView() {
           <Button onClick={exportRack} disabled={usedTotal === 0} title="Export this rack and its panels to a file">
             Export rack
           </Button>
+          <Button
+            variant="danger"
+            onClick={() => setConfirming((c) => (c ? null : 'rack'))}
+            title="Empty the rack, or clear everything"
+          >
+            Clear…
+          </Button>
         </div>
       </div>
+
+      {confirming && (
+        <div className="mb-4 rounded-lg border border-danger/50 bg-danger/5 p-3">
+          <p className="text-xs text-ink-100">
+            {confirming === 'rack'
+              ? 'Take every panel out of the rack? The rows and your saved panels stay.'
+              : 'Delete every saved panel, the rack, and the panel being edited?'}
+          </p>
+          <p className="mt-1 text-[11px] leading-relaxed text-ink-400">
+            {confirming === 'rack'
+              ? 'Panels stay in the library, so you can put them back.'
+              : 'Everything is kept in this browser and nowhere else, so this cannot be undone. Export first if there is anything you want to keep.'}
+          </p>
+          <div className="mt-2 flex flex-wrap gap-1">
+            <Button onClick={() => setConfirming(null)}>Cancel</Button>
+            {confirming === 'rack' ? (
+              <>
+                <Button
+                  variant="danger"
+                  onClick={() => { emptyRack(); setConfirming(null); }}
+                  disabled={usedTotal === 0}
+                >
+                  Empty the rack
+                </Button>
+                <Button variant="ghost" onClick={() => setConfirming('all')}>
+                  Clear everything instead…
+                </Button>
+              </>
+            ) : (
+              <Button
+                variant="danger"
+                onClick={() => { void clearEverything(); setConfirming(null); }}
+              >
+                Delete everything, for good
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
 
       {library.length === 0 && (
         <div className="mb-4 rounded-lg border border-dashed border-ink-600 px-4 py-6 text-center">

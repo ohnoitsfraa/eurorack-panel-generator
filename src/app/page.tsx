@@ -12,6 +12,7 @@ import { LibraryTab } from '@/components/LibraryTab';
 import { RackView } from '@/components/RackView';
 import { usePanelBuild } from '@/lib/usePanelBuild';
 import { ThemeToggle } from '@/components/ThemeToggle';
+import { Logo } from '@/components/Logo';
 
 const TABS: Array<{ id: InspectorTab; label: string }> = [
   { id: 'panel', label: 'Panel' },
@@ -53,7 +54,8 @@ export default function Page() {
   return (
     <div className="flex h-dvh flex-col bg-ink-950">
       <header className="flex shrink-0 items-center gap-4 border-b border-ink-800 px-4 py-2.5">
-        <h1 className="text-sm font-semibold tracking-tight">
+        <h1 className="flex items-center gap-2 text-sm font-semibold tracking-tight">
+          <Logo className="h-[18px] w-[18px] text-accent" />
           Eurorack Panel Generator
         </h1>
 
