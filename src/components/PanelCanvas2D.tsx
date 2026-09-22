@@ -522,7 +522,7 @@ export function PanelCanvas2D() {
         )}
       </svg>
 
-      <div className="pointer-events-none absolute bottom-3 left-3 flex flex-col gap-1 text-[11px] text-ink-400">
+      <div className="pointer-events-none absolute bottom-3 left-3 flex flex-col gap-1 text-[12.5px] text-ink-400">
         <span className="tabular-nums">
           {design.hp} HP · {W.toFixed(1)} × {H.toFixed(1)} mm · {features.length} cutouts
         </span>
@@ -590,7 +590,7 @@ function ZoomButton({ children, onClick }: { children: React.ReactNode; onClick:
     <button
       type="button"
       onClick={onClick}
-      className="rounded-md border border-ink-700 bg-ink-900/80 px-2 py-1 text-xs text-ink-300
+      className="rounded-md border border-ink-700 bg-ink-900/80 px-2 py-1 text-[13.5px] text-ink-300
                  backdrop-blur hover:bg-ink-800"
     >
       {children}

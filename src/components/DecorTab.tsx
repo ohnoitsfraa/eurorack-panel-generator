@@ -60,7 +60,7 @@ export function DecorTab() {
 
       <Section title={`Elements (${decor.length})`}>
         {decor.length === 0 ? (
-          <p className="py-2 text-center text-xs leading-relaxed text-ink-400">
+          <p className="py-2 text-center text-[13.5px] leading-relaxed text-ink-400">
             Nothing yet. Text and shapes become real geometry — raised off the
             panel or cut into it — so they survive the export.
           </p>
@@ -71,7 +71,7 @@ export function DecorTab() {
                 <button
                   type="button"
                   onClick={() => select([d.id])}
-                  className={`flex min-w-0 flex-1 items-center gap-2 rounded px-2 py-1 text-left text-[11px]
+                  className={`flex min-w-0 flex-1 items-center gap-2 rounded px-2 py-1 text-left text-[12.5px]
                     ${selectedIds.includes(d.id) ? 'bg-accent/15 text-accent' : 'text-ink-300 hover:bg-ink-800'}`}
                 >
                   <span
@@ -115,7 +115,7 @@ function DecorEditor({ id }: { id: string }) {
             <input
               value={el.text}
               onChange={(e) => update(id, { text: e.target.value })}
-              className="w-full rounded-md border border-ink-600 bg-ink-900 px-2 py-1.5 text-sm outline-none
+              className="w-full rounded-md border border-ink-600 bg-ink-900 px-2 py-1.5 text-[15px] outline-none
                          focus:border-accent"
             />
           </Field>
@@ -192,7 +192,7 @@ function DecorEditor({ id }: { id: string }) {
       )}
 
       {el.type === 'art' && (
-        <p className="text-[11px] leading-relaxed text-ink-400">
+        <p className="text-[12.5px] leading-relaxed text-ink-400">
           Traced artwork: {el.rings.length} outline{el.rings.length === 1 ? '' : 's'}. Re-trace
           from the Add section to change the threshold.
         </p>
@@ -233,7 +233,7 @@ function DecorEditor({ id }: { id: string }) {
           onChange={(reliefMm) => update(id, { reliefMm })}
         />
       </Field>
-      <p className="-mt-1 text-[11px] leading-relaxed text-ink-400">
+      <p className="-mt-1 text-[12.5px] leading-relaxed text-ink-400">
         {el.mode === 'raised'
           ? 'Two or three layer heights is plenty — 0.4 to 0.6 mm reads clearly and prints fast.'
           : 'An engraving stays part of the panel. Give it a different colour to also get a matching inlay piece for a second material.'}
@@ -270,10 +270,10 @@ function FontUpload() {
           }
           e.target.value = '';
         }}
-        className="w-full text-[11px] text-ink-400 file:mr-2 file:rounded file:border-0
-                   file:bg-ink-700 file:px-2 file:py-1 file:text-[11px] file:text-ink-100"
+        className="w-full text-[12.5px] text-ink-400 file:mr-2 file:rounded file:border-0
+                   file:bg-ink-700 file:px-2 file:py-1 file:text-[12.5px] file:text-ink-100"
       />
-      {name && <p className="mt-1 text-[11px] text-ink-400">Loaded “{name}” — pick it from the Font list.</p>}
+      {name && <p className="mt-1 text-[12.5px] text-ink-400">Loaded “{name}” — pick it from the Font list.</p>}
     </Field>
   );
 }
@@ -331,8 +331,8 @@ function ArtworkTracer() {
           type="file"
           accept="image/*"
           onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-          className="w-full text-[11px] text-ink-400 file:mr-2 file:rounded file:border-0
-                     file:bg-ink-700 file:px-2 file:py-1 file:text-[11px] file:text-ink-100"
+          className="w-full text-[12.5px] text-ink-400 file:mr-2 file:rounded file:border-0
+                     file:bg-ink-700 file:px-2 file:py-1 file:text-[12.5px] file:text-ink-100"
         />
       </Field>
 
@@ -344,14 +344,14 @@ function ArtworkTracer() {
           <Field label="Detail" hint={detail <= 0.3 ? 'fine' : detail >= 1.4 ? 'coarse' : 'medium'}>
             <Slider min={0.1} max={2.5} step={0.1} value={detail} onChange={setDetail} />
           </Field>
-          <label className="flex items-center gap-2 text-[11px] text-ink-300">
+          <label className="flex items-center gap-2 text-[12.5px] text-ink-300">
             <input type="checkbox" checked={invert} onChange={(e) => setInvert(e.target.checked)} />
             Invert (trace the light areas instead)
           </label>
           <Button variant="primary" onClick={() => void run()} disabled={busy} className="w-full">
             {busy ? 'Tracing…' : 'Trace to relief'}
           </Button>
-          <p className="text-[11px] leading-relaxed text-ink-400">
+          <p className="text-[12.5px] leading-relaxed text-ink-400">
             Works best on flat, high-contrast art such as a logo. Photographs
             trace into thousands of tiny islands.
           </p>

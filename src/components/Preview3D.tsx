@@ -81,7 +81,7 @@ export function Preview3D() {
         />
       </Canvas>
 
-      <div className="pointer-events-none absolute bottom-3 left-3 text-[11px] tabular-nums text-ink-400">
+      <div className="pointer-events-none absolute bottom-3 left-3 text-[12.5px] tabular-nums text-ink-400">
         {result.stats.triangles.toLocaleString()} triangles · {result.meshes.length} object
         {result.meshes.length === 1 ? '' : 's'} · {result.stats.holes} cutouts
       </div>

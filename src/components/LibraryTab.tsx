@@ -52,7 +52,7 @@ export function LibraryTab() {
           <input
             value={designName}
             onChange={(e) => setDesignName(e.target.value)}
-            className="w-full rounded-md border border-ink-600 bg-ink-900 px-2 py-1.5 text-sm outline-none
+            className="w-full rounded-md border border-ink-600 bg-ink-900 px-2 py-1.5 text-[15px] outline-none
                        focus:border-accent"
           />
         </Field>
@@ -70,7 +70,7 @@ export function LibraryTab() {
             Add to rack
           </Button>
         )}
-        <p className="text-[11px] leading-relaxed text-ink-400">
+        <p className="text-[12.5px] leading-relaxed text-ink-400">
           A reference photo is not kept with the design — it can be megabytes,
           and it is not part of the model.
         </p>
@@ -78,7 +78,7 @@ export function LibraryTab() {
 
       <Section title={`Library (${library.length})`}>
         {library.length === 0 ? (
-          <p className="py-2 text-center text-xs leading-relaxed text-ink-400">
+          <p className="py-2 text-center text-[13.5px] leading-relaxed text-ink-400">
             Nothing saved yet. Name this panel and save it, then it can go in a rack.
           </p>
         ) : (
@@ -99,8 +99,8 @@ export function LibraryTab() {
                     <PanelThumb design={item.design} fonts={fonts} className="h-full w-full" />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-xs text-ink-100">{item.name}</p>
-                    <p className="text-[11px] tabular-nums text-ink-400">
+                    <p className="truncate text-[13.5px] text-ink-100">{item.name}</p>
+                    <p className="text-[12.5px] tabular-nums text-ink-400">
                       {item.design.hp} HP · {item.design.features.length} cutouts
                     </p>
                   </div>
@@ -174,7 +174,7 @@ function BackupSection() {
           Export rack
         </Button>
       </div>
-      <p className="-mt-1 text-[11px] leading-relaxed text-ink-400">
+      <p className="-mt-1 text-[12.5px] leading-relaxed text-ink-400">
         A rack file carries the panels it uses, so it opens complete on another
         machine. Single panels export from the ↓ button on each one.
       </p>
@@ -194,7 +194,7 @@ function BackupSection() {
             e.target.value = '';
           }}
         />
-        <label className="mt-2 flex items-start gap-2 text-[11px] leading-relaxed text-ink-300">
+        <label className="mt-2 flex items-start gap-2 text-[12.5px] leading-relaxed text-ink-300">
           <input
             type="checkbox"
             checked={asCopy}
@@ -212,14 +212,14 @@ function BackupSection() {
       </div>
 
       {lastImport && (
-        <p className="rounded-md border border-ink-700 bg-ink-900 px-2.5 py-2 text-[11px] leading-relaxed text-ink-100">
+        <p className="rounded-md border border-ink-700 bg-ink-900 px-2.5 py-2 text-[12.5px] leading-relaxed text-ink-100">
           Imported: {lastImport.added} added, {lastImport.updated} updated,{' '}
           {lastImport.unchanged} already current
           {lastImport.rackReplaced ? ', rack replaced' : ''}.
         </p>
       )}
 
-      <p className="text-[11px] leading-relaxed text-ink-400">
+      <p className="text-[12.5px] leading-relaxed text-ink-400">
         Panels are kept in this browser's local database. Exporting is how they
         survive clearing site data or move to another machine.
       </p>
@@ -237,7 +237,7 @@ function RackExport() {
 
   return (
     <Section title="Export the whole rack">
-      <dl className="grid grid-cols-2 gap-y-1.5 text-[11px]">
+      <dl className="grid grid-cols-2 gap-y-1.5 text-[12.5px]">
         <dt className="text-ink-400">Panels</dt>
         <dd className="tabular-nums text-ink-100">{result.stats.panels}</dd>
         <dt className="text-ink-400">Extent</dt>
@@ -256,7 +256,7 @@ function RackExport() {
         <Button onClick={() => downloadSTLSet(result.meshes, `${name}-rack`)}>STL set</Button>
       </div>
 
-      <p className="text-[11px] leading-relaxed text-ink-400">
+      <p className="text-[12.5px] leading-relaxed text-ink-400">
         Panels are arranged as they sit in the rack, which is right for checking
         the whole front but wider than most print beds — a full 84 HP row is
         427 mm. For printing, export panels one at a time from the Export tab,
@@ -266,7 +266,7 @@ function RackExport() {
       {result.warnings.length > 0 && (
         <ul className="space-y-1.5">
           {[...new Set(result.warnings)].map((w, i) => (
-            <li key={i} className="rounded border border-danger/40 bg-danger/5 px-2 py-1.5 text-[11px] text-ink-100">
+            <li key={i} className="rounded border border-danger/40 bg-danger/5 px-2 py-1.5 text-[12.5px] text-ink-100">
               {w}
             </li>
           ))}

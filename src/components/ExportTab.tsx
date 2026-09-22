@@ -41,7 +41,7 @@ export function ExportTab() {
             {result.warnings.map((w, i) => (
               <li
                 key={i}
-                className="rounded-md border border-danger/40 bg-danger/5 px-2.5 py-2 text-[11px]
+                className="rounded-md border border-danger/40 bg-danger/5 px-2.5 py-2 text-[12.5px]
                            leading-relaxed text-ink-100"
               >
                 {w}
@@ -52,7 +52,7 @@ export function ExportTab() {
       )}
 
       <Section title="Model">
-        <dl className="grid grid-cols-2 gap-y-2 text-[11px]">
+        <dl className="grid grid-cols-2 gap-y-2 text-[12.5px]">
           <dt className="text-ink-400">Panel size</dt>
           <dd className="tabular-nums text-ink-100">
             {result.stats.widthMm.toFixed(2)} × {result.stats.heightMm.toFixed(2)} mm
@@ -76,7 +76,7 @@ export function ExportTab() {
             value={name}
             placeholder={filename}
             onChange={(e) => setName(e.target.value)}
-            className="w-full rounded-md border border-ink-600 bg-ink-900 px-2 py-1.5 text-sm outline-none
+            className="w-full rounded-md border border-ink-600 bg-ink-900 px-2 py-1.5 text-[15px] outline-none
                        focus:border-accent"
           />
         </Field>
@@ -85,7 +85,7 @@ export function ExportTab() {
           <Button variant="primary" onClick={() => download3MF(result.meshes, filename)} className="w-full">
             Download 3MF{sizes ? ` · ${kb(sizes.mf)}` : ''}
           </Button>
-          <p className="text-[11px] leading-relaxed text-ink-400">
+          <p className="text-[12.5px] leading-relaxed text-ink-400">
             Keeps millimetre units, separate objects and colours, so a
             multi-material printer picks up the material assignments directly.
             This is the one to use.
@@ -96,7 +96,7 @@ export function ExportTab() {
           <Button onClick={() => downloadSTL(result.meshes, filename)} className="w-full">
             Download STL{sizes ? ` · ${kb(sizes.stl)}` : ''}
           </Button>
-          <p className="text-[11px] leading-relaxed text-ink-400">
+          <p className="text-[12.5px] leading-relaxed text-ink-400">
             Everything merged into one solid. STL carries no colour.
           </p>
         </div>
@@ -106,7 +106,7 @@ export function ExportTab() {
             <Button onClick={() => downloadSTLSet(result.meshes, filename)} className="w-full">
               Download STL set · zip
             </Button>
-            <p className="text-[11px] leading-relaxed text-ink-400">
+            <p className="text-[12.5px] leading-relaxed text-ink-400">
               One STL per colour ({colorCount} files). Load them together in
               your slicer and assign a material to each.
             </p>
@@ -115,7 +115,7 @@ export function ExportTab() {
       </Section>
 
       <Section title="Printing notes">
-        <ul className="space-y-2 text-[11px] leading-relaxed text-ink-400">
+        <ul className="space-y-2 text-[12.5px] leading-relaxed text-ink-400">
           <li>
             <span className="text-ink-100">Print face down</span> on a smooth
             plate. The first layer becomes the visible front, so it comes out

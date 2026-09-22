@@ -48,7 +48,7 @@ function FeatureEditor({ feature: f }: { feature: Feature }) {
           ]}
         />
       </Field>
-      <p className="-mt-1 text-[11px] leading-relaxed text-ink-400">
+      <p className="-mt-1 text-[12.5px] leading-relaxed text-ink-400">
         Picking a component sets the hole to the size that hardware needs, and
         keeps every cutout of that type matching.
       </p>
@@ -119,7 +119,7 @@ function FeatureEditor({ feature: f }: { feature: Feature }) {
 
       {offStandard && (
         <div className="rounded-md border border-ink-700 bg-ink-900 px-2.5 py-2">
-          <p className="text-[11px] leading-relaxed text-ink-300">
+          <p className="text-[12.5px] leading-relaxed text-ink-300">
             A {spec.label.toLowerCase()} normally needs {spec.holeMm} mm. This one
             is {f.w.toFixed(2)} mm.
           </p>
@@ -133,7 +133,7 @@ function FeatureEditor({ feature: f }: { feature: Feature }) {
       )}
 
       {f.confidence !== undefined && (
-        <p className="text-[11px] text-ink-400">
+        <p className="text-[12.5px] text-ink-400">
           Detector confidence {Math.round(f.confidence * 100)}%
         </p>
       )}
@@ -205,7 +205,7 @@ export function PanelTab() {
             />
           </div>
         </Field>
-        <p className="-mt-1 text-[11px] leading-relaxed text-ink-400">
+        <p className="-mt-1 text-[12.5px] leading-relaxed text-ink-400">
           Width includes the standard 0.3 mm clearance so the module does not
           bind against its neighbours.
         </p>
@@ -239,7 +239,7 @@ export function PanelTab() {
             onChange={(holeClearanceMm) => setDesign({ holeClearanceMm })}
           />
         </Field>
-        <p className="-mt-1 text-[11px] leading-relaxed text-ink-400">
+        <p className="-mt-1 text-[12.5px] leading-relaxed text-ink-400">
           Added to every cutout when the model is built. Printed holes come out
           slightly under size as the plastic cools, so cutouts are drawn at the
           manufacturer's figure and opened up here to suit your printer. Print a
@@ -281,7 +281,7 @@ export function PanelTab() {
             ]}
           />
         </Field>
-        <p className="text-[11px] leading-relaxed text-ink-400">
+        <p className="text-[12.5px] leading-relaxed text-ink-400">
           Arrow keys nudge, Shift for a bigger step. Alt while dragging ignores
           the grid. ⌘/Ctrl+D duplicates.
         </p>
@@ -308,8 +308,8 @@ function BackgroundImageField() {
             reader.readAsDataURL(f);
             e.target.value = '';
           }}
-          className="w-full text-[11px] text-ink-400 file:mr-2 file:rounded file:border-0
-                     file:bg-ink-700 file:px-2 file:py-1 file:text-[11px] file:text-ink-100"
+          className="w-full text-[12.5px] text-ink-400 file:mr-2 file:rounded file:border-0
+                     file:bg-ink-700 file:px-2 file:py-1 file:text-[12.5px] file:text-ink-100"
         />
       </Field>
 
@@ -336,7 +336,7 @@ function BackgroundImageField() {
           <Button variant="ghost" onClick={() => setDesign({ backgroundImage: undefined })}>
             Remove image
           </Button>
-          <p className="text-[11px] leading-relaxed text-ink-400">
+          <p className="text-[12.5px] leading-relaxed text-ink-400">
             A background image is a visual reference only — it is not part of
             the printed model. To print artwork, trace it into relief from the
             Text &amp; art tab.
@@ -372,7 +372,7 @@ export function FeaturesTab() {
               key={preset.id}
               type="button"
               onClick={() => setTool(tool === preset.id ? null : preset.id)}
-              className={`flex items-center gap-2 rounded-md border px-2 py-1.5 text-[11px] transition-colors
+              className={`flex items-center gap-2 rounded-md border px-2 py-1.5 text-[12.5px] transition-colors
                 ${tool === preset.id
                   ? 'border-accent bg-accent/10 text-accent'
                   : 'border-ink-700 bg-ink-900 text-ink-300 hover:border-ink-400'}`}
@@ -383,9 +383,9 @@ export function FeaturesTab() {
           ))}
         </div>
         {tool
-          ? <p className="text-[11px] text-accent">Click on the panel to place it. Esc to cancel.</p>
+          ? <p className="text-[12.5px] text-accent">Click on the panel to place it. Esc to cancel.</p>
           : (
-            <p className="text-[11px] leading-relaxed text-ink-400">
+            <p className="text-[12.5px] leading-relaxed text-ink-400">
               Place a shape, then set its size — either by hand, by dragging its
               handles, or from a standard component size.
             </p>
@@ -394,7 +394,7 @@ export function FeaturesTab() {
 
       <Section title={`Cutouts (${features.length})`}>
         {features.length === 0 ? (
-          <p className="py-2 text-center text-xs text-ink-400">
+          <p className="py-2 text-center text-[13.5px] text-ink-400">
             Nothing yet. Load a module photo and detect, or place cutouts by hand.
           </p>
         ) : (
@@ -404,7 +404,7 @@ export function FeaturesTab() {
                 <button
                   type="button"
                   onClick={() => select([f.id])}
-                  className={`flex w-full items-center justify-between gap-2 rounded px-2 py-1 text-left text-[11px]
+                  className={`flex w-full items-center justify-between gap-2 rounded px-2 py-1 text-left text-[12.5px]
                     ${selectedIds.includes(f.id) ? 'bg-accent/15 text-accent' : 'text-ink-300 hover:bg-ink-800'}`}
                 >
                   <span className="truncate">

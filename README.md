@@ -4,7 +4,7 @@ Design matching Eurorack faceplates, so a rack of mismatched hardware ends up
 looking like one instrument.
 
 Point it at a module — a photo, or its name on ModularGrid — and it finds the
-jack, pot, LED and slider cutouts for you. Restyle the panel, arrange your
+jack, pot, LED and slider cutouts for you, and names the panel after it. Restyle the panel, arrange your
 panels into a rack, and export STL or 3MF to print.
 
 ![No screenshot yet — run `npm run dev` and open http://localhost:3000](#)
@@ -266,7 +266,10 @@ the photo is a guide for designing rather than part of the model.
 Save panels to a library and arrange them into rows, the way ModularGrid does.
 Rows take a width in HP and a format, panels snap to whole HP because that is
 where the rails are drilled, and anything overlapping or hanging off the end is
-marked. Panels in the rack are drawn from the same geometry as the editor, so
+marked. The common case widths are offered as presets, but any width can be
+typed — home-built cases and rack ears come in whatever size they come in. The
+rack is drawn as wide as the window allows rather than at a fixed scale, and
+the zoom multiplies that. Panels in the rack are drawn from the same geometry as the editor, so
 the rack shows what will print.
 
 The whole rack exports in one go, with every panel as a separate object

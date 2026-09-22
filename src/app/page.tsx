@@ -54,8 +54,8 @@ export default function Page() {
   return (
     <div className="flex h-dvh flex-col bg-ink-950">
       <header className="flex shrink-0 items-center gap-4 border-b border-ink-800 px-4 py-2.5">
-        <h1 className="flex items-center gap-2 text-sm font-semibold tracking-tight">
-          <Logo className="h-[18px] w-[18px] text-accent" />
+        <h1 className="flex items-center gap-2 text-[15px] font-semibold tracking-tight">
+          <Logo className="h-6 w-6 text-accent" />
           Panelmate
         </h1>
 
@@ -69,7 +69,7 @@ export default function Page() {
               key={v}
               type="button"
               onClick={() => { setView(v); if (v === 'rack') setTab('library'); }}
-              className={`rounded px-3 py-1 text-xs transition-colors
+              className={`rounded px-3 py-1 text-[13.5px] transition-colors
                 ${view === v ? 'bg-ink-700 text-ink-100' : 'text-ink-400 hover:text-ink-100'}`}
             >
               {label}
@@ -77,12 +77,12 @@ export default function Page() {
           ))}
         </div>
 
-        <span className="truncate text-[11px] text-ink-400" title={designName}>
+        <span className="truncate text-[12.5px] text-ink-400" title={designName}>
           {designName}{dirty ? ' ·' : ''}
         </span>
 
 
-        <div className="ml-auto flex items-center gap-3 text-[11px] text-ink-400">
+        <div className="ml-auto flex items-center gap-3 text-[12.5px] text-ink-400">
           <ThemeToggle />
           {result.warnings.length > 0 && (
             <button
@@ -113,7 +113,7 @@ export default function Page() {
             <div className="absolute inset-0 grid place-items-center bg-ink-950/70 backdrop-blur-sm">
               <div className="text-center">
                 <div className="mx-auto mb-3 h-6 w-6 animate-spin rounded-full border-2 border-ink-600 border-t-accent" />
-                <p className="text-xs text-ink-300">Analysing the panel…</p>
+                <p className="text-[13.5px] text-ink-300">Analysing the panel…</p>
               </div>
             </div>
           )}
@@ -126,7 +126,7 @@ export default function Page() {
                 key={t.id}
                 type="button"
                 onClick={() => setTab(t.id)}
-                className={`flex-1 border-b-2 px-1 py-2.5 text-[11px] transition-colors
+                className={`flex-1 border-b-2 px-1 py-2.5 text-[12.5px] transition-colors
                   ${tab === t.id
                     ? 'border-accent text-ink-100'
                     : 'border-transparent text-ink-400 hover:text-ink-100'}`}
@@ -150,7 +150,7 @@ export default function Page() {
         <div
           role="status"
           className="fixed bottom-4 left-1/2 z-40 flex -translate-x-1/2 items-center gap-3 rounded-lg
-                     border border-ink-700 bg-ink-850 px-4 py-2.5 text-xs text-ink-100 shadow-xl"
+                     border border-ink-700 bg-ink-850 px-4 py-2.5 text-[13.5px] text-ink-100 shadow-xl"
         >
           <span>Picked up where you left off.</span>
           <button
@@ -175,7 +175,7 @@ export default function Page() {
         <div
           role="status"
           className="fixed bottom-4 left-1/2 z-50 -translate-x-1/2 rounded-lg border border-danger/50
-                     bg-ink-850 px-4 py-2.5 text-xs text-ink-100 shadow-xl"
+                     bg-ink-850 px-4 py-2.5 text-[13.5px] text-ink-100 shadow-xl"
         >
           {error}
           <button

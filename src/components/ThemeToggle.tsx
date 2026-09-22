@@ -41,7 +41,7 @@ export function ThemeToggle() {
           title={o.title}
           aria-pressed={theme === o.id}
           onClick={() => setTheme(o.id)}
-          className={`rounded px-2 py-1 text-xs leading-none transition-colors
+          className={`rounded px-2 py-1 text-[13.5px] leading-none transition-colors
             ${theme === o.id ? 'bg-ink-700 text-ink-100' : 'text-ink-400 hover:text-ink-100'}`}
         >
           <span aria-hidden>{o.label}</span>

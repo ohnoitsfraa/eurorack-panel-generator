@@ -219,6 +219,11 @@ export const useStore = create<State>((set, get) => ({
       error: null,
       design: { ...s.design, hp },
       detect: kind ? { ...s.detect, sourceKind: kind } : s.detect,
+      // Name the panel after the module it came from, so it does not have to
+      // be typed out. A panel already saved under its own name keeps it: at
+      // that point the picture is a reference for existing work, not the
+      // subject of it.
+      designName: nameFor(s, label),
     }));
     get().runDetection();
   },
@@ -805,6 +810,16 @@ export const useStore = create<State>((set, get) => ({
 
 function round2(v: number): number {
   return Math.round(v * 100) / 100;
+}
+
+/** The name a newly loaded source should give the panel, if any. */
+function nameFor(s: State, label: string | null | undefined): string {
+  const suggestion = (label ?? '').trim();
+  // Only worth using when it reads as a module name rather than a file name.
+  if (!suggestion || /\.(jpe?g|png|webp|gif|avif)$/i.test(suggestion)) return s.designName;
+  // Never rename somebody's saved panel out from under them.
+  if (s.activeDesignId !== null) return s.designName;
+  return suggestion;
 }
 
 /**

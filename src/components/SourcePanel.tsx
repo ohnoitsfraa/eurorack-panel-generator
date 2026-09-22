@@ -65,7 +65,7 @@ export function SourcePanel() {
               key={m}
               type="button"
               onClick={() => setMode(m)}
-              className={`flex-1 rounded-md border px-2 py-1 text-[11px] capitalize transition-colors
+              className={`flex-1 rounded-md border px-2 py-1 text-[12.5px] capitalize transition-colors
                 ${mode === m
                   ? 'border-accent bg-accent/10 text-accent'
                   : 'border-ink-700 bg-ink-900 text-ink-400 hover:text-ink-100'}`}
@@ -89,8 +89,8 @@ export function SourcePanel() {
             className={`cursor-pointer rounded-lg border border-dashed px-3 py-6 text-center transition-colors
               ${dragOver ? 'border-accent bg-accent/5' : 'border-ink-600 hover:border-ink-400'}`}
           >
-            <p className="text-xs text-ink-300">Drop a module photo here</p>
-            <p className="mt-1 text-[11px] text-ink-400">or click to browse · or just paste</p>
+            <p className="text-[13.5px] text-ink-300">Drop a module photo here</p>
+            <p className="mt-1 text-[12.5px] text-ink-400">or click to browse · or just paste</p>
             <input
               ref={fileRef}
               type="file"
@@ -109,7 +109,7 @@ export function SourcePanel() {
         {mode === 'modulargrid' && <ModularGridLoader />}
 
         {sourceLabel && (
-          <p className="truncate text-[11px] text-ink-400" title={sourceLabel}>
+          <p className="truncate text-[12.5px] text-ink-400" title={sourceLabel}>
             Loaded: {sourceLabel}
           </p>
         )}
@@ -158,13 +158,13 @@ function UrlLoader({ onLoad }: { onLoad: (url: string, label?: string) => Promis
         placeholder="https://…/module.jpg"
         onChange={(e) => setUrl(e.target.value)}
         onKeyDown={(e) => { if (e.key === 'Enter') void go(); }}
-        className="w-full rounded-md border border-ink-600 bg-ink-900 px-2 py-1.5 text-xs outline-none
+        className="w-full rounded-md border border-ink-600 bg-ink-900 px-2 py-1.5 text-[13.5px] outline-none
                    focus:border-accent"
       />
       <Button variant="primary" onClick={() => void go()} disabled={busy || !url.trim()} className="w-full">
         {busy ? 'Loading…' : asModule ? 'Open module' : 'Load image'}
       </Button>
-      <p className="text-[11px] leading-relaxed text-ink-400">
+      <p className="text-[12.5px] leading-relaxed text-ink-400">
         {asModule
           ? 'That is a ModularGrid module link — its panel image and width will be fetched.'
           : 'Fetched through this app so the canvas can read its pixels; a direct cross-origin image cannot be analysed.'}
@@ -279,7 +279,7 @@ function ModularGridLoader() {
           placeholder="Maths, Plaits, Disting…"
           onChange={(e) => { setInput(e.target.value); setResults(null); setMessage(null); }}
           onKeyDown={(e) => { if (e.key === 'Enter' && canGo) void go(); }}
-          className="w-full rounded-md border border-ink-600 bg-ink-900 px-2 py-1.5 text-xs outline-none
+          className="w-full rounded-md border border-ink-600 bg-ink-900 px-2 py-1.5 text-[13.5px] outline-none
                      focus:border-accent"
         />
         <Button onClick={() => void go()} disabled={!canGo || state === 'busy'}>
@@ -289,7 +289,7 @@ function ModularGridLoader() {
 
       {results && results.length > 0 && (
         <>
-          <p className="text-[11px] text-ink-400">
+          <p className="text-[12.5px] text-ink-400">
             {results.length} match{results.length === 1 ? '' : 'es'} — pick one:
           </p>
           <ul className="max-h-64 space-y-0.5 overflow-y-auto">
@@ -300,10 +300,10 @@ function ModularGridLoader() {
                   onClick={() => void open(r.slug, r.name)}
                   disabled={state === 'busy'}
                   className="w-full rounded-md border border-ink-700 bg-ink-900 px-2 py-1.5 text-left
-                             text-[11px] text-ink-100 hover:border-ink-400 disabled:opacity-50"
+                             text-[12.5px] text-ink-100 hover:border-ink-400 disabled:opacity-50"
                 >
                   {r.name}
-                  <span className="block truncate font-mono text-[10px] text-ink-400">{r.slug}</span>
+                  <span className="block truncate font-mono text-[11px] text-ink-400">{r.slug}</span>
                 </button>
               </li>
             ))}
@@ -312,14 +312,14 @@ function ModularGridLoader() {
       )}
 
       {found && (
-        <p className="text-[11px] text-ink-400">
+        <p className="text-[12.5px] text-ink-400">
           Loaded <span className="text-ink-100">{found.name}</span>
           {found.hp ? ` · ${found.hp} HP` : ''}
         </p>
       )}
 
       {state === 'off' && (
-        <div className="rounded-md border border-ink-700 bg-ink-900 p-2.5 text-[11px] leading-relaxed text-ink-300">
+        <div className="rounded-md border border-ink-700 bg-ink-900 p-2.5 text-[12.5px] leading-relaxed text-ink-300">
           <p className="mb-1 font-medium text-ink-100">ModularGrid lookup is off</p>
           <p className="text-ink-400">
             Set <code className="rounded bg-ink-800 px-1">MODULARGRID_ENABLED=1</code> to turn it
@@ -328,9 +328,9 @@ function ModularGridLoader() {
         </div>
       )}
 
-      {message && state !== 'off' && <p className="text-[11px] text-danger">{message}</p>}
+      {message && state !== 'off' && <p className="text-[12.5px] text-danger">{message}</p>}
 
-      <p className="text-[11px] leading-relaxed text-ink-400">
+      <p className="text-[12.5px] leading-relaxed text-ink-400">
         Searches ModularGrid&apos;s own index of pages, refreshed twice a day and
         held here in between, so typing costs their servers nothing.
       </p>
@@ -434,7 +434,7 @@ function CropSection() {
           ))}
         </div>
       </div>
-      <p className="text-[11px] leading-relaxed text-ink-400">
+      <p className="text-[12.5px] leading-relaxed text-ink-400">
         The crop sets the millimetre scale, so trim it to the actual panel
         edges. Everything detected is measured against it.
       </p>
@@ -466,7 +466,7 @@ function DetectSection() {
           ]}
         />
       </Field>
-      <p className="-mt-1 text-[11px] leading-relaxed text-ink-400">
+      <p className="-mt-1 text-[12.5px] leading-relaxed text-ink-400">
         {detect.sourceKind === 'artwork'
           ? 'Drawings show the socket opening rather than the nut around it, so a jack measures about 4 mm instead of 8 mm. Printed graphics can also look like holes, so expect to delete a few.'
           : 'Sizes are matched against the fitted hardware you can see: a jack’s nut, a knob, an LED lens.'}
@@ -479,7 +479,7 @@ function DetectSection() {
           onChange={(v) => setDetect({ sensitivity: v })}
         />
       </Field>
-      <p className="-mt-1 text-[11px] leading-relaxed text-ink-400">
+      <p className="-mt-1 text-[12.5px] leading-relaxed text-ink-400">
         Higher finds more holes and more false ones. Anything the detector is
         unsure of is outlined in red on the canvas.
       </p>
@@ -515,13 +515,13 @@ function DetectSection() {
       </Button>
 
       {mmPerPx && (
-        <p className="text-[11px] tabular-nums text-ink-400">
+        <p className="text-[12.5px] tabular-nums text-ink-400">
           Scale: {(1 / mmPerPx).toFixed(1)} px/mm
         </p>
       )}
 
       {droppedAsMarkings > 0 && (
-        <p className="text-[11px] leading-relaxed text-ink-400">
+        <p className="text-[12.5px] leading-relaxed text-ink-400">
           {droppedAsMarkings} mark{droppedAsMarkings === 1 ? '' : 's'} ignored as printing —
           lettering and logos look like small holes, but holes that would run
           into each other cannot both be real.

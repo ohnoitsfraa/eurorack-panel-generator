@@ -774,6 +774,40 @@ console.log('\nEditor actions');
     void expected;
   }
 
+  // Loading a module should name the panel after it, so it need not be typed,
+  // without renaming a panel that was already saved under a name of its own.
+  {
+    const img = new ImageDataShim(600, 800);
+    for (let i = 0; i < img.data.length; i += 4) {
+      img.data[i] = 200; img.data[i + 1] = 200; img.data[i + 2] = 200; img.data[i + 3] = 255;
+    }
+    st().newDesign();
+    st().setSource(img as unknown as ImageData, 'x', 'Make Noise MATHS', 'artwork', 20);
+    if (st().designName === 'Make Noise MATHS') pass('a loaded module names the panel after itself');
+    else fail(`panel was named "${st().designName}"`);
+
+    // A file name is not a module name and should not become one.
+    st().newDesign();
+    st().setSource(img as unknown as ImageData, 'x', 'IMG_4821.jpg');
+    if (st().designName === 'Untitled panel') pass('a photo file name is not used as the panel name');
+    else fail(`panel was named "${st().designName}"`);
+
+    // Someone else's saved panel keeps its name when a reference photo is added.
+    st().newDesign();
+    st().setDesignName('My own panel');
+    st().saveCurrentDesign();
+    await new Promise((r) => setTimeout(r, 30));
+    st().setSource(img as unknown as ImageData, 'x', 'Make Noise MATHS', 'artwork', 20);
+    if (st().designName === 'My own panel') pass('a saved panel is not renamed by loading a picture into it');
+    else fail(`saved panel was renamed to "${st().designName}"`);
+
+    // Leave the library as this block found it, or the counts in later checks
+    // are off by the panel saved here.
+    const mine = st().library.find((d) => d.name === 'My own panel');
+    if (mine) st().deleteDesign(mine.id);
+    st().newDesign();
+  }
+
   // A stated width must not be replaced by a guess from the image. A render is
   // often padded a pixel or two, which is enough to put a 30 HP module on 29,
   // and being one pitch out misplaces every hole on the panel.

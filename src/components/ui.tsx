@@ -6,8 +6,8 @@ export function Field({ label, hint, children }: { label: string; hint?: string;
   return (
     <label className="block">
       <div className="mb-1 flex items-baseline justify-between gap-2">
-        <span className="text-[11px] font-medium uppercase tracking-wide text-ink-400">{label}</span>
-        {hint && <span className="text-[11px] tabular-nums text-ink-400">{hint}</span>}
+        <span className="text-[12.5px] font-medium uppercase tracking-wide text-ink-400">{label}</span>
+        {hint && <span className="text-[12.5px] tabular-nums text-ink-400">{hint}</span>}
       </div>
       {children}
     </label>
@@ -65,11 +65,11 @@ export function NumberInput({
             commit(String(round(Number(draft || 0) + delta)));
           }
         }}
-        className="w-full rounded-md border border-ink-600 bg-ink-900 px-2 py-1.5 pr-8 text-sm tabular-nums
+        className="w-full rounded-md border border-ink-600 bg-ink-900 px-2 py-1.5 pr-8 text-[15px] tabular-nums
                    outline-none focus:border-accent disabled:opacity-40"
       />
       {suffix && (
-        <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[11px] text-ink-400">
+        <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[12.5px] text-ink-400">
           {suffix}
         </span>
       )}
@@ -115,7 +115,7 @@ export function Button({
       onClick={onClick}
       disabled={disabled}
       title={title}
-      className={`rounded-md border px-2.5 py-1.5 text-xs transition-colors disabled:cursor-not-allowed
+      className={`rounded-md border px-2.5 py-1.5 text-[13.5px] transition-colors disabled:cursor-not-allowed
                   disabled:opacity-40 ${styles} ${className}`}
     >
       {children}
@@ -136,7 +136,7 @@ export function Select<T extends string>({
       value={value}
       disabled={disabled}
       onChange={(e) => onChange(e.target.value as T)}
-      className="w-full rounded-md border border-ink-600 bg-ink-900 px-2 py-1.5 text-sm outline-none
+      className="w-full rounded-md border border-ink-600 bg-ink-900 px-2 py-1.5 text-[15px] outline-none
                  focus:border-accent disabled:opacity-40"
     >
       {options.map((o) => (
@@ -163,7 +163,7 @@ export function ColorInput({ value, onChange }: { value: string; onChange: (v: s
           // Only push a value the renderer can actually use.
           if (/^#[0-9a-fA-F]{0,6}$/.test(v)) onChange(v);
         }}
-        className="w-full rounded-md border border-ink-600 bg-ink-900 px-2 py-1.5 font-mono text-xs
+        className="w-full rounded-md border border-ink-600 bg-ink-900 px-2 py-1.5 font-mono text-[13.5px]
                    uppercase outline-none focus:border-accent"
       />
     </div>
@@ -181,7 +181,7 @@ export function Toggle({
       onClick={() => onChange(!checked)}
       className="flex w-full items-center justify-between gap-3 py-1 text-left"
     >
-      <span className="text-sm text-ink-100">{label}</span>
+      <span className="text-[15px] text-ink-100">{label}</span>
       <span
         className={`relative h-5 w-9 shrink-0 rounded-full transition-colors
                     ${checked ? 'bg-accent' : 'bg-ink-700'}`}
@@ -201,7 +201,7 @@ export function Section({
   return (
     <section className="border-b border-ink-800 px-4 py-4">
       <div className="mb-3 flex items-center justify-between gap-2">
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-ink-300">{title}</h3>
+        <h3 className="text-[13.5px] font-semibold uppercase tracking-wider text-ink-300">{title}</h3>
         {right}
       </div>
       <div className="space-y-3">{children}</div>
@@ -210,7 +210,7 @@ export function Section({
 }
 
 export function Empty({ children }: { children: React.ReactNode }) {
-  return <p className="py-6 text-center text-xs leading-relaxed text-ink-400">{children}</p>;
+  return <p className="py-6 text-center text-[13.5px] leading-relaxed text-ink-400">{children}</p>;
 }
 
 function fmt(v: number): string {
