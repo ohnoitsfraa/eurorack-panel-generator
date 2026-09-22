@@ -1462,7 +1462,17 @@ console.log('\nLogo');
       })
       .join('\n');
 
-  const fromComponent = shapes(readFileSync('src/components/Logo.tsx', 'utf8'));
+  // The component keeps its path data in constants, so inline them first,
+  // or every d= would compare as the constant's name.
+  const src = readFileSync('src/components/Logo.tsx', 'utf8');
+  const consts = new Map<string, string>();
+  for (const [, name, body] of src.matchAll(/const ([A-Z_]+) =([\s\S]*?);\n/g)) {
+    consts.set(name, [...body.matchAll(/'([^']*)'/g)].map(([, lit]) => lit).join(''));
+  }
+  const inlined = src.replace(/=\{([A-Z_]+)\}/g, (whole, name) =>
+    consts.has(name) ? `="${consts.get(name)}"` : whole);
+
+  const fromComponent = shapes(inlined);
   const fromIcon = shapes(readFileSync('src/app/icon.svg', 'utf8'));
 
   if (fromComponent.split('\n').length >= 6) pass('the mark draws a panel and a mate');

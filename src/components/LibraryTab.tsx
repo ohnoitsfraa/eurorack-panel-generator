@@ -168,7 +168,7 @@ function BackupSection() {
     <Section title="Export &amp; import">
       <div className="grid grid-cols-2 gap-1">
         <Button onClick={exportEverything} disabled={library.length === 0}>
-          Export everything
+          Export all
         </Button>
         <Button onClick={exportRack} disabled={placed === 0}>
           Export rack

@@ -242,7 +242,7 @@ the first time you open the app.
 
 Browser storage is still browser storage, so **export is how work survives**:
 
-- **Export everything** — the whole library plus the rack, as one file.
+- **Export all** — the whole library plus the rack, as one file.
 - **Export rack** — a rack together with the panels it places, so it opens
   complete somewhere else. Only the panels actually used; exporting a rack
   should not hand over the rest of your library.
