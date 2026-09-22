@@ -612,6 +612,24 @@ console.log('\nEditor actions');
     fail(`reopen: ${st().design.features.length} features, name "${st().designName}"`);
   }
 
+  // A stated width must not be replaced by a guess from the image. A render is
+  // often padded a pixel or two, which is enough to put a 30 HP module on 29,
+  // and being one pitch out misplaces every hole on the panel.
+  {
+    const img = new ImageDataShim(960, 826); // 1.162 aspect -> guesses 29 HP
+    for (let i = 0; i < img.data.length; i += 4) {
+      img.data[i] = 200; img.data[i + 1] = 200; img.data[i + 2] = 200; img.data[i + 3] = 255;
+    }
+    st().setSource(img as unknown as ImageData, 'x', 'test', 'artwork', 30);
+    if (st().design.hp === 30) pass('a stated width wins over the aspect-ratio guess');
+    else fail(`stated 30 HP became ${st().design.hp} HP`);
+
+    st().setSource(img as unknown as ImageData, 'x', 'test', 'artwork');
+    if (st().design.hp === 29) pass('without a stated width, the aspect ratio is still used');
+    else fail(`guessed ${st().design.hp} HP from a 1.162 aspect, expected 29`);
+    st().newDesign();
+  }
+
   // Adding to the rack should find a slot and record the placement.
   if (savedId) st().addToRack(savedId);
   const placed = st().rack.rows.reduce((n, r) => n + r.placements.length, 0);

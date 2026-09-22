@@ -68,12 +68,12 @@ interface State {
   lastImport: (MergeReport & { at: number }) | null;
 
   setDesign: (patch: Partial<PanelDesign>) => void;
-  setSource: (img: ImageData, url: string, label: string, kind?: SourceKind) => void;
+  setSource: (img: ImageData, url: string, label: string, kind?: SourceKind, knownHp?: number) => void;
   clearSource: () => void;
   setCrop: (c: Crop) => void;
   setDetect: (patch: Partial<DetectSettings>) => void;
   runDetection: () => void;
-  loadFromUrl: (url: string, label?: string, kind?: SourceKind) => Promise<void>;
+  loadFromUrl: (url: string, label?: string, kind?: SourceKind, knownHp?: number) => Promise<void>;
 
   addFeature: (shape: CutoutShapeId, x: number, y: number) => void;
   updateFeature: (id: string, patch: Partial<Feature>) => void;
@@ -165,13 +165,20 @@ export const useStore = create<State>((set, get) => ({
 
   setDesign: (patch) => set((s) => ({ design: { ...s.design, ...patch }, dirty: true })),
 
-  setSource: (img, url, label, kind) => {
+  setSource: (img, url, label, kind, knownHp) => {
     const crop = autoCrop(img);
     // Guess HP from the crop's aspect ratio: panel height is fixed by format,
     // so the width in millimetres follows, and HP is that over the 5.08 pitch.
+    //
+    // Only a guess, though. When the width is actually known — ModularGrid
+    // states it on the module's page — that is used instead. A render is often
+    // padded by a pixel or two, which is enough to land a 30 HP module on 29,
+    // and being one pitch out misplaces every hole on the panel.
     const { format } = get().design;
     const guessedWidth = (crop.w / crop.h) * panelHeightMm(format);
-    const hp = Math.max(1, Math.min(120, hpFromWidthMm(guessedWidth)));
+    const hp = knownHp && knownHp > 0
+      ? Math.round(knownHp)
+      : Math.max(1, Math.min(120, hpFromWidthMm(guessedWidth)));
     set((s) => ({
       sourceImage: img,
       sourceUrl: url,
@@ -222,7 +229,7 @@ export const useStore = create<State>((set, get) => ({
     }, 16);
   },
 
-  loadFromUrl: async (url, label, kind) => {
+  loadFromUrl: async (url, label, kind, knownHp) => {
     try {
       set({ error: null });
       // Remote images need the proxy for CORS; data URLs and blobs do not.
@@ -230,7 +237,7 @@ export const useStore = create<State>((set, get) => ({
         ? url
         : `/api/proxy-image?url=${encodeURIComponent(url)}`;
       const img = await imageDataFromSource(src);
-      get().setSource(img, src, label ?? 'Image', kind);
+      get().setSource(img, src, label ?? 'Image', kind, knownHp);
     } catch (e) {
       set({ error: e instanceof Error ? e.message : 'Could not load that image' });
     }

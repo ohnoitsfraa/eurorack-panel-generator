@@ -12,6 +12,7 @@ cutouts, restyle the panel, and export STL or 3MF.
 npm install
 npm run dev          # http://localhost:3000
 npm run verify       # geometry, detection, rack, storage and file self-checks
+npm run verify:ui    # browser checks against a running dev server
 npm run build        # production build
 ```
 
@@ -247,10 +248,23 @@ It caught every interesting bug in this codebase, including a crash on the
 default font and a triangulation that silently dropped four of eleven rings
 while still producing a watertight mesh.
 
+`npm run verify:ui` covers what the headless suite cannot see, by driving a
+real browser against a running dev server: whether a handler is wired to the
+right element, whether state survives a sequence of steps, whether a request
+that works from a terminal also works from a page. It uses an
+already-installed Chrome rather than downloading one, and skips cleanly if
+there is none or nothing is running.
+
 ## ModularGrid
 
 Paste a module link — `modulargrid.net/e/make-noise-maths`, or just the slug —
-and the panel image, name and HP all arrive. Off unless `MODULARGRID_ENABLED=1`,
+and the panel image, name and HP all arrive. It works in the plain URL field
+too, since pasting a module link there is an obvious thing to do; without that
+the link goes to the image proxy, which quite correctly refuses a page of HTML.
+
+The width comes from the module's page rather than from the picture. A render
+is often padded by a pixel or two, which is enough to read a 30 HP module as
+29, and being one pitch out misplaces every hole on the panel. Off unless `MODULARGRID_ENABLED=1`,
 cached for a week, and rate limited. Uploading a photo, pasting an image URL and
 pasting from the clipboard all work without it.
 

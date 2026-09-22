@@ -120,14 +120,32 @@ export function SourcePanel() {
 }
 
 function UrlLoader({ onLoad }: { onLoad: (url: string, label?: string) => Promise<void> }) {
+  const loadFromUrl = useStore((s) => s.loadFromUrl);
+  const setDesign = useStore((s) => s.setDesign);
+  const setError = useStore((s) => s.setError);
   const [url, setUrl] = useState('');
   const [busy, setBusy] = useState(false);
 
+  // A ModularGrid page is not an image, but pasting one here is an obvious
+  // thing to do, so treat it as the module link it is rather than refusing it.
+  const asModule = slugFromInput(url);
+
   const go = async () => {
-    if (!url.trim()) return;
+    const value = url.trim();
+    if (!value) return;
     setBusy(true);
-    await onLoad(url.trim(), url.trim().split('/').pop() || 'Image');
-    setBusy(false);
+    try {
+      if (asModule) {
+        const result = await openModule(value, loadFromUrl, setDesign);
+        if ('error' in result) setError(result.error);
+      } else {
+        await onLoad(value, value.split('/').pop() || 'Image');
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not load that link.');
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -142,14 +160,41 @@ function UrlLoader({ onLoad }: { onLoad: (url: string, label?: string) => Promis
                    focus:border-accent"
       />
       <Button variant="primary" onClick={() => void go()} disabled={busy || !url.trim()} className="w-full">
-        {busy ? 'Loading…' : 'Load image'}
+        {busy ? 'Loading…' : asModule ? 'Open module' : 'Load image'}
       </Button>
       <p className="text-[11px] leading-relaxed text-ink-400">
-        Fetched through this app so the canvas can read its pixels; a direct
-        cross-origin image cannot be analysed.
+        {asModule
+          ? 'That is a ModularGrid module link — its panel image and width will be fetched.'
+          : 'Fetched through this app so the canvas can read its pixels; a direct cross-origin image cannot be analysed.'}
       </p>
     </div>
   );
+}
+
+/**
+ * Fetch a module from ModularGrid and load its panel.
+ *
+ * Shared by the ModularGrid tab and the plain URL field, so that pasting a
+ * module link works wherever it is pasted. Without this the URL field sends
+ * the page to the image proxy, which correctly refuses a lump of HTML, and the
+ * user is told their perfectly good link could not be read.
+ */
+async function openModule(
+  input: string,
+  loadFromUrl: (url: string, label?: string, kind?: 'photo' | 'artwork', hp?: number) => Promise<void>,
+  setDesign: (patch: { hp: number }) => void,
+): Promise<{ module: MGModule } | { error: string; disabled?: boolean }> {
+  const res = await fetch(`/api/modulargrid/module?q=${encodeURIComponent(input.trim())}`);
+  const data: MGModule & { error?: string; disabled?: boolean } = await res.json();
+  if (!res.ok) return { error: data.error ?? 'Lookup failed', disabled: data.disabled };
+
+  if (data.hp) setDesign({ hp: data.hp });
+  if (!data.imageUrl) return { error: `No panel image found for ${data.name}.` };
+
+  // The panel shot is a drawing, and ModularGrid states the width, so neither
+  // has to be guessed at.
+  await loadFromUrl(data.imageUrl, data.name, 'artwork', data.hp);
+  return { module: data };
 }
 
 /**
@@ -176,22 +221,20 @@ function ModularGridLoader() {
     setMessage(null);
     setFound(null);
     try {
-      const res = await fetch(`/api/modulargrid/module?q=${encodeURIComponent(input.trim())}`);
-      const data: MGModule & { error?: string; disabled?: boolean } = await res.json();
-      if (!res.ok) {
-        setState(data.disabled ? 'off' : 'idle');
-        setMessage(data.error ?? 'Lookup failed');
+      const result = await openModule(input, loadFromUrl, setDesign);
+      if ('error' in result) {
+        setState(result.disabled ? 'off' : 'idle');
+        setMessage(result.error);
         return;
       }
       setState('idle');
-      setFound(data);
-      if (data.hp) setDesign({ hp: data.hp });
-      // A ModularGrid panel shot is a drawing, not a photograph.
-      if (data.imageUrl) await loadFromUrl(data.imageUrl, data.name, 'artwork');
-      else setMessage(`No panel image found for ${data.name}.`);
-    } catch {
+      setFound(result.module);
+    } catch (e) {
       setState('idle');
-      setMessage('Could not reach ModularGrid.');
+      // Say what actually went wrong. "Could not reach ModularGrid" was the
+      // same answer for a network failure, a bad reply and a bug here, which
+      // made a working link look broken.
+      setMessage(e instanceof Error ? e.message : 'Could not reach ModularGrid.');
     }
   };
 
