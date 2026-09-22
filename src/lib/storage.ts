@@ -1,6 +1,6 @@
 'use client';
 
-import type { PanelDesign } from './types';
+import { migrateDesign, type PanelDesign } from './types';
 import type { Rack } from './rack';
 
 /**
@@ -67,7 +67,12 @@ function tx<T>(store: string, mode: IDBTransactionMode, run: (s: IDBObjectStore)
 export async function loadDesigns(): Promise<SavedDesign[]> {
   try {
     const all = await tx<SavedDesign[]>(DESIGNS, 'readonly', (s) => s.getAll() as IDBRequest<SavedDesign[]>);
-    return all.filter(isSaved).sort((a, b) => b.updatedAt - a.updatedAt);
+    return all
+      .filter(isSaved)
+      // Designs saved before the cutout shapes were collapsed are converted on
+      // the way in, so an old library keeps working.
+      .map((d) => ({ ...d, design: migrateDesign(d.design) }))
+      .sort((a, b) => b.updatedAt - a.updatedAt);
   } catch {
     return [];
   }
@@ -119,7 +124,9 @@ export async function migrateFromLocalStorage(): Promise<number> {
     if (rawLib) {
       const parsed: unknown = JSON.parse(rawLib);
       if (Array.isArray(parsed)) {
-        const designs = parsed.filter(isSaved);
+        const designs = parsed
+          .filter(isSaved)
+          .map((d) => ({ ...d, design: migrateDesign(d.design) }));
         await putDesigns(designs);
         moved = designs.length;
       }

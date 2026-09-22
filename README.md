@@ -72,6 +72,7 @@ Cutouts, text, shapes and traced artwork are all draggable on the canvas.
 | | |
 | --- | --- |
 | drag | move |
+| drag a handle | resize, rotate, or round the corners |
 | **Alt** + drag | duplicate and drag the copy |
 | **⌘/Ctrl** + drag | ignore the grid for this move |
 | **Shift** + click | add to or remove from the selection |
@@ -84,6 +85,46 @@ Cutouts, text, shapes and traced artwork are all draggable on the canvas.
 Text is thin at panel sizes, so each element has an invisible hit area over its
 bounding box — you do not have to land the pointer on a 0.4 mm letter stroke to
 move a label.
+
+Selecting a single cutout gives it handles: resize from the edges or the
+corner, rotate from the arm above it, and drag the small square inward to round
+the corners. Resizing works about the centre, since where a cutout sits is
+usually the part you placed carefully. Everything is measured in the cutout's
+own frame, so the width handle on a cutout turned 30° widens it along its own
+axis rather than the screen's. Shift snaps rotation to 15° steps.
+
+### Two shapes, and standard sizes
+
+A cutout is a circle or a rectangle with a corner radius. That is all that is
+needed: a radius of zero gives sharp corners, and a radius of half the shorter
+side gives the stadium that a fader slot or mounting slot actually is. Carrying
+a separate slot shape only meant three ways to describe the same geometry.
+
+Sizes come from the hardware. A 3.5 mm jack is a Thonkiconn-style PJ301M with a
+6 mm bushing; a panel pot is an Alpha 9 mm with a 7 mm bushing; sub-miniature
+toggles are M6. Detection measures a hole to work out *what* it is and then
+throws the measurement away, because a photograph will never measure twenty
+jacks at exactly the same size, and a panel where every jack differs by a tenth
+of a millimetre is wrong — they take identical hardware, so they take identical
+holes.
+
+Holes of the same size are also decided together. Classified one at a time, a
+row of identical jacks does not come out identical: measurement noise pushes
+some across a size boundary and they arrive as buttons or LEDs. So circular
+holes are grouped by measured diameter and each group is settled once, by the
+total confidence behind each candidate, and anything reassigned to match its
+neighbours is marked so a genuine odd one out is still easy to find.
+
+Printer allowance is separate and adjustable, rather than baked into every
+size. Cutouts are drawn at the manufacturer's figure and opened up by **hole
+allowance** (0.2 mm by default) when the model is built, so it can be dialled
+in for a printer without editing a single panel.
+
+Circles are drawn as polygons that *enclose* the true circle rather than fit
+inside it. The obvious construction makes a 6 mm hole come out at about
+5.98 mm, and for a hole that is the wrong direction to be wrong in: a bushing
+that will not fit ruins the panel, while a hair of clearance disappears behind
+the nut.
 
 ### Saving, export and import
 
@@ -182,6 +223,9 @@ print, so the script checks the properties a preview cannot show:
 - real glyph outlines survive nesting, both relief modes and export
 - rack packing puts panels in the leftmost gap, flags overlaps and overhangs,
   and stacks rows to the right height
+- cutouts hold their standard sizes: every jack the same, circles never cut
+  under their nominal diameter, and designs written before the shapes were
+  collapsed still open
 - editor actions hold up: duplicating returns the new ids and copies land
   exactly on the original (which is what Alt-drag relies on), dragging artwork
   translates its outlines, and designs round-trip through storage

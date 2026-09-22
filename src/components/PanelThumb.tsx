@@ -59,31 +59,19 @@ export function PanelThumb({
         ) : null,
       )}
 
-      {design.features.map((f) => {
-        const len = f.len ?? f.d;
-        const rot = f.rotation ?? 0;
-        if (f.shape === 'circle') {
-          return <circle key={f.id} cx={f.x} cy={f.y} r={f.d / 2} fill="#07080a" />;
-        }
-        if (f.shape === 'slot') {
-          return (
-            <rect
-              key={f.id}
-              x={f.x - len / 2} y={f.y - f.d / 2} width={len} height={f.d} rx={f.d / 2}
-              transform={`rotate(${rot} ${f.x} ${f.y})`}
-              fill="#07080a"
-            />
-          );
-        }
-        return (
+      {design.features.map((f) =>
+        f.shape === 'circle' ? (
+          <circle key={f.id} cx={f.x} cy={f.y} r={f.w / 2} fill="#07080a" />
+        ) : (
           <rect
             key={f.id}
-            x={f.x - f.d / 2} y={f.y - len / 2} width={f.d} height={len} rx={f.radius ?? 0}
-            transform={`rotate(${rot} ${f.x} ${f.y})`}
+            x={f.x - f.w / 2} y={f.y - f.h / 2} width={f.w} height={f.h}
+            rx={Math.min(f.radius, Math.min(f.w, f.h) / 2)}
+            transform={`rotate(${f.rotation} ${f.x} ${f.y})`}
             fill="#07080a"
           />
-        );
-      })}
+        ),
+      )}
 
       {design.includeMountSlots &&
         mountSlotPositions(W, H).map((p, i) => (

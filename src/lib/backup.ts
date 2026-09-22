@@ -1,6 +1,6 @@
 import type { Rack } from './rack';
 import { isSaved, type SavedDesign } from './storage';
-import { uid } from './types';
+import { migrateDesign, uid } from './types';
 
 /**
  * Export and import files.
@@ -85,7 +85,9 @@ export function parseBackup(text: string): ParseResult {
   }
 
   const all = Array.isArray(b.panels) ? b.panels : [];
-  const panels = all.filter(isSaved);
+  // Files written by an older version carry the old cutout shapes; convert
+  // rather than refuse, since the design itself is perfectly good.
+  const panels = all.filter(isSaved).map((d) => ({ ...d, design: migrateDesign(d.design) }));
   const rack = b.rack && Array.isArray((b.rack as Rack).rows) ? (b.rack as Rack) : null;
 
   if (panels.length === 0 && !rack) throw new Error('That file has no panels or rack in it.');

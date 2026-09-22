@@ -117,6 +117,7 @@ const BASE: PanelDesign = {
   backgroundImageOpacity: 1,
   backgroundImageFit: 'cover',
   includeMountSlots: true,
+  holeClearanceMm: 0,
   features: [],
   decor: [],
 };
@@ -127,12 +128,12 @@ const noFonts = new Map();
 console.log('\nPanel geometry');
 {
   const features: Feature[] = [
-    { id: 'a', kind: 'pot', x: 20, y: 25, shape: 'circle', d: 7.2 },
-    { id: 'b', kind: 'jack', x: 10, y: 100, shape: 'circle', d: 6.2 },
-    { id: 'c', kind: 'jack', x: 30, y: 100, shape: 'circle', d: 6.2 },
-    { id: 'd', kind: 'led', x: 20, y: 45, shape: 'circle', d: 3.1 },
-    { id: 'e', kind: 'slider', x: 20, y: 72, shape: 'slot', d: 4, len: 36, rotation: 90 },
-    { id: 'f', kind: 'display', x: 20, y: 50, shape: 'rect', d: 24, len: 6, radius: 1 },
+    { id: 'a', kind: 'pot', x: 20, y: 25, shape: 'circle', w: 7, h: 7, radius: 3.5, rotation: 0 },
+    { id: 'b', kind: 'jack', x: 10, y: 100, shape: 'circle', w: 6, h: 6, radius: 3, rotation: 0 },
+    { id: 'c', kind: 'jack', x: 30, y: 100, shape: 'circle', w: 6, h: 6, radius: 3, rotation: 0 },
+    { id: 'd', kind: 'led', x: 20, y: 45, shape: 'circle', w: 3, h: 3, radius: 1.5, rotation: 0 },
+    { id: 'e', kind: 'slider', x: 20, y: 72, shape: 'rect', w: 36, h: 4, radius: 2, rotation: 90 },
+    { id: 'f', kind: 'display', x: 20, y: 50, shape: 'rect', w: 24, h: 6, radius: 1, rotation: 0 },
   ];
   for (const m of buildPanel({ ...BASE, features }, { fonts: noFonts }).meshes) {
     checkSolid(m, `plain panel / ${m.name}`);
@@ -166,8 +167,8 @@ console.log('\nInvalid designs are refused');
   const clash = buildPanel({
     ...BASE,
     features: [
-      { id: 'x', kind: 'jack', x: 15, y: 60, shape: 'circle', d: 6.2 },
-      { id: 'y', kind: 'jack', x: 18, y: 60, shape: 'circle', d: 6.2 },
+      { id: 'x', kind: 'jack', x: 15, y: 60, shape: 'circle', w: 6, h: 6, radius: 3, rotation: 0 },
+      { id: 'y', kind: 'jack', x: 18, y: 60, shape: 'circle', w: 6, h: 6, radius: 3, rotation: 0 },
     ],
   }, { fonts: noFonts });
   if (clash.warnings.length === 1 && /overlap/i.test(clash.warnings[0])) {
@@ -178,7 +179,7 @@ console.log('\nInvalid designs are refused');
 
   const straddle = buildPanel({
     ...BASE,
-    features: [{ id: 'j', kind: 'jack', x: 10, y: 100, shape: 'circle', d: 6.2 }],
+    features: [{ id: 'j', kind: 'jack', x: 10, y: 100, shape: 'circle', w: 6, h: 6, radius: 3, rotation: 0 }],
     decor: [{
       id: 's', type: 'shape', shape: 'rect',
       x: 10, y: 100, w: 30, h: 5, radius: 1, rotation: 0,
@@ -264,22 +265,49 @@ console.log('\nDetection on a synthetic panel');
   }
   if (found === truth.length) pass(`all ${found} circular cutouts found, worst offset ${worstOffset.toFixed(2)} mm`);
 
-  const fader = res.features.find((f) => f.shape === 'slot');
+  const fader = res.features.find((f) => f.kind === 'slider');
   if (!fader) {
     fail('fader slot not detected');
+  } else if (fader.shape !== 'rect') {
+    fail('a fader slot should be a rounded rectangle');
   } else {
-    const wErr = Math.abs(fader.d - slotW);
-    const lErr = Math.abs((fader.len ?? 0) - slotLen);
-    if (wErr < 0.6 && lErr < 1.5) {
-      pass(`fader measured ${fader.d.toFixed(1)} × ${(fader.len ?? 0).toFixed(1)} mm (true ${slotW} × ${slotLen})`);
+    // Slot width is standardised to the fader's specification; the length
+    // genuinely varies by model, so that stays measured.
+    const lErr = Math.abs(fader.w - slotLen);
+    const isStadiumShape = fader.radius >= Math.min(fader.w, fader.h) / 2 - 1e-6;
+    if (lErr < 1.5 && fader.h === COMPONENT_SPECS.slider.holeMm && isStadiumShape) {
+      pass(`fader: length measured ${fader.w.toFixed(1)} mm (true ${slotLen}), width standardised to ${fader.h} mm`);
     } else {
-      fail(`fader measured ${fader.d.toFixed(1)} × ${(fader.len ?? 0).toFixed(1)} mm (true ${slotW} × ${slotLen})`);
+      fail(`fader ${fader.w.toFixed(1)} × ${fader.h} mm, radius ${fader.radius}, expected length ~${slotLen}`);
     }
   }
 
   const spurious = res.features.length - found - (fader ? 1 : 0);
   if (spurious === 0) pass('no spurious detections');
   else fail(`${spurious} spurious detection(s)`);
+
+  // Standard sizes. Identical hardware must give identical holes: a panel
+  // where every jack differs by a tenth of a millimetre is wrong.
+  {
+    const jacks = res.features.filter((f) => f.kind === 'jack');
+    const sizes = new Set(jacks.map((f) => f.w));
+    if (jacks.length >= 2 && sizes.size === 1 && jacks[0].w === COMPONENT_SPECS.jack.holeMm) {
+      pass(`all ${jacks.length} jacks share the standard ${COMPONENT_SPECS.jack.holeMm} mm hole`);
+    } else {
+      fail(`jack sizes: ${[...sizes].join(', ')} — expected all ${COMPONENT_SPECS.jack.holeMm}`);
+    }
+
+    const circles = res.features.filter((f) => f.shape === 'circle');
+    const offStandard = circles.filter((f) => f.w !== COMPONENT_SPECS[f.kind].holeMm);
+    if (offStandard.length === 0) pass('every circular cutout uses its component\'s standard size');
+    else fail(`${offStandard.length} circular cutouts are off their standard size`);
+
+    // Nothing measured should survive into the geometry: a circle's radius
+    // must always be half its own diameter.
+    const badRadius = circles.filter((f) => Math.abs(f.radius - f.w / 2) > 1e-9);
+    if (badRadius.length === 0) pass('circles keep a radius of half their diameter');
+    else fail(`${badRadius.length} circles have an inconsistent radius`);
+  }
 
   // Every detection must map to a known component so the UI can label it.
   const unknown = res.features.filter((f) => !COMPONENT_SPECS[f.kind]);
@@ -318,8 +346,8 @@ console.log('\nText outlines');
     }
 
     const features: Feature[] = [
-      { id: 'j1', kind: 'jack', x: 10, y: 110, shape: 'circle', d: 6.2 },
-      { id: 'j2', kind: 'jack', x: 30, y: 110, shape: 'circle', d: 6.2 },
+      { id: 'j1', kind: 'jack', x: 10, y: 110, shape: 'circle', w: 6, h: 6, radius: 3, rotation: 0 },
+      { id: 'j2', kind: 'jack', x: 30, y: 110, shape: 'circle', w: 6, h: 6, radius: 3, rotation: 0 },
     ];
 
     for (const m of buildPanel({ ...BASE, features, decor: [mk('OBOE 8', 'raised', 20)] }, { fonts }).meshes) {
@@ -451,7 +479,7 @@ console.log('\nRack layout and export');
   const saved = [
     { id: 'a', name: 'Left', updatedAt: 0, design: {
       ...BASE, hp: 8,
-      features: [{ id: 'j', kind: 'jack' as const, x: 20, y: 100, shape: 'circle' as const, d: 6.2 }],
+      features: [{ id: 'j', kind: 'jack' as const, x: 20, y: 100, shape: 'circle' as const, w: 6, h: 6, radius: 3, rotation: 0 }],
     } },
     { id: 'b', name: 'Right', updatedAt: 0, design: { ...BASE, hp: 4 } },
   ];
@@ -595,6 +623,120 @@ console.log('\nEditor actions');
   const after = st().rack.rows.reduce((n, r) => n + r.placements.length, 0);
   if (after === 0 && st().library.length === 0) pass('deleting a design clears it from the rack');
   else fail(`after delete: ${st().library.length} in library, ${after} placed`);
+}
+
+// --------------------------------------------- 6b. cutout shapes and standards
+console.log('\nCutout shapes, standards and clearance');
+{
+  const { migrateFeature, isStadium } = await import('../src/lib/types');
+  const { featureRing } = await import('../src/lib/model/build');
+  const { bbox } = await import('../src/lib/geom/poly');
+  const { COMPONENT_SPECS: SPECS, hasStandardSize } = await import('../src/lib/eurorack');
+
+  // --- migrating designs written before the shapes were collapsed ---
+  const oldSlot = migrateFeature({
+    id: 's', kind: 'slider', x: 10, y: 20, shape: 'slot', d: 4, len: 60, rotation: 90,
+  });
+  if (oldSlot && oldSlot.shape === 'rect' && oldSlot.w === 60 && oldSlot.h === 4 && isStadium(oldSlot)) {
+    pass('an old slot becomes a fully rounded rectangle of the same size');
+  } else {
+    fail(`slot migration produced ${JSON.stringify(oldSlot)}`);
+  }
+
+  const oldCircle = migrateFeature({ id: 'c', kind: 'jack', x: 1, y: 2, shape: 'circle', d: 6.2 });
+  if (oldCircle && oldCircle.w === 6.2 && oldCircle.h === 6.2 && oldCircle.radius === 3.1) {
+    pass('an old circle keeps its size, with width and height equal');
+  } else {
+    fail(`circle migration produced ${JSON.stringify(oldCircle)}`);
+  }
+
+  const oldRect = migrateFeature({
+    id: 'r', kind: 'display', x: 0, y: 0, shape: 'rect', d: 24, len: 8, radius: 1,
+  });
+  if (oldRect && oldRect.w === 24 && oldRect.h === 8 && oldRect.radius === 1) {
+    pass('an old rectangle keeps its width, height and corner radius');
+  } else {
+    fail(`rect migration produced ${JSON.stringify(oldRect)}`);
+  }
+
+  if (migrateFeature({ nonsense: true }) === null) pass('an unreadable cutout is dropped, not guessed at');
+  else fail('migration invented a cutout from nothing');
+
+  // A migrated file must come back through a full round trip unchanged.
+  const already = migrateFeature(oldSlot);
+  if (already && already.w === oldSlot!.w && already.h === oldSlot!.h && already.radius === oldSlot!.radius) {
+    pass('migrating an already-migrated cutout changes nothing');
+  } else {
+    fail('a second migration altered the cutout');
+  }
+
+  // --- geometry ---
+  // A faceted circle must never come out under its nominal size: a bushing
+  // that will not fit ruins the panel, a hair of clearance does not.
+  const circle = featureRing({ id: 'a', kind: 'jack', x: 50, y: 50, shape: 'circle', w: 6, h: 6, radius: 3, rotation: 0 })!;
+  let narrowest = Infinity;
+  let widest = 0;
+  for (const p of circle) {
+    // Distance across the flats, sampled at the midpoint of every facet.
+    const q = circle[(circle.indexOf(p) + 1) % circle.length];
+    const mid = Math.hypot((p.x + q.x) / 2 - 50, (p.y + q.y) / 2 - 50) * 2;
+    narrowest = Math.min(narrowest, mid);
+    widest = Math.max(widest, Math.hypot(p.x - 50, p.y - 50) * 2);
+  }
+  if (narrowest >= 6 - 1e-6 && widest < 6.05) {
+    pass(`a 6 mm hole measures ${narrowest.toFixed(3)}–${widest.toFixed(3)} mm, never under`);
+  } else {
+    fail(`6 mm hole measures ${narrowest.toFixed(3)}–${widest.toFixed(3)} mm`);
+  }
+
+  // A stadium and a sharp rectangle of the same size share a bounding box but
+  // not an area; the radius has to actually do something.
+  const sharp = featureRing({ id: 'b', kind: 'custom', x: 50, y: 50, shape: 'rect', w: 40, h: 4, radius: 0, rotation: 0 });
+  const round = featureRing({ id: 'c', kind: 'custom', x: 50, y: 50, shape: 'rect', w: 40, h: 4, radius: 2, rotation: 0 });
+  const sb = bbox([sharp!]);
+  const rb = bbox([round!]);
+  const sameBox =
+    Math.abs(sb.x1 - sb.x0 - 40) < 0.02 && Math.abs(rb.x1 - rb.x0 - 40) < 0.05 &&
+    Math.abs(sb.y1 - sb.y0 - 4) < 0.02 && Math.abs(rb.y1 - rb.y0 - 4) < 0.02;
+  if (sameBox) pass('rounding the corners does not change the overall size');
+  else fail('a rounded rectangle has different bounds from a sharp one');
+
+  const rotated = featureRing({ id: 'd', kind: 'custom', x: 50, y: 50, shape: 'rect', w: 40, h: 4, radius: 2, rotation: 90 });
+  const rotb = bbox([rotated!]);
+  if (Math.abs(rotb.y1 - rotb.y0 - 40) < 0.05 && Math.abs(rotb.x1 - rotb.x0 - 4) < 0.05) {
+    pass('rotating 90° swaps the cutout\'s footprint');
+  } else {
+    fail(`rotated bounds ${(rotb.x1 - rotb.x0).toFixed(2)} x ${(rotb.y1 - rotb.y0).toFixed(2)}`);
+  }
+
+  // --- printer clearance ---
+  const nominal = featureRing({ id: 'e', kind: 'jack', x: 50, y: 50, shape: 'circle', w: 6, h: 6, radius: 3, rotation: 0 }, 0);
+  const opened = featureRing({ id: 'e', kind: 'jack', x: 50, y: 50, shape: 'circle', w: 6, h: 6, radius: 3, rotation: 0 }, 0.1);
+  const nb = bbox([nominal!]);
+  const ob = bbox([opened!]);
+  if (Math.abs((ob.x1 - ob.x0) - (nb.x1 - nb.x0) - 0.2) < 0.02) {
+    pass('a 0.1 mm allowance opens a hole by 0.2 mm across');
+  } else {
+    fail(`allowance changed the diameter by ${((ob.x1 - ob.x0) - (nb.x1 - nb.x0)).toFixed(3)} mm`);
+  }
+
+  const built = buildPanel({
+    ...BASE,
+    holeClearanceMm: 0.2,
+    features: [{ id: 'j', kind: 'jack', x: 20, y: 60, shape: 'circle', w: 6, h: 6, radius: 3, rotation: 0 }],
+  }, { fonts: noFonts });
+  for (const m of built.meshes) checkSolid(m, `with hole allowance / ${m.name}`);
+
+  // --- the catalogue itself ---
+  const fixed = (Object.keys(SPECS) as Array<keyof typeof SPECS>).filter((k) => hasStandardSize(k));
+  const sane = fixed.every((k) => SPECS[k].holeMm > 0 && SPECS[k].holeMm < 40);
+  if (sane) pass(`${fixed.length} components have a fixed standard hole size`);
+  else fail('a component has an implausible standard size');
+  if (SPECS.jack.holeMm === 6 && SPECS.pot.holeMm === 7 && SPECS.led.holeMm === 3) {
+    pass('jack 6 mm, pot 7 mm, LED 3 mm — the sizes the hardware is specified at');
+  } else {
+    fail('the standard sizes have drifted from the hardware specifications');
+  }
 }
 
 // ------------------------------------------------------- 7. files and storage
@@ -789,7 +931,7 @@ console.log('\nExport containers');
 {
   const meshes = buildPanel({
     ...BASE,
-    features: [{ id: 'j', kind: 'jack', x: 20, y: 100, shape: 'circle', d: 6.2 }],
+    features: [{ id: 'j', kind: 'jack', x: 20, y: 100, shape: 'circle', w: 6, h: 6, radius: 3, rotation: 0 }],
     decor: [{
       id: 's', type: 'shape', shape: 'rect', x: 20, y: 20, w: 20, h: 4,
       radius: 1, rotation: 0, color: '#ffffff', mode: 'raised', reliefMm: 0.6,

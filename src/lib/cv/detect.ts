@@ -4,6 +4,7 @@ import { blur, cropImage, fitWithin, percentiles, toGray, type Gray } from './im
 import { binarizeDark, thresholdLadder } from './threshold';
 import { findBlobs, type Blob } from './components';
 import { classifyBlob, type Candidate } from './classify';
+import { COMPONENT_SPECS, type FeatureKind } from '../eurorack';
 
 /** Working resolution. Big enough to resolve a 3 mm LED, small enough to be instant. */
 const WORK_MAX_DIM = 1400;
@@ -86,17 +87,17 @@ export function detectFeatures(input: DetectInput): DetectionResult {
     if (b.touchesBorder) continue;
     const c = classifyBlob(b, mmPerPx, settings.sourceKind);
     if (!c) continue;
-    if (c.feature.shape === 'slot' && !settings.detectSlots) continue;
-    if (c.feature.shape === 'rect' && !settings.detectRects) continue;
+    // A slot is a rectangle rounded into a stadium; a display cutout is not.
+    if (c.feature.kind === 'slider' && !settings.detectSlots) continue;
+    if (c.feature.kind === 'display' && !settings.detectRects) continue;
     c.feature.x = round3(b.cx * mmPerPxX);
     c.feature.y = round3(b.cy * mmPerPxY);
     candidates.push(c);
   }
 
   const merged = mergeCandidates(candidates, settings.mergeDistanceMm);
-  const kept = merged
-    .filter((c) => c.score >= scoreFloor(settings.sensitivity))
-    .map((c) => c.feature);
+  const surviving = merged.filter((c) => c.score >= scoreFloor(settings.sensitivity));
+  const kept = unifyByCluster(surviving).map((c) => c.feature);
 
   const snapped = settings.snapMm > 0 ? kept.map((f) => snapFeature(f, settings.snapMm)) : kept;
   snapped.sort((a, b) => a.y - b.y || a.x - b.x);
@@ -167,6 +168,74 @@ function mergeCandidates(cands: Candidate[], mergeMm: number): Candidate[] {
     c.feature.confidence = Math.round(Math.max(0, Math.min(1, c.score)) * 100) / 100;
   }
   return out;
+}
+
+/**
+ * Make holes of the same size agree on what they are.
+ *
+ * Classified one at a time, a row of identical jacks does not come out
+ * identical: measurement noise pushes some across a size boundary and they
+ * arrive as buttons or LEDs, so the finished panel has jacks in three sizes.
+ * But a panel with twenty holes the same size has twenty of the same
+ * component — that is what "the same size" means on a front panel.
+ *
+ * So circular holes are grouped by measured diameter, and each group is
+ * decided once, by the total confidence behind each candidate kind rather than
+ * a simple count, so that a handful of strong readings outweigh many weak
+ * ones. Every hole in the group then takes that component's standard size.
+ */
+function unifyByCluster(cands: Candidate[]): Candidate[] {
+  const circles = cands.filter((c) => c.feature.shape === 'circle');
+  if (circles.length < 2) return cands;
+
+  // Group by size, allowing a tolerance that scales with the hole: a tenth of
+  // a millimetre matters on a 3 mm LED and not at all on a 20 mm knob.
+  const sorted = [...circles].sort((a, b) => a.measuredMm - b.measuredMm);
+  const groups: Candidate[][] = [];
+  let current: Candidate[] = [sorted[0]];
+
+  for (let i = 1; i < sorted.length; i++) {
+    const prev = current[current.length - 1].measuredMm;
+    const tolerance = Math.max(0.35, prev * 0.16);
+    if (sorted[i].measuredMm - prev <= tolerance) current.push(sorted[i]);
+    else { groups.push(current); current = [sorted[i]]; }
+  }
+  groups.push(current);
+
+  const decided = new Map<string, Candidate>();
+  for (const group of groups) {
+    if (group.length === 1) { decided.set(group[0].feature.id, group[0]); continue; }
+
+    const weight = new Map<FeatureKind, number>();
+    for (const c of group) {
+      weight.set(c.feature.kind, (weight.get(c.feature.kind) ?? 0) + c.score);
+    }
+    let winner: FeatureKind = group[0].feature.kind;
+    let best = -1;
+    for (const [kind, w] of weight) if (w > best) { best = w; winner = kind; }
+
+    const spec = COMPONENT_SPECS[winner];
+    for (const c of group) {
+      const agreed = c.feature.kind === winner;
+      decided.set(c.feature.id, {
+        ...c,
+        feature: {
+          ...c.feature,
+          kind: winner,
+          w: spec.holeMm,
+          h: spec.holeMm,
+          radius: spec.holeMm / 2,
+          // Say so when a hole was reassigned to match its neighbours, so a
+          // genuinely odd one out is still easy to find and correct.
+          confidence: agreed
+            ? c.feature.confidence
+            : Math.min(c.feature.confidence ?? 0.5, 0.6),
+        },
+      });
+    }
+  }
+
+  return cands.map((c) => decided.get(c.feature.id) ?? c);
 }
 
 /** Sensitivity 0 keeps only near-certain holes; 1 keeps almost everything. */

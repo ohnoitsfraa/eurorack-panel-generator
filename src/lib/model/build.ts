@@ -50,8 +50,11 @@ export function buildPanel(design: PanelDesign, opts: BuildOptions): BuildResult
   const outline = roundedRectRing(W / 2, H / 2, W, H, design.cornerRadiusMm);
   const holes: Ring[] = [];
 
+  // Every cutout is opened up by the printer allowance. Kept out of the design
+  // itself so it can be retuned for a printer without editing any panel.
+  const clearance = Math.max(0, design.holeClearanceMm ?? 0) / 2;
   for (const f of design.features) {
-    const ring = featureRing(f);
+    const ring = featureRing(f, clearance);
     if (ring) holes.push(ring);
   }
 
@@ -93,7 +96,7 @@ export function buildPanel(design: PanelDesign, opts: BuildOptions): BuildResult
   );
   const grownHoles: Ring[] = [];
   for (const f of design.features) {
-    const ring = featureRing(f, m);
+    const ring = featureRing(f, m + clearance);
     if (ring) grownHoles.push(ensureWinding(up(ring), false));
   }
   if (design.includeMountSlots) {
@@ -228,23 +231,23 @@ function describeHole(design: PanelDesign, index: number): string {
 }
 
 /**
- * Outline of a cutout. `margin` grows it on every side, which is how the
- * engraving clearance zone is built.
+ * Outline of a cutout.
+ *
+ * `margin` grows it on every side, which serves two purposes: the printer
+ * clearance added to every hole, and the larger keep-out zone used to stop an
+ * engraving running into a cutout.
  */
 export function featureRing(f: Feature, margin = 0): Ring | null {
-  if (f.d <= 0) return null;
-  const d = f.d + 2 * margin;
-  const len = Math.max(f.len ?? f.d, f.d) + 2 * margin;
-  switch (f.shape) {
-    case 'circle':
-      return circleRing(f.x, f.y, d);
-    case 'slot':
-      return slotRing(f.x, f.y, d, len, f.rotation ?? 0);
-    case 'rect':
-      return roundedRectRing(f.x, f.y, d, (f.len ?? f.d) + 2 * margin, (f.radius ?? 0) + margin, f.rotation ?? 0);
-    default:
-      return null;
-  }
+  const w = f.w + 2 * margin;
+  const h = (f.shape === 'circle' ? f.w : f.h) + 2 * margin;
+  if (w <= 0 || h <= 0) return null;
+
+  if (f.shape === 'circle') return circleRing(f.x, f.y, w);
+
+  // A radius at half the shorter side is a stadium, which is what a fader or
+  // mounting slot is; anything less is an ordinary rounded rectangle.
+  const radius = Math.min(f.radius + margin, Math.min(w, h) / 2);
+  return roundedRectRing(f.x, f.y, w, h, radius, f.rotation);
 }
 
 interface ResolvedDecor {

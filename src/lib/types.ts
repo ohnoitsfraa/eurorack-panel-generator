@@ -14,24 +14,94 @@ export interface Pt {
  * Every feature carries its own geometry rather than deriving it from `kind`, so
  * the user can nudge a single jack's diameter without inventing a new kind.
  */
+/**
+ * A cutout.
+ *
+ * Only two shapes, because only two are needed: a circle, and a rectangle with
+ * a corner radius. A radius of zero gives sharp corners, and a radius of half
+ * the shorter side gives a stadium — which is what a fader slot or a mounting
+ * slot actually is. Carrying a separate slot shape only meant three ways to
+ * describe the same geometry.
+ *
+ * Width and height are always both present. For a circle they are equal and
+ * are its diameter, which keeps resizing and bounds calculations from needing
+ * a special case at every turn.
+ */
 export interface Feature {
   id: string;
   kind: FeatureKind;
   /** Centre position in mm, panel space. */
   x: number;
   y: number;
-  shape: 'circle' | 'slot' | 'rect';
-  /** Circle: diameter. Slot: slot width. Rect: width. All mm. */
-  d: number;
-  /** Slot: overall length. Rect: height. Unused for circles. */
-  len?: number;
-  /** Corner radius for rect features, mm. */
-  radius?: number;
+  shape: 'circle' | 'rect';
+  /** Width in mm. For a circle, its diameter. */
+  w: number;
+  /** Height in mm. For a circle, equal to the width. */
+  h: number;
+  /** Corner radius in mm. Clamped to half the shorter side when built. */
+  radius: number;
   /** Rotation about the centre, degrees clockwise. */
-  rotation?: number;
+  rotation: number;
   /** Detector confidence 0..1. Undefined for hand-placed features. */
   confidence?: number;
   locked?: boolean;
+}
+
+/** True when the radius is large enough that the rectangle reads as a slot. */
+export function isStadium(f: Feature): boolean {
+  return f.shape === 'rect' && f.radius >= Math.min(f.w, f.h) / 2 - 1e-6;
+}
+
+/**
+ * Bring a feature from an older saved file up to date.
+ *
+ * Files written before the shapes were collapsed carry `d`, `len` and a `slot`
+ * shape. They are still perfectly good designs, so they are converted rather
+ * than rejected: a slot becomes a rectangle whose corner radius rounds it into
+ * the same stadium it always was.
+ */
+export function migrateFeature(raw: unknown): Feature | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const f = raw as Record<string, unknown>;
+  if (typeof f.id !== 'string' || typeof f.x !== 'number' || typeof f.y !== 'number') return null;
+
+  const num = (v: unknown, fallback: number) => (typeof v === 'number' && Number.isFinite(v) ? v : fallback);
+  const shape = f.shape;
+  const rotation = num(f.rotation, 0);
+  const base = {
+    id: f.id,
+    kind: (typeof f.kind === 'string' ? f.kind : 'custom') as FeatureKind,
+    x: f.x,
+    y: f.y,
+    rotation,
+    confidence: typeof f.confidence === 'number' ? f.confidence : undefined,
+    locked: f.locked === true ? true : undefined,
+  };
+
+  if (shape === 'circle') {
+    const d = num(f.w, num(f.d, 6));
+    return { ...base, shape: 'circle', w: d, h: d, radius: d / 2 };
+  }
+  if (shape === 'slot') {
+    // Old slots stored thickness in `d` and overall length in `len`.
+    const thickness = num(f.d, 4);
+    const length = Math.max(num(f.len, thickness), thickness);
+    return { ...base, shape: 'rect', w: length, h: thickness, radius: thickness / 2 };
+  }
+  // Already-new rectangles carry w/h; old ones carried d/len.
+  const w = num(f.w, num(f.d, 10));
+  const h = num(f.h, num(f.len, w));
+  return { ...base, shape: 'rect', w, h, radius: Math.min(num(f.radius, 0), Math.min(w, h) / 2) };
+}
+
+/** Run every feature in a design through the migration. */
+export function migrateDesign(design: PanelDesign): PanelDesign {
+  return {
+    ...design,
+    features: (design.features ?? [])
+      .map((f) => migrateFeature(f))
+      .filter((f): f is Feature => f !== null),
+  };
 }
 
 export type ReliefMode = 'raised' | 'engraved';
@@ -96,6 +166,8 @@ export interface PanelDesign {
   backgroundImageOpacity: number;
   backgroundImageFit: 'cover' | 'contain' | 'stretch';
   includeMountSlots: boolean;
+  /** Added to every cutout when the model is built, to suit your printer. */
+  holeClearanceMm: number;
   features: Feature[];
   decor: DecorElement[];
 }

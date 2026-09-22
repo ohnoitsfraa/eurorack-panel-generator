@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { COMPONENT_SPECS, MOUNT_SLOT, mountSlotPositions, panelHeightMm, panelWidthMm } from '@/lib/eurorack';
 import type { DecorElement, Feature } from '@/lib/types';
 import { useStore } from '@/lib/store';
@@ -20,6 +20,13 @@ import { shapeRingsForPreview } from '@/lib/model/preview';
  */
 
 const HANDLE_PX = 9;
+
+/**
+ * The SVG element, so handles can convert pointer positions into panel
+ * millimetres. Passed by context rather than threaded through props, because
+ * every handle needs it and nothing else does.
+ */
+const CanvasFrame = createContext<React.RefObject<SVGSVGElement | null> | null>(null);
 
 export function PanelCanvas2D() {
   const design = useStore((s) => s.design);
@@ -250,8 +257,11 @@ export function PanelCanvas2D() {
 
   const mountSlots = design.includeMountSlots ? mountSlotPositions(W, H) : [];
   const handleMm = HANDLE_PX * mmPerPx;
+  const soleSelection =
+    selectedIds.length === 1 ? features.find((f) => f.id === selectedIds[0]) : undefined;
 
   return (
+    <CanvasFrame.Provider value={svgRef}>
     <div className="relative h-full w-full overflow-hidden bg-ink-950">
       <svg
         ref={svgRef}
@@ -339,6 +349,10 @@ export function PanelCanvas2D() {
           />
         ))}
 
+        {/* Handles only for a lone selection: resizing several cutouts around
+            different centres at once is more confusing than useful. */}
+        {!tool && soleSelection && <FeatureHandles f={soleSelection} handleMm={handleMm} />}
+
         {marquee && (
           <rect
             x={Math.min(marquee.x0, marquee.x1)}
@@ -370,6 +384,7 @@ export function PanelCanvas2D() {
         <ZoomButton onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); }}>Fit</ZoomButton>
       </div>
     </div>
+    </CanvasFrame.Provider>
   );
 }
 
@@ -406,32 +421,174 @@ function FeatureShape({
     strokeWidth: sw,
     strokeDasharray: shaky && !selected ? `${handleMm * 0.4} ${handleMm * 0.3}` : undefined,
     onPointerDown,
-    style: { cursor: f.locked ? 'default' : 'move' },
+    style: { cursor: 'move' },
   };
-
-  const len = f.len ?? f.d;
-  const rot = f.rotation ?? 0;
 
   return (
     <g>
-      {f.shape === 'circle' && <circle cx={f.x} cy={f.y} r={f.d / 2} {...common} />}
-      {f.shape === 'slot' && (
+      {f.shape === 'circle' ? (
+        <circle cx={f.x} cy={f.y} r={f.w / 2} {...common} />
+      ) : (
         <rect
-          x={f.x - len / 2} y={f.y - f.d / 2} width={len} height={f.d} rx={f.d / 2}
-          transform={`rotate(${rot} ${f.x} ${f.y})`}
-          {...common}
-        />
-      )}
-      {f.shape === 'rect' && (
-        <rect
-          x={f.x - f.d / 2} y={f.y - len / 2} width={f.d} height={len} rx={f.radius ?? 0}
-          transform={`rotate(${rot} ${f.x} ${f.y})`}
+          x={f.x - f.w / 2} y={f.y - f.h / 2} width={f.w} height={f.h}
+          rx={Math.min(f.radius, Math.min(f.w, f.h) / 2)}
+          transform={`rotate(${f.rotation} ${f.x} ${f.y})`}
           {...common}
         />
       )}
       {selected && (
-        <circle cx={f.x} cy={f.y} r={handleMm * 0.22} fill="var(--color-accent)" pointerEvents="none" />
+        <circle cx={f.x} cy={f.y} r={handleMm * 0.18} fill="var(--color-accent)" pointerEvents="none" />
       )}
+    </g>
+  );
+}
+
+type HandleRole = 'size' | 'width' | 'height' | 'corner' | 'radius' | 'rotate';
+
+/**
+ * Drag handles for the selected cutout.
+ *
+ * Shown only for a single selection, because a handle that resizes several
+ * things at once around different centres is more confusing than useful.
+ *
+ * Everything is worked out in the cutout's own rotated frame, so dragging the
+ * width handle of a cutout turned 30° widens it along its own axis rather than
+ * along the screen. Handles keep a constant size on screen regardless of zoom,
+ * which is why their geometry is expressed in `handleMm`.
+ */
+function FeatureHandles({ f, handleMm }: { f: Feature; handleMm: number }) {
+  const updateFeature = useStore((s) => s.updateFeature);
+  const gridMm = useStore((s) => s.gridMm);
+  const svgRef = useContext(CanvasFrame);
+
+  const drag = useRef<{ role: HandleRole; start: Feature } | null>(null);
+  const r = handleMm * 0.42;
+  const rot = (f.rotation * Math.PI) / 180;
+  const cos = Math.cos(rot);
+  const sin = Math.sin(rot);
+
+  /** Panel point -> the cutout's own frame, with rotation undone. */
+  const toLocal = (px: number, py: number) => {
+    const dx = px - f.x;
+    const dy = py - f.y;
+    return { u: dx * cos + dy * sin, v: -dx * sin + dy * cos };
+  };
+  /** The cutout's frame -> panel space, for placing the handles. */
+  const toPanel = (u: number, v: number) => ({
+    x: f.x + u * cos - v * sin,
+    y: f.y + u * sin + v * cos,
+  });
+
+  const pointAt = (e: React.PointerEvent) => {
+    const svg = svgRef?.current;
+    if (!svg) return { x: 0, y: 0 };
+    return new DOMPoint(e.clientX, e.clientY).matrixTransform(svg.getScreenCTM()!.inverse());
+  };
+
+  const snap = (v: number, free: boolean) =>
+    gridMm > 0 && !free ? Math.round(v / gridMm) * gridMm : Math.round(v * 100) / 100;
+
+  const onMove = (e: React.PointerEvent) => {
+    const d = drag.current;
+    if (!d) return;
+    const p = pointAt(e);
+    const { u, v } = toLocal(p.x, p.y);
+    const free = e.metaKey || e.ctrlKey;
+    const min = 0.4;
+
+    if (d.role === 'rotate') {
+      // Shift constrains to 15° steps, the usual way to get a clean right angle.
+      const raw = (Math.atan2(p.y - f.y, p.x - f.x) * 180) / Math.PI;
+      const stepped = e.shiftKey ? Math.round(raw / 15) * 15 : Math.round(raw);
+      updateFeature(f.id, { rotation: ((stepped + 90) % 180) - 90 });
+      return;
+    }
+
+    if (d.role === 'radius') {
+      // Measured inward from the corner along the diagonal.
+      const maxR = Math.min(f.w, f.h) / 2;
+      const fromCorner = Math.hypot(f.w / 2 - Math.abs(u), f.h / 2 - Math.abs(v));
+      updateFeature(f.id, { radius: Math.max(0, Math.min(maxR, fromCorner)) });
+      return;
+    }
+
+    // Resizing is symmetric about the centre: a cutout's position is what has
+    // been carefully placed, so the handle changes its size, not where it sits.
+    const w = Math.max(min, snap(Math.abs(u) * 2, free));
+    const h = Math.max(min, snap(Math.abs(v) * 2, free));
+
+    if (f.shape === 'circle' || d.role === 'size') {
+      const size = Math.max(min, snap(Math.hypot(u, v) * 2, free));
+      updateFeature(f.id, { w: size, h: size, radius: size / 2 });
+      return;
+    }
+    const next =
+      d.role === 'width' ? { w } : d.role === 'height' ? { h } : { w, h };
+    const nw = next.w ?? f.w;
+    const nh = next.h ?? f.h;
+    updateFeature(f.id, { ...next, radius: Math.min(f.radius, Math.min(nw, nh) / 2) });
+  };
+
+  const begin = (role: HandleRole) => (e: React.PointerEvent) => {
+    e.stopPropagation();
+    (e.target as Element).setPointerCapture?.(e.pointerId);
+    drag.current = { role, start: f };
+  };
+  const end = () => { drag.current = null; };
+
+  const handles: Array<{ role: HandleRole; u: number; v: number; cursor: string }> =
+    f.shape === 'circle'
+      ? [{ role: 'size', u: f.w / 2, v: 0, cursor: 'ew-resize' }]
+      : [
+          { role: 'width', u: f.w / 2, v: 0, cursor: 'ew-resize' },
+          { role: 'height', u: 0, v: f.h / 2, cursor: 'ns-resize' },
+          { role: 'corner', u: f.w / 2, v: f.h / 2, cursor: 'nwse-resize' },
+        ];
+
+  const rotateAt = toPanel(0, -f.h / 2 - handleMm * 1.5);
+  const radiusAt = toPanel(f.w / 2 - Math.min(f.radius, Math.min(f.w, f.h) / 2), -f.h / 2);
+
+  return (
+    <g onPointerMove={onMove} onPointerUp={end} onPointerLeave={end}>
+      {f.shape === 'rect' && (
+        <>
+          <line
+            x1={f.x} y1={f.y} x2={rotateAt.x} y2={rotateAt.y}
+            stroke="var(--color-accent)" strokeWidth={handleMm * 0.1} pointerEvents="none"
+          />
+          <circle
+            cx={rotateAt.x} cy={rotateAt.y} r={r}
+            fill="var(--color-ink-950)" stroke="var(--color-accent)" strokeWidth={handleMm * 0.14}
+            style={{ cursor: 'grab' }}
+            onPointerDown={begin('rotate')}
+          >
+            <title>Drag to rotate · Shift for 15° steps</title>
+          </circle>
+          <rect
+            x={radiusAt.x - r * 0.8} y={radiusAt.y - r * 0.8} width={r * 1.6} height={r * 1.6}
+            fill="var(--color-ink-950)" stroke="var(--color-accent)" strokeWidth={handleMm * 0.12}
+            style={{ cursor: 'nwse-resize' }}
+            onPointerDown={begin('radius')}
+          >
+            <title>Drag to round the corners</title>
+          </rect>
+        </>
+      )}
+
+      {handles.map((hd) => {
+        const p = toPanel(hd.u, hd.v);
+        return (
+          <rect
+            key={hd.role}
+            x={p.x - r} y={p.y - r} width={r * 2} height={r * 2}
+            fill="var(--color-accent)" stroke="var(--color-ink-950)" strokeWidth={handleMm * 0.08}
+            style={{ cursor: hd.cursor }}
+            onPointerDown={begin(hd.role)}
+          >
+            <title>Drag to resize · ⌘/Ctrl to ignore the grid</title>
+          </rect>
+        );
+      })}
     </g>
   );
 }

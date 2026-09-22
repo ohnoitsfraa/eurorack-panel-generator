@@ -1,9 +1,141 @@
 'use client';
 
-import { COMPONENT_SPECS, PLACEABLE_KINDS, THICKNESS, panelWidthMm } from '@/lib/eurorack';
-import type { FeatureKind, PanelFormat } from '@/lib/types';
-import { useStore } from '@/lib/store';
+import {
+  COMPONENT_SPECS, HOLE_CLEARANCE, PLACEABLE_KINDS, THICKNESS, hasStandardSize, panelWidthMm,
+} from '@/lib/eurorack';
+import { isStadium, type Feature, type FeatureKind, type PanelFormat } from '@/lib/types';
+import { featureForKind, useStore } from '@/lib/store';
 import { Button, ColorInput, Field, NumberInput, Section, Select, Slider, Toggle } from './ui';
+
+/**
+ * Everything about one cutout.
+ *
+ * Changing the type resets the geometry to that component's standard size,
+ * because that is nearly always what is meant — the exception being a shape
+ * deliberately tuned by hand, which is what Custom is for.
+ */
+function FeatureEditor({ feature: f }: { feature: Feature }) {
+  const updateFeature = useStore((s) => s.updateFeature);
+  const removeFeatures = useStore((s) => s.removeFeatures);
+  const duplicateFeatures = useStore((s) => s.duplicateFeatures);
+  const spec = COMPONENT_SPECS[f.kind];
+  const standard = hasStandardSize(f.kind);
+  const offStandard = standard && f.shape === 'circle' && Math.abs(f.w - spec.holeMm) > 0.01;
+
+  const setSize = (w: number, h: number) =>
+    updateFeature(f.id, {
+      w, h,
+      radius: f.shape === 'circle' ? w / 2 : Math.min(f.radius, Math.min(w, h) / 2),
+    });
+
+  return (
+    <Section title={spec.label}>
+      <Field label="Type">
+        <Select<FeatureKind>
+          value={f.kind}
+          onChange={(kind) => updateFeature(f.id, { ...featureForKind(kind), x: f.x, y: f.y })}
+          options={PLACEABLE_KINDS.map((k) => ({ value: k, label: COMPONENT_SPECS[k].label }))}
+        />
+      </Field>
+
+      <Field label="Shape">
+        <Select
+          value={f.shape}
+          onChange={(shape) =>
+            updateFeature(f.id, shape === 'circle'
+              ? { shape, h: f.w, radius: f.w / 2 }
+              : { shape, radius: Math.min(f.radius, Math.min(f.w, f.h) / 2) })
+          }
+          options={[
+            { value: 'circle', label: 'Circle' },
+            { value: 'rect', label: 'Rectangle' },
+          ]}
+        />
+      </Field>
+
+      <div className="grid grid-cols-2 gap-2">
+        <Field label="X" hint="mm">
+          <NumberInput value={f.x} onChange={(x) => updateFeature(f.id, { x })} step={0.1} />
+        </Field>
+        <Field label="Y" hint="mm">
+          <NumberInput value={f.y} onChange={(y) => updateFeature(f.id, { y })} step={0.1} />
+        </Field>
+      </div>
+
+      {f.shape === 'circle' ? (
+        <Field label="Diameter" hint="mm">
+          <NumberInput
+            value={f.w}
+            onChange={(d) => setSize(d, d)}
+            min={0.2} max={200} step={0.1}
+          />
+        </Field>
+      ) : (
+        <>
+          <div className="grid grid-cols-2 gap-2">
+            <Field label="Width" hint="mm">
+              <NumberInput value={f.w} onChange={(w) => setSize(w, f.h)} min={0.2} max={300} step={0.1} />
+            </Field>
+            <Field label="Height" hint="mm">
+              <NumberInput value={f.h} onChange={(h) => setSize(f.w, h)} min={0.2} max={300} step={0.1} />
+            </Field>
+          </div>
+          <Field label="Corner radius" hint={isStadium(f) ? 'fully rounded' : 'mm'}>
+            <Slider
+              min={0}
+              max={Math.min(f.w, f.h) / 2}
+              step={0.05}
+              value={Math.min(f.radius, Math.min(f.w, f.h) / 2)}
+              onChange={(radius) => updateFeature(f.id, { radius })}
+            />
+          </Field>
+        </>
+      )}
+
+      {f.shape === 'rect' && (
+        <Field label="Rotation" hint={`${f.rotation.toFixed(0)}°`}>
+          <Slider
+            min={-90} max={90} step={1}
+            value={f.rotation}
+            onChange={(rotation) => updateFeature(f.id, { rotation })}
+          />
+        </Field>
+      )}
+
+      {offStandard && (
+        <div className="rounded-md border border-ink-700 bg-ink-900 px-2.5 py-2">
+          <p className="text-[11px] leading-relaxed text-ink-300">
+            A {spec.label.toLowerCase()} normally needs {spec.holeMm} mm. This one
+            is {f.w.toFixed(2)} mm.
+          </p>
+          <Button
+            onClick={() => setSize(spec.holeMm, spec.holeMm)}
+            className="mt-1.5 w-full"
+          >
+            Reset to {spec.holeMm} mm
+          </Button>
+        </div>
+      )}
+
+      {f.confidence !== undefined && (
+        <p className="text-[11px] text-ink-400">
+          Detector confidence {Math.round(f.confidence * 100)}%
+        </p>
+      )}
+
+      <Toggle
+        checked={f.locked ?? false}
+        onChange={(locked) => updateFeature(f.id, { locked })}
+        label="Keep when re-detecting"
+      />
+
+      <div className="grid grid-cols-2 gap-1">
+        <Button onClick={() => duplicateFeatures([f.id])}>Duplicate</Button>
+        <Button variant="danger" onClick={() => removeFeatures([f.id])}>Delete</Button>
+      </div>
+    </Section>
+  );
+}
 
 /** Panel-level settings: format, size, colour, background. */
 export function PanelTab() {
@@ -64,6 +196,20 @@ export function PanelTab() {
           onChange={(includeMountSlots) => setDesign({ includeMountSlots })}
           label="Add M3 mounting slots"
         />
+
+        <Field label="Hole allowance" hint={`+${design.holeClearanceMm.toFixed(2)} mm`}>
+          <Slider
+            min={HOLE_CLEARANCE.min} max={HOLE_CLEARANCE.max} step={0.05}
+            value={design.holeClearanceMm}
+            onChange={(holeClearanceMm) => setDesign({ holeClearanceMm })}
+          />
+        </Field>
+        <p className="-mt-1 text-[11px] leading-relaxed text-ink-400">
+          Added to every cutout when the model is built. Printed holes come out
+          slightly under size as the plastic cools, so cutouts are drawn at the
+          manufacturer's figure and opened up here to suit your printer. Print a
+          test strip and adjust once.
+        </p>
       </Section>
 
       <Section title="Finish">
@@ -259,90 +405,7 @@ export function FeaturesTab() {
         </Section>
       )}
 
-      {picked.length === 1 && (
-        <Section title={COMPONENT_SPECS[picked[0].kind].label}>
-          <Field label="Type">
-            <Select<FeatureKind>
-              value={picked[0].kind}
-              onChange={(kind) => {
-                const spec = COMPONENT_SPECS[kind];
-                updateFeature(picked[0].id, {
-                  kind,
-                  shape: spec.shape,
-                  d: spec.holeMm || picked[0].d,
-                  len: spec.shape === 'slot' ? spec.slotLengthMm ?? picked[0].len ?? 40 : picked[0].len,
-                });
-              }}
-              options={PLACEABLE_KINDS.map((k) => ({ value: k, label: COMPONENT_SPECS[k].label }))}
-            />
-          </Field>
-
-          <div className="grid grid-cols-2 gap-2">
-            <Field label="X" hint="mm">
-              <NumberInput value={picked[0].x} onChange={(x) => updateFeature(picked[0].id, { x })} step={0.1} />
-            </Field>
-            <Field label="Y" hint="mm">
-              <NumberInput value={picked[0].y} onChange={(y) => updateFeature(picked[0].id, { y })} step={0.1} />
-            </Field>
-          </div>
-
-          <div className="grid grid-cols-2 gap-2">
-            <Field label={picked[0].shape === 'circle' ? 'Diameter' : 'Width'} hint="mm">
-              <NumberInput
-                value={picked[0].d}
-                onChange={(d) => updateFeature(picked[0].id, { d })}
-                min={0.2} max={200} step={0.1}
-              />
-            </Field>
-            {picked[0].shape !== 'circle' && (
-              <Field label={picked[0].shape === 'slot' ? 'Length' : 'Height'} hint="mm">
-                <NumberInput
-                  value={picked[0].len ?? picked[0].d}
-                  onChange={(len) => updateFeature(picked[0].id, { len })}
-                  min={0.2} max={200} step={0.1}
-                />
-              </Field>
-            )}
-          </div>
-
-          {picked[0].shape !== 'circle' && (
-            <Field label="Rotation" hint={`${(picked[0].rotation ?? 0).toFixed(0)}°`}>
-              <Slider
-                min={-90} max={90} step={1}
-                value={picked[0].rotation ?? 0}
-                onChange={(rotation) => updateFeature(picked[0].id, { rotation })}
-              />
-            </Field>
-          )}
-
-          {picked[0].shape === 'rect' && (
-            <Field label="Corner radius" hint="mm">
-              <NumberInput
-                value={picked[0].radius ?? 0}
-                onChange={(radius) => updateFeature(picked[0].id, { radius })}
-                min={0} max={20} step={0.1}
-              />
-            </Field>
-          )}
-
-          {picked[0].confidence !== undefined && (
-            <p className="text-[11px] text-ink-400">
-              Detector confidence {Math.round(picked[0].confidence * 100)}%
-            </p>
-          )}
-
-          <Toggle
-            checked={picked[0].locked ?? false}
-            onChange={(locked) => updateFeature(picked[0].id, { locked })}
-            label="Keep when re-detecting"
-          />
-
-          <div className="grid grid-cols-2 gap-1">
-            <Button onClick={() => duplicateFeatures([picked[0].id])}>Duplicate</Button>
-            <Button variant="danger" onClick={() => removeFeatures([picked[0].id])}>Delete</Button>
-          </div>
-        </Section>
-      )}
+      {picked.length === 1 && <FeatureEditor feature={picked[0]} />}
     </>
   );
 }

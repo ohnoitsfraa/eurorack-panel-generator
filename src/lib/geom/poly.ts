@@ -75,6 +75,16 @@ export function bbox(rings: Ring[]): { x0: number; y0: number; x1: number; y1: n
   return { x0, y0, x1, y1 };
 }
 
+/**
+ * Facet tolerance for circles, in mm.
+ *
+ * Holes are the functional part of a panel, so this is tighter than a purely
+ * visual approximation would need. At 0.02 mm a 6 mm hole is a 28-sided
+ * polygon bulging 0.04 mm at the vertices, comfortably inside what a printer
+ * can resolve, for a few hundred extra triangles across a whole panel.
+ */
+export const CIRCLE_TOL_MM = 0.02;
+
 /** Smallest segment count that keeps a circle's facet error under `tolMm`. */
 export function segmentsForRadius(radiusMm: number, tolMm = 0.05): number {
   if (radiusMm <= tolMm) return 8;
@@ -82,13 +92,28 @@ export function segmentsForRadius(radiusMm: number, tolMm = 0.05): number {
   return Math.max(12, Math.min(160, n));
 }
 
-export function circleRing(cx: number, cy: number, d: number, tolMm = 0.05): Ring {
+/**
+ * A circle, as a polygon that encloses it rather than fits inside it.
+ *
+ * The obvious construction puts every vertex on the circle, which makes the
+ * polygon slightly *smaller* than the circle everywhere between vertices — so
+ * a 6 mm hole comes out at about 5.98 mm. For a hole that is the wrong
+ * direction to be wrong in: a jack bushing that will not fit is a ruined
+ * panel, while a hair of extra clearance is invisible behind the nut. Printers
+ * also shrink holes as the plastic cools, so the two errors compound.
+ *
+ * Pushing the vertices out by 1/cos(pi/n) makes the flats tangent to the true
+ * circle instead, so the hole measures at least its nominal size in every
+ * direction.
+ */
+export function circleRing(cx: number, cy: number, d: number, tolMm = CIRCLE_TOL_MM): Ring {
   const r = d / 2;
   const n = segmentsForRadius(r, tolMm);
+  const rOut = r / Math.cos(Math.PI / n);
   const out: Ring = [];
   for (let i = 0; i < n; i++) {
     const a = (i / n) * Math.PI * 2;
-    out.push({ x: cx + Math.cos(a) * r, y: cy + Math.sin(a) * r });
+    out.push({ x: cx + Math.cos(a) * rOut, y: cy + Math.sin(a) * rOut });
   }
   return out;
 }

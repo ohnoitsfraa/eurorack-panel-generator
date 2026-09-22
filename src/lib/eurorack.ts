@@ -91,8 +91,19 @@ export const THICKNESS = { min: 1.2, max: 4.0, default: 2.0 } as const;
 export interface ComponentSpec {
   kind: FeatureKind;
   label: string;
-  /** Cutout diameter (or width, for slots) in mm. */
+  /**
+   * The nominal panel cutout for this component, in mm — the size a
+   * manufacturer's drawing gives, before any allowance for your printer.
+   *
+   * Detection measures a hole to work out *what* it is, then throws the
+   * measurement away and uses this. A photograph will never measure twenty
+   * jacks at exactly the same size, and a panel where every jack differs by a
+   * tenth of a millimetre is wrong: they take identical hardware, so they take
+   * identical holes.
+   */
   holeMm: number;
+  /** For a rectangular cutout, the nominal height. Width comes from holeMm. */
+  holeHeightMm?: number;
   /**
    * Plausible measured diameter in a photograph of an assembled module, where
    * you see the fitted hardware: a jack's nut, a knob, an LED lens.
@@ -125,21 +136,49 @@ export type FeatureKind =
   | 'mount'
   | 'custom';
 
+/**
+ * The catalogue.
+ *
+ * Nominal cutouts come from the hardware nearly every module uses: a 3.5 mm
+ * jack is a Thonkiconn-style PJ301M/PJ398SM with a 6 mm threaded bushing; a
+ * panel pot is an Alpha 9 mm with a 7 mm bushing; sub-miniature toggles are
+ * M6. Those are the sizes the parts are specified at, so those are the sizes
+ * stored. Allowance for a particular printer is a separate, adjustable setting
+ * rather than something baked into every hole — see `holeClearanceMm`.
+ */
 export const COMPONENT_SPECS: Record<FeatureKind, ComponentSpec> = {
-  jack: { kind: 'jack', label: '3.5 mm jack', holeMm: 6.2, visualRangeMm: [5.2, 9.8], artworkRangeMm: [3.2, 5.4], shape: 'circle' },
-  led: { kind: 'led', label: 'LED 3 mm', holeMm: 3.1, visualRangeMm: [2.4, 3.9], artworkRangeMm: [1.6, 3.2], shape: 'circle' },
-  led5: { kind: 'led5', label: 'LED 5 mm', holeMm: 5.1, visualRangeMm: [4.4, 5.9], artworkRangeMm: [4.6, 5.8], shape: 'circle' },
-  pot: { kind: 'pot', label: 'Potentiometer', holeMm: 7.2, visualRangeMm: [9.0, 24.0], artworkRangeMm: [8.0, 26.0], shape: 'circle' },
+  jack: { kind: 'jack', label: '3.5 mm jack', holeMm: 6.0, visualRangeMm: [5.2, 9.8], artworkRangeMm: [3.2, 5.4], shape: 'circle' },
+  led: { kind: 'led', label: 'LED 3 mm', holeMm: 3.0, visualRangeMm: [2.4, 3.9], artworkRangeMm: [1.6, 3.2], shape: 'circle' },
+  led5: { kind: 'led5', label: 'LED 5 mm', holeMm: 5.0, visualRangeMm: [4.4, 5.9], artworkRangeMm: [4.6, 5.8], shape: 'circle' },
+  pot: { kind: 'pot', label: 'Potentiometer', holeMm: 7.0, visualRangeMm: [9.0, 24.0], artworkRangeMm: [8.0, 26.0], shape: 'circle' },
   trimmer: { kind: 'trimmer', label: 'Trimmer', holeMm: 4.0, visualRangeMm: [3.9, 5.2], artworkRangeMm: [2.8, 4.4], shape: 'circle' },
-  encoder: { kind: 'encoder', label: 'Rotary encoder', holeMm: 7.2, visualRangeMm: [9.0, 22.0], artworkRangeMm: [8.0, 22.0], shape: 'circle' },
+  encoder: { kind: 'encoder', label: 'Rotary encoder', holeMm: 7.0, visualRangeMm: [9.0, 22.0], artworkRangeMm: [8.0, 22.0], shape: 'circle' },
   button: { kind: 'button', label: 'Tact button', holeMm: 5.0, visualRangeMm: [3.5, 8.0], artworkRangeMm: [5.0, 9.0], shape: 'circle' },
   buttonLarge: { kind: 'buttonLarge', label: 'Large button', holeMm: 12.0, visualRangeMm: [9.5, 17.0], artworkRangeMm: [9.0, 17.0], shape: 'circle' },
-  toggle: { kind: 'toggle', label: 'Toggle switch', holeMm: 6.1, visualRangeMm: [4.2, 7.0], artworkRangeMm: [3.0, 5.0], shape: 'circle' },
-  slider: { kind: 'slider', label: 'Slider / fader', holeMm: 4.0, visualRangeMm: [2.0, 7.0], artworkRangeMm: [1.5, 7.0], shape: 'slot', slotLengthMm: 60 },
-  display: { kind: 'display', label: 'Display cutout', holeMm: 0, visualRangeMm: [10, 80], artworkRangeMm: [10, 80], shape: 'rect' },
-  mount: { kind: 'mount', label: 'Mounting slot', holeMm: MOUNT_SLOT.heightMm, visualRangeMm: [3, 6], artworkRangeMm: [3, 6], shape: 'slot', slotLengthMm: MOUNT_SLOT.lengthMm },
+  toggle: { kind: 'toggle', label: 'Toggle switch', holeMm: 6.0, visualRangeMm: [4.2, 7.0], artworkRangeMm: [3.0, 5.0], shape: 'circle' },
+  // A fader's travel slot is the one component whose length genuinely varies
+  // by model, so the measured length is kept and only the width standardised.
+  slider: { kind: 'slider', label: 'Slider / fader', holeMm: 4.0, holeHeightMm: 60, visualRangeMm: [2.0, 7.0], artworkRangeMm: [1.5, 7.0], shape: 'rect' },
+  display: { kind: 'display', label: 'Display cutout', holeMm: 26, holeHeightMm: 15, visualRangeMm: [10, 80], artworkRangeMm: [10, 80], shape: 'rect' },
+  mount: { kind: 'mount', label: 'Mounting slot', holeMm: MOUNT_SLOT.lengthMm, holeHeightMm: MOUNT_SLOT.heightMm, visualRangeMm: [3, 6], artworkRangeMm: [3, 6], shape: 'rect' },
   custom: { kind: 'custom', label: 'Custom', holeMm: 5, visualRangeMm: [1, 100], artworkRangeMm: [1, 100], shape: 'circle' },
 };
+
+/**
+ * Extra diameter added to every cutout when the model is built.
+ *
+ * Printers undershoot holes: plastic squeezes inward as it cools and a hole
+ * comes out a little smaller than drawn. Rather than inflating every nominal
+ * size and losing track of what the real specification was, the allowance is
+ * kept separate and applied at the end, so it can be dialled in for a printer
+ * without editing a single panel.
+ */
+export const HOLE_CLEARANCE = { min: 0, max: 0.6, default: 0.2 } as const;
+
+/** Whether a component's size is fixed by its hardware or genuinely varies. */
+export function hasStandardSize(kind: FeatureKind): boolean {
+  return kind !== 'custom' && kind !== 'display' && kind !== 'slider';
+}
 
 /**
  * What kind of picture we are looking at.
@@ -153,7 +192,7 @@ export function rangeFor(spec: ComponentSpec, source: SourceKind): [number, numb
   return source === 'artwork' ? spec.artworkRangeMm : spec.visualRangeMm;
 }
 
-/** Kinds offered in the UI as manual "add a feature" options, in a sensible order. */
+/** Kinds offered in the UI as manual "add a cutout" options, in a sensible order. */
 export const PLACEABLE_KINDS: FeatureKind[] = [
   'jack', 'pot', 'led', 'led5', 'button', 'buttonLarge',
   'toggle', 'slider', 'encoder', 'trimmer', 'display', 'custom',

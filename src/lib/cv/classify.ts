@@ -17,6 +17,8 @@ export interface Candidate {
   /** Blobs that produced this candidate across the threshold ladder. */
   support: number;
   score: number;
+  /** What was actually measured, before it was snapped to a standard size. */
+  measuredMm: number;
 }
 
 /** Shape decision thresholds, tuned against renders and photos alike. */
@@ -54,15 +56,18 @@ export function classifyBlob(b: Blob, mmPerPx: number, source: SourceKind = 'pho
     // Rings are a weaker signal than solid discs, so they start lower and have
     // to earn their place through the stability check.
     const score = 0.65 * sizeScore;
+    const d = COMPONENT_SPECS[kind].holeMm;
     return {
       support: 1,
       score,
+      measuredMm: ringMm,
       feature: {
         id: uid(),
         kind,
         x: 0, y: 0,
         shape: 'circle',
-        d: COMPONENT_SPECS[kind].holeMm,
+        w: d, h: d, radius: d / 2,
+        rotation: 0,
         confidence: clamp01(score),
       },
     };
@@ -76,34 +81,41 @@ export function classifyBlob(b: Blob, mmPerPx: number, source: SourceKind = 'pho
     const shapeScore = 1 - Math.abs(b.rectFill - CIRCLE_FILL) / 0.14;
     const sizeScore = rangeScore(eqMm, rangeFor(COMPONENT_SPECS[kind], source));
     const score = 0.5 * shapeScore + 0.5 * sizeScore;
+    const d = COMPONENT_SPECS[kind].holeMm;
     return {
       support: 1,
       score,
+      // Kept so the caller can group holes that are really the same component.
+      measuredMm: eqMm,
       feature: {
         id: uid(),
         kind,
         x: 0, y: 0, // filled in by the caller, which owns the crop transform
         shape: 'circle',
-        d: COMPONENT_SPECS[kind].holeMm,
+        w: d, h: d, radius: d / 2,
+        rotation: 0,
         confidence: clamp01(score),
       },
     };
   }
 
   if (isSlot) {
-    // A detected fader silhouette is the slider's travel slot. Panel cutouts
-    // for faders are usually a touch wider than the visible gap, but we keep
-    // the measurement and let the user adjust rather than guessing.
+    // A fader's travel slot: a rectangle rounded all the way into a stadium.
+    // Slot width is standardised like any other component, but the length
+    // genuinely varies by fader model, so the measurement is kept.
+    const width = COMPONENT_SPECS.slider.holeMm;
     return {
       support: 1,
       score: 0.55 * b.rectFill + 0.45 * Math.min(1, b.elongation / 8),
+      measuredMm: minorMm,
       feature: {
         id: uid(),
         kind: 'slider',
         x: 0, y: 0,
-        shape: 'slot',
-        d: round2(minorMm),
-        len: round2(majorMm),
+        shape: 'rect',
+        w: round2(majorMm),
+        h: width,
+        radius: width / 2,
         rotation: round2((b.theta * 180) / Math.PI),
         confidence: clamp01(0.4 + 0.4 * b.rectFill),
       },
@@ -114,13 +126,14 @@ export function classifyBlob(b: Blob, mmPerPx: number, source: SourceKind = 'pho
     return {
       support: 1,
       score: b.rectFill,
+      measuredMm: majorMm,
       feature: {
         id: uid(),
         kind: 'display',
         x: 0, y: 0,
         shape: 'rect',
-        d: round2(majorMm),
-        len: round2(minorMm),
+        w: round2(majorMm),
+        h: round2(minorMm),
         radius: 0.5,
         rotation: round2((b.theta * 180) / Math.PI),
         confidence: clamp01(b.rectFill * 0.8),

@@ -3,7 +3,7 @@
 import { create } from 'zustand';
 import type { Font } from 'opentype.js';
 import {
-  COMPONENT_SPECS, PLACEABLE_KINDS, hpFromWidthMm, panelHeightMm, panelWidthMm,
+  COMPONENT_SPECS, HOLE_CLEARANCE, PLACEABLE_KINDS, hpFromWidthMm, panelHeightMm, panelWidthMm,
   type FeatureKind, type PanelFormat, type SourceKind,
 } from './eurorack';
 import {
@@ -131,6 +131,7 @@ export const DEFAULT_DESIGN: PanelDesign = {
   backgroundImageOpacity: 1,
   backgroundImageFit: 'cover',
   includeMountSlots: true,
+  holeClearanceMm: HOLE_CLEARANCE.default,
   features: [],
   decor: [],
 };
@@ -235,17 +236,11 @@ export const useStore = create<State>((set, get) => ({
   },
 
   addFeature: (kind, x, y) => {
-    const spec = COMPONENT_SPECS[kind];
     const f: Feature = {
+      ...featureForKind(kind),
       id: uid(),
-      kind,
       x,
       y,
-      shape: spec.shape,
-      d: spec.holeMm || 5,
-      len: spec.shape === 'slot' ? spec.slotLengthMm ?? 40 : spec.shape === 'rect' ? 20 : undefined,
-      radius: spec.shape === 'rect' ? 1 : undefined,
-      rotation: 0,
       locked: true, // hand-placed, so a re-detect must not wipe it
     };
     set((s) => ({ design: { ...s.design, features: [...s.design.features, f] }, selectedIds: [f.id] }));
@@ -663,6 +658,31 @@ export const useStore = create<State>((set, get) => ({
 
 function round2(v: number): number {
   return Math.round(v * 100) / 100;
+}
+
+/**
+ * A cutout at this component's standard size.
+ *
+ * Shared by placing one by hand and by changing an existing cutout's type, so
+ * that both routes produce the same geometry: a jack is a jack whether it was
+ * detected, placed, or converted from something else.
+ */
+export function featureForKind(kind: FeatureKind): Omit<Feature, 'id'> {
+  const spec = COMPONENT_SPECS[kind];
+  const w = spec.holeMm || 5;
+  if (spec.shape === 'circle') {
+    return { kind, x: 0, y: 0, shape: 'circle', w, h: w, radius: w / 2, rotation: 0 };
+  }
+  const h = spec.holeHeightMm ?? w;
+  // Faders and mounting slots are stadiums; a display cutout is a soft-cornered
+  // rectangle rather than a rounded-off one.
+  const stadium = kind === 'slider' || kind === 'mount';
+  return {
+    kind, x: 0, y: 0, shape: 'rect',
+    w: Math.max(w, h), h: Math.min(w, h),
+    radius: stadium ? Math.min(w, h) / 2 : 1,
+    rotation: kind === 'slider' ? 90 : 0,
+  };
 }
 
 /** Hand a JSON file to the browser as a download. */
