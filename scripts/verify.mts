@@ -878,6 +878,65 @@ console.log('\nCutout shapes, standards and clearance');
   }
 }
 
+// --------------------------------------------------------- 6c. drag alignment
+console.log('\nAlignment guides');
+{
+  const { alignTo, snapToGrid } = await import('../src/lib/align');
+  const panel = { w: 100, h: 128.5 };
+  const t = (id: string, x: number, y: number) => ({ id, x, y, rx: 3, ry: 3 });
+
+  // Two knobs far apart that should share a column.
+  const col = alignTo(20.4, 90, [t('a', 20, 20), t('b', 60, 20)], panel, 1);
+  if (col.x === 20 && col.guides.some((g) => g.axis === 'x' && g.at === 20)) {
+    pass('a near miss snaps onto a shared column, however far apart');
+  } else {
+    fail(`x came out ${col.x} with ${col.guides.length} guides`);
+  }
+
+  // The guide has to reach both, or it does not show what lined up.
+  const g = col.guides.find((gg) => gg.axis === 'x')!;
+  if (g.from <= 17 && g.to >= 90) pass('the guide spans from one to the other');
+  else fail(`guide spans ${g.from}–${g.to}`);
+
+  // Out of range, nothing happens.
+  const far = alignTo(24, 90, [t('a', 20, 20)], panel, 1);
+  if (far.x === 24 && far.guides.every((gg) => gg.axis !== 'x')) pass('a miss is left alone');
+  else fail('something snapped that should not have');
+
+  // Both axes at once, against different things.
+  const both = alignTo(20.3, 60.4, [t('a', 20, 20), t('b', 70, 60)], panel, 1);
+  if (both.x === 20 && both.y === 60 && both.guides.length === 2) {
+    pass('a cutout can line up with one thing across and another down');
+  } else {
+    fail(`both axes: x=${both.x} y=${both.y} guides=${both.guides.length}`);
+  }
+
+  // The panel's own centre line counts as something to align to.
+  const centre = alignTo(50.3, 10, [], panel, 1);
+  if (centre.x === 50 && centre.guides[0]?.source === 'panel') {
+    pass('the panel centre line is offered too');
+  } else {
+    fail(`panel centre: x=${centre.x}, source=${centre.guides[0]?.source}`);
+  }
+
+  // Nearest wins when two candidates are both in range.
+  const nearest = alignTo(20.8, 90, [t('a', 20, 20), t('b', 21.5, 20)], panel, 2);
+  if (nearest.x === 21.5) pass('the nearer of two candidates wins');
+  else fail(`picked ${nearest.x} over the nearer 21.5`);
+
+  // A guide should mention everything sharing that axis, not just one.
+  const many = alignTo(30.2, 100, [t('a', 30, 10), t('b', 30, 50), t('c', 80, 50)], panel, 1);
+  const gx = many.guides.find((gg) => gg.axis === 'x')!;
+  if (gx.from <= 7 && gx.to >= 100) pass('the guide covers every cutout in the column');
+  else fail(`column guide spans ${gx.from}–${gx.to}`);
+
+  if (snapToGrid(7.3, 5) === 5 && snapToGrid(7.6, 5) === 10 && snapToGrid(7.34, 0) === 7.34) {
+    pass('grid snapping still rounds as it did');
+  } else {
+    fail('grid snapping changed behaviour');
+  }
+}
+
 // ------------------------------------------------------- 7. files and storage
 console.log('\nExport, import and local storage');
 {

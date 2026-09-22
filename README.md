@@ -106,6 +106,18 @@ Text is thin at panel sizes, so each element has an invisible hit area over its
 bounding box — you do not have to land the pointer on a 0.4 mm letter stroke to
 move a label.
 
+Dragging shows alignment guides. Panels are built out of rows and columns, and
+getting two things onto the same axis by eye is the fiddliest part of laying one
+out — so while something is being dragged its centre is compared against
+everything else, and when it comes close to sharing an axis it snaps on and a
+line shows what it lined up with. The panel's own centre line counts too, drawn
+in a different colour. Hold ⌘/Ctrl to ignore all of it.
+
+Alignment is decided before the grid, because lining two things up is the more
+specific intention; the grid only fills in where nothing lined up. A multiple
+selection is snapped by the cutout you grabbed and the rest follow, so a group
+keeps its internal spacing instead of each piece snapping somewhere different.
+
 Selecting a single cutout gives it handles: resize from the edges or the
 corner, rotate from the arm above it, and drag the small square inward to round
 the corners. Resizing works about the centre, since where a cutout sits is
@@ -253,6 +265,9 @@ print, so the script checks the properties a preview cannot show:
 - cutouts hold their standard sizes: every jack the same, circles never cut
   under their nominal diameter, and designs written before the shapes were
   collapsed still open
+- alignment snaps to a shared axis however far apart two cutouts are, draws a
+  guide reaching both, takes the nearer of two candidates, and leaves a miss
+  alone
 - editor actions hold up: duplicating returns the new ids and copies land
   exactly on the original (which is what Alt-drag relies on), dragging artwork
   translates its outlines, and designs round-trip through storage

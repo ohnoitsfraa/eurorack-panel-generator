@@ -141,6 +141,64 @@ async function open() {
   await page.close();
 }
 
+// --- alignment guides ---
+{
+  const { page, problems } = await open();
+  await page.getByRole('button', { name: 'Cutouts', exact: true }).click();
+  const svg = page.locator('svg').first();
+
+  /** Panel millimetres to viewport pixels, through the SVG's own transform. */
+  const toScreen = (mx: number, my: number) =>
+    page.evaluate(([x, y]) => {
+      const el = document.querySelector('svg')!;
+      const p = new DOMPoint(x, y).matrixTransform(el.getScreenCTM()!);
+      return { x: p.x, y: p.y };
+    }, [mx, my] as [number, number]);
+
+  const place = async (mx: number, my: number) => {
+    await page.getByRole('button', { name: 'Circle', exact: true }).click();
+    const p = await toScreen(mx, my);
+    await page.mouse.click(p.x, p.y);
+    await page.waitForTimeout(200);
+  };
+
+  // Well clear of the panel's own centre line, which would otherwise be the
+  // nearer thing to snap to and would not test alignment between cutouts.
+  await place(31, 25);
+  await place(32.2, 105);
+
+  const from = await toScreen(32.2, 105);
+  const to = await toScreen(31.6, 105);
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  await page.mouse.move(to.x, to.y, { steps: 12 });
+  await page.waitForTimeout(300);
+
+  const lines = await page.locator('svg line').count();
+  const status = await page.locator('body').innerText();
+  if (lines > 0) pass('a guide line appears while dragging into alignment');
+  else fail('no guide appeared');
+  if (/Aligned/i.test(status)) pass('the status line says it is aligned');
+  else fail('nothing said the cutout had aligned');
+
+  await page.mouse.up();
+  await page.waitForTimeout(300);
+
+  const xs = await page.locator('svg circle').evaluateAll((els) =>
+    [...new Set(els.map((e) => +(e.getAttribute('cx') ?? 0)).filter((v) => v > 25 && v < 60))]);
+  if (xs.length === 1 && Math.abs(xs[0] - 31) < 0.01) {
+    pass('the dragged cutout snaps onto the other one\'s column');
+  } else {
+    fail(`columns after the drag: ${xs.map((v) => v.toFixed(2)).join(', ')}, expected just 31`);
+  }
+  if ((await page.locator('svg line').count()) === 0) pass('guides disappear once the drag ends');
+  else fail('guides were left on screen after the drag');
+
+  if (problems.length === 0) pass('no uncaught errors while aligning');
+  else fail(`while aligning: ${[...new Set(problems)].join(' | ')}`);
+  await page.close();
+}
+
 // --- a ModularGrid link, pasted in either place ---
 for (const [tab, placeholder, button] of [
   ['ModularGrid', 'Paste a link, or type a name', 'Load'],

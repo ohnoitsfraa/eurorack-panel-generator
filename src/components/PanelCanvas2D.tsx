@@ -6,6 +6,7 @@ import type { DecorElement, Feature } from '@/lib/types';
 import { useStore } from '@/lib/store';
 import { textToRings } from '@/lib/model/text';
 import { bbox, type Ring } from '@/lib/geom/poly';
+import { alignTo, snapToGrid, type AlignTarget, type Guide } from '@/lib/align';
 import type { Font as OpentypeFont } from 'opentype.js';
 import { shapeRingsForPreview } from '@/lib/model/preview';
 
@@ -27,6 +28,18 @@ const HANDLE_PX = 9;
  * every handle needs it and nothing else does.
  */
 const CanvasFrame = createContext<React.RefObject<SVGSVGElement | null> | null>(null);
+
+/**
+ * One drag handles cutouts and decor together.
+ *
+ * Each item remembers where it started rather than accumulating deltas, so a
+ * long drag cannot drift, and snapping stays anchored to the original position
+ * instead of compounding rounding on every pointer move.
+ */
+type DragItem =
+  | { kind: 'feature'; id: string; ox: number; oy: number }
+  | { kind: 'decor'; id: string; ox: number; oy: number }
+  | { kind: 'art'; id: string; rings: Ring[] };
 
 export function PanelCanvas2D() {
   const design = useStore((s) => s.design);
@@ -72,12 +85,29 @@ export function PanelCanvas2D() {
     return { x: pt.x, y: pt.y };
   }, []);
 
-  /** Millimetres per screen pixel, for sizing handles that must stay constant. */
-  const mmPerPx = useMemo(() => {
+  /**
+   * Millimetres per screen pixel.
+   *
+   * Taken from the SVG's own transform rather than from its width. The view
+   * box is fitted inside the element with `meet`, so whenever the element's
+   * shape differs from the panel's the drawing is letterboxed and the real
+   * scale is set by whichever axis runs out first. Dividing by the width gets
+   * it wrong by that ratio, which made handles the wrong size and put the
+   * alignment tolerance out by several times.
+   */
+  const [mmPerPx, setMmPerPx] = useState(viewW / 800);
+  useEffect(() => {
     const svg = svgRef.current;
-    if (!svg) return viewW / 800;
-    return viewW / (svg.clientWidth || 800);
-  }, [viewW, zoom]);
+    if (!svg) return;
+    const measure = () => {
+      const ctm = svg.getScreenCTM();
+      if (ctm && ctm.a > 0) setMmPerPx(1 / ctm.a);
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(svg);
+    return () => ro.disconnect();
+  }, [viewW, viewH, zoom, pan.x, pan.y]);
 
   const snap = useCallback(
     (v: number, off: boolean) => (gridMm > 0 && !off ? Math.round(v / gridMm) * gridMm : round2(v)),
@@ -87,18 +117,20 @@ export function PanelCanvas2D() {
   // --- dragging ---
 
   /**
-   * One drag handles cutouts and decor together.
+   * The item under the cursor when the drag began.
    *
-   * Each item remembers where it started rather than accumulating deltas, so a
-   * long drag cannot drift, and snapping stays anchored to the original
-   * position instead of compounding rounding on every pointer move.
+   * Snapping is worked out for this one and the resulting offset applied to
+   * everything else in the selection, so a group keeps its internal spacing.
+   * Snapping each item on its own quietly rearranges the group.
    */
-  type DragItem =
-    | { kind: 'feature'; id: string; ox: number; oy: number }
-    | { kind: 'decor'; id: string; ox: number; oy: number }
-    | { kind: 'art'; id: string; rings: Ring[] };
+  const drag = useRef<{
+    items: DragItem[];
+    anchor: { ox: number; oy: number } | null;
+    start: { x: number; y: number };
+    moved: boolean;
+  } | null>(null);
 
-  const drag = useRef<{ items: DragItem[]; start: { x: number; y: number }; moved: boolean } | null>(null);
+  const [guides, setGuides] = useState<Guide[]>([]);
 
   /**
    * Snapshot what a drag will move.
@@ -155,13 +187,15 @@ export function PanelCanvas2D() {
       if (copies.length) {
         select(copies);
         setDuplicating({ from: origins });
-        drag.current = { items: dragItemsFor(copies), start: toMm(e), moved: false };
+        const items = dragItemsFor(copies);
+        drag.current = { items, anchor: anchorOf(items, copies[0]), start: toMm(e), moved: false };
         return;
       }
     }
 
     select(base);
-    drag.current = { items: dragItemsFor(base), start: toMm(e), moved: false };
+    const items = dragItemsFor(base);
+    drag.current = { items, anchor: anchorOf(items, id), start: toMm(e), moved: false };
     void isDecor;
   };
 
@@ -169,19 +203,42 @@ export function PanelCanvas2D() {
     const d = drag.current;
     if (d) {
       const now = toMm(e);
-      const dx = now.x - d.start.x;
-      const dy = now.y - d.start.y;
+      let dx = now.x - d.start.x;
+      let dy = now.y - d.start.y;
       if (Math.abs(dx) > 0.05 || Math.abs(dy) > 0.05) d.moved = true;
-      // Cmd/Ctrl temporarily ignores the grid, for nudging something into a
-      // spot the grid will not reach.
+      // Cmd/Ctrl temporarily ignores both the grid and the guides, for nudging
+      // something into a spot neither would allow.
       const free = e.metaKey || e.ctrlKey;
+
+      if (d.anchor) {
+        const raw = { x: d.anchor.ox + dx, y: d.anchor.oy + dy };
+        if (free) {
+          setGuides([]);
+          dx = round2(raw.x) - d.anchor.ox;
+          dy = round2(raw.y) - d.anchor.oy;
+        } else {
+          // Alignment is decided first and the grid only fills in where
+          // nothing lined up, because lining two things up is the more
+          // specific intention of the two.
+          const moving = new Set(d.items.map((i) => i.id));
+          const targets = alignTargets(features, decor, moving);
+          const self = selfExtent(features, decor, d.items);
+          const res = alignTo(raw.x, raw.y, targets, { w: W, h: H }, HANDLE_PX * mmPerPx * 0.8, self);
+          setGuides(res.guides);
+          const gx = res.guides.some((g) => g.axis === 'x') ? res.x : snapToGrid(raw.x, gridMm);
+          const gy = res.guides.some((g) => g.axis === 'y') ? res.y : snapToGrid(raw.y, gridMm);
+          dx = gx - d.anchor.ox;
+          dy = gy - d.anchor.oy;
+        }
+      }
+
       for (const item of d.items) {
         if (item.kind === 'art') {
-          placeDecor(item.id, snap(dx, free), snap(dy, free), item.rings);
+          placeDecor(item.id, round2(dx), round2(dy), item.rings);
         } else if (item.kind === 'decor') {
-          placeDecor(item.id, snap(item.ox + dx, free), snap(item.oy + dy, free));
+          placeDecor(item.id, round2(item.ox + dx), round2(item.oy + dy));
         } else {
-          updateFeature(item.id, { x: snap(item.ox + dx, free), y: snap(item.oy + dy, free) });
+          updateFeature(item.id, { x: round2(item.ox + dx), y: round2(item.oy + dy) });
         }
       }
       return;
@@ -214,6 +271,7 @@ export function PanelCanvas2D() {
     }
     drag.current = null;
     setDuplicating(null);
+    setGuides([]);
   };
 
   const onBackgroundPointerDown = (e: React.PointerEvent) => {
@@ -368,6 +426,39 @@ export function PanelCanvas2D() {
           />
         ))}
 
+        {/* Alignment guides. Drawn over everything, since their whole job is
+            to be noticed the moment two things line up. */}
+        {guides.map((g, i) => {
+          const pad = handleMm * 0.8;
+          const panelLine = g.source === 'panel';
+          return (
+            <g key={`g${i}`} pointerEvents="none">
+              <line
+                x1={g.axis === 'x' ? g.at : g.from - pad}
+                y1={g.axis === 'x' ? g.from - pad : g.at}
+                x2={g.axis === 'x' ? g.at : g.to + pad}
+                y2={g.axis === 'x' ? g.to + pad : g.at}
+                stroke={panelLine ? '#6ec1ff' : 'var(--color-accent)'}
+                strokeWidth={handleMm * 0.1}
+                strokeDasharray={panelLine ? `${handleMm * 0.5} ${handleMm * 0.4}` : undefined}
+              />
+              {/* Small ticks at the ends, so a guide is still readable where it
+                  runs across a busy part of the panel. */}
+              {[g.from - pad, g.to + pad].map((end, k) => (
+                <line
+                  key={k}
+                  x1={g.axis === 'x' ? g.at - handleMm * 0.3 : end}
+                  y1={g.axis === 'x' ? end : g.at - handleMm * 0.3}
+                  x2={g.axis === 'x' ? g.at + handleMm * 0.3 : end}
+                  y2={g.axis === 'x' ? end : g.at + handleMm * 0.3}
+                  stroke={panelLine ? '#6ec1ff' : 'var(--color-accent)'}
+                  strokeWidth={handleMm * 0.1}
+                />
+              ))}
+            </g>
+          );
+        })}
+
         {/* While an Alt-drag is in progress, ring what was left behind and
             what is being carried, so it is obvious a copy is being made rather
             than the original being moved. */}
@@ -429,6 +520,8 @@ export function PanelCanvas2D() {
         <span>
           {duplicating
             ? 'Duplicating — release to drop the copy'
+            : guides.length
+            ? `Aligned${guides.some((g) => g.source === 'panel') ? ' to the panel centre' : ''} · ⌘/Ctrl to ignore`
             : tool
             ? `Click to place a ${(CUTOUT_PRESETS.find((p) => p.id === tool)?.label ?? 'cutout').toLowerCase()} · Shift-click to keep placing · Esc to stop`
             : 'Alt drag to duplicate · ⌘/Ctrl drag to ignore grid · ⌘/Ctrl scroll to zoom'}
@@ -443,6 +536,44 @@ export function PanelCanvas2D() {
     </div>
     </CanvasFrame.Provider>
   );
+}
+
+/** The grabbed item, whose snapping decides where the whole selection lands. */
+function anchorOf(items: DragItem[], preferredId: string): { ox: number; oy: number } | null {
+  const chosen = items.find((i) => i.id === preferredId) ?? items[0];
+  if (!chosen) return null;
+  if (chosen.kind === 'art') return { ox: 0, oy: 0 };
+  return { ox: chosen.ox, oy: chosen.oy };
+}
+
+/** Everything a drag can line up against, minus whatever is being dragged. */
+function alignTargets(
+  features: Feature[],
+  decor: DecorElement[],
+  moving: Set<string>,
+): AlignTarget[] {
+  const out: AlignTarget[] = [];
+  for (const f of features) {
+    if (moving.has(f.id)) continue;
+    const rx = (f.shape === 'circle' ? f.w : f.w) / 2;
+    const ry = (f.shape === 'circle' ? f.w : f.h) / 2;
+    out.push({ id: f.id, x: f.x, y: f.y, rx, ry });
+  }
+  for (const d of decor) {
+    if (moving.has(d.id) || d.type === 'art') continue;
+    out.push({ id: d.id, x: d.x, y: d.y, rx: 2, ry: 2 });
+  }
+  return out;
+}
+
+/** Half-size of what is being dragged, so its guide spans it. */
+function selfExtent(features: Feature[], decor: DecorElement[], items: DragItem[]): { rx: number; ry: number } {
+  const first = items[0];
+  if (!first) return { rx: 0, ry: 0 };
+  const f = features.find((x) => x.id === first.id);
+  if (f) return { rx: f.w / 2, ry: (f.shape === 'circle' ? f.w : f.h) / 2 };
+  void decor;
+  return { rx: 2, ry: 2 };
 }
 
 function ZoomButton({ children, onClick }: { children: React.ReactNode; onClick: () => void }) {
