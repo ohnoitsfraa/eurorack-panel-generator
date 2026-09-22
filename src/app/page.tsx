@@ -54,9 +54,16 @@ export default function Page() {
   return (
     <div className="flex h-dvh flex-col bg-ink-950">
       <header className="flex shrink-0 items-center gap-4 border-b border-ink-800 px-4 py-2.5">
-        <h1 className="flex items-center gap-2 text-[15px] font-semibold tracking-tight">
-          <Logo className="h-6 w-6 text-accent" />
-          Panelmate
+        {/* The wordmark is set to the mark's own height: 32px of box is 29px
+            of drawn ink (the mark leaves a margin), and this font's caps come
+            out at 0.705 of its size, so 41px puts the two on the same line
+            top and bottom. The negative margin swallows the tracking that
+            letter-spacing adds after the final E. */}
+        <h1 className="flex shrink-0 items-center gap-2.5">
+          <Logo className="h-8 w-8 text-accent" />
+          <span className="-mr-[0.14em] text-[41px] font-thin uppercase leading-none tracking-[0.14em]">
+            Panelmate
+          </span>
         </h1>
 
         <div className="flex rounded-md border border-ink-700 p-0.5">

@@ -66,9 +66,15 @@ async function open(colorScheme: 'light' | 'dark' = 'dark') {
 // --- the app renders and runs ---
 {
   const { page, problems } = await open();
+  // innerText reflects text-transform and the wordmark is set in caps, so
+  // read the source text too: what a screen reader announces should stay
+  // ordinary mixed case whatever the lockup does.
   const title = await page.locator('h1').first().innerText();
-  if (title.includes('Panelmate')) pass('the app loads');
+  const spoken = (await page.locator('h1').first().textContent())?.trim();
+  if (/^panelmate$/i.test(title.trim())) pass('the app loads');
   else fail(`unexpected heading: ${title}`);
+  if (spoken === 'Panelmate') pass('the heading is spelled normally underneath the caps');
+  else fail(`heading text is ${JSON.stringify(spoken)}`);
   if (problems.length === 0) pass('no uncaught errors on load');
   else fail(`on load: ${[...new Set(problems)].join(' | ')}`);
   await page.close();
