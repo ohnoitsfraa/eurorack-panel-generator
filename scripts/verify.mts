@@ -793,10 +793,23 @@ console.log('\nEditor actions');
   }
 
   // Adding to the rack should find a slot and record the placement.
-  if (savedId) st().addToRack(savedId);
+  if (savedId) {
+    const ok = st().addToRack(savedId);
+    if (ok) pass('adding to the rack reports that it worked');
+    else fail('adding to the rack reported failure');
+  }
   const placed = st().rack.rows.reduce((n, r) => n + r.placements.length, 0);
   if (placed === 1) pass('adding to the rack places the panel');
   else fail(`rack has ${placed} placements, expected 1`);
+
+  // A panel with nowhere to go must say so rather than silently doing nothing,
+  // since the view only follows when something actually moved.
+  {
+    st().setRack({ name: 'tiny', rows: [{ id: 'r0', widthHp: 2, format: '3U', placements: [] }] });
+    const refused = savedId ? st().addToRack(savedId) : true;
+    if (refused === false) pass('a panel too wide for any row is refused, not dropped silently');
+    else fail('a panel that cannot fit was reported as placed');
+  }
 
   // Deleting a design must also remove it from the rack.
   if (savedId) st().deleteDesign(savedId);

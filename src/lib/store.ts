@@ -127,7 +127,8 @@ interface State {
   addRow: (widthHp?: number) => void;
   updateRow: (id: string, patch: Partial<RackRow>) => void;
   removeRow: (id: string) => void;
-  addToRack: (designId: string, rowId?: string) => void;
+  /** Returns false when there is nowhere for the panel to go. */
+  addToRack: (designId: string, rowId?: string) => boolean;
   movePlacement: (placementId: string, toRowId: string, hp: number) => void;
   removePlacement: (placementId: string) => void;
   designWidthHp: (designId: string) => number;
@@ -672,7 +673,7 @@ export const useStore = create<State>((set, get) => ({
   addToRack: (designId, rowId) => {
     const { rack, designWidthHp } = get();
     const width = designWidthHp(designId);
-    if (width <= 0) return;
+    if (width <= 0) return false;
 
     // Try the named row first, then any row with space, so a click on a
     // library panel always lands somewhere sensible.
@@ -693,9 +694,10 @@ export const useStore = create<State>((set, get) => ({
       });
       void dbSaveRack(next);
       set({ rack: next });
-        return;
+      return true;
     }
     set({ error: `No room for a ${width} HP panel. Add a row, or make one wider.` });
+    return false;
   },
 
   movePlacement: (placementId, toRowId, hp) => {

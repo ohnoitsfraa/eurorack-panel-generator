@@ -24,6 +24,20 @@ export function LibraryTab() {
   const addToRack = useStore((s) => s.addToRack);
   const exportPanel = useStore((s) => s.exportPanel);
   const setView = useStore((s) => s.setView);
+  const setTab = useStore((s) => s.setTab);
+
+  /**
+   * Put a panel in the rack and go and look at it.
+   *
+   * Only on success: when there is no room the panel has not moved, and
+   * switching to a rack that looks unchanged reads as the click having done
+   * nothing. The error says what happened instead.
+   */
+  const placeAndShow = (id: string) => {
+    if (!addToRack(id)) return;
+    setView('rack');
+    setTab('library');
+  };
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
 
   const placedCount = useMemo(
@@ -50,7 +64,7 @@ export function LibraryTab() {
         </div>
         {activeDesignId && (
           <Button
-            onClick={() => { saveCurrentDesign(); addToRack(activeDesignId); setView('rack'); }}
+            onClick={() => { saveCurrentDesign(); placeAndShow(activeDesignId); }}
             className="w-full"
           >
             Add to rack
@@ -93,7 +107,7 @@ export function LibraryTab() {
                 </div>
                 <div className="mt-1.5 flex gap-1">
                   <Button onClick={() => openDesign(item.id)} className="flex-1">Open</Button>
-                  <Button onClick={() => addToRack(item.id)} className="flex-1">To rack</Button>
+                  <Button onClick={() => placeAndShow(item.id)} className="flex-1">To rack</Button>
                   <Button onClick={() => exportPanel(item.id)} title="Export this panel to a file">↓</Button>
                   {confirmDelete === item.id ? (
                     <Button variant="danger" onClick={() => { deleteDesign(item.id); setConfirmDelete(null); }}>

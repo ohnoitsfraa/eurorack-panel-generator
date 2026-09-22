@@ -244,6 +244,41 @@ async function open(colorScheme: 'light' | 'dark' = 'dark') {
   await page.close();
 }
 
+// --- putting a panel in the rack shows you the rack ---
+{
+  const { page, problems } = await open();
+  await page.getByRole('button', { name: 'Cutouts', exact: true }).click();
+  await page.getByRole('button', { name: 'Circle', exact: true }).click();
+  const pt = await page.evaluate(() => {
+    const el = document.querySelector('svg')!;
+    const p = new DOMPoint(20, 60).matrixTransform(el.getScreenCTM()!);
+    return { x: p.x, y: p.y };
+  });
+  await page.mouse.click(pt.x, pt.y);
+  await page.waitForTimeout(300);
+
+  await page.getByRole('button', { name: 'Rack', exact: true }).last().click();
+  await page.getByRole('textbox').first().fill('Rack me');
+  await page.getByRole('button', { name: 'Save to library' }).click();
+  await page.waitForTimeout(600);
+
+  // Back to the layout, so the navigation is actually being tested.
+  await page.getByRole('button', { name: 'Layout', exact: true }).click();
+  await page.waitForTimeout(300);
+
+  await page.getByRole('button', { name: 'To rack', exact: true }).first().click();
+  await page.waitForTimeout(800);
+  const after = await page.locator('body').innerText();
+  if (/HP used/i.test(after) && /Add row/i.test(after)) pass('adding to the rack takes you to the rack');
+  else fail('the view did not follow the panel into the rack');
+  if ((await page.locator('[title*="Rack me"]').count()) > 0) pass('and the panel is there when you arrive');
+  else fail('the panel was not visible in the rack');
+
+  if (problems.length === 0) pass('no uncaught errors putting a panel in the rack');
+  else fail(`putting a panel in the rack: ${[...new Set(problems)].join(' | ')}`);
+  await page.close();
+}
+
 // --- light and dark ---
 {
   for (const scheme of ['dark', 'light'] as const) {
