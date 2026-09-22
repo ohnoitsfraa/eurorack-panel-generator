@@ -9,12 +9,14 @@ import {
 } from './eurorack';
 import {
   DEFAULT_DETECT_SETTINGS, uid,
-  type DecorElement, type DetectSettings, type Feature, type PanelDesign, type TextElement,
+  type Crop, type DecorElement, type DetectSettings, type Feature, type PanelDesign,
+  type Session, type TextElement,
 } from './types';
 import { autoCrop, detectFeatures } from './cv/detect';
 import {
-  deleteDesign as dbDeleteDesign, loadDesigns, loadRack as dbLoadRack, migrateFromLocalStorage,
-  putDesign, putDesigns, saveRack as dbSaveRack, stripForStorage, type SavedDesign,
+  clearSession, deleteDesign as dbDeleteDesign, loadDesigns, loadRack as dbLoadRack,
+  loadSession, migrateFromLocalStorage, putDesign, putDesigns, saveRack as dbSaveRack,
+  saveSession, stripForStorage, type SavedDesign,
 } from './storage';
 import {
   backupFilename, buildLibraryBackup, buildPanelBackup, buildRackBackup, mergeBackup,
@@ -25,7 +27,7 @@ import {
   type Placement, type Rack, type RackRow,
 } from './rack';
 import type { Ring } from './geom/poly';
-import { imageDataFromSource } from './cv/image';
+import { fetchImage, imageDataFromBlob } from './cv/image';
 import { loadFont } from './model/text';
 
 export type ViewMode = '2d' | '3d' | 'rack';
@@ -33,7 +35,7 @@ export type InspectorTab = 'panel' | 'features' | 'decor' | 'export' | 'library'
 /** null = select/move; otherwise the shape the next canvas click will place. */
 export type Tool = null | CutoutShapeId;
 
-export interface Crop { x: number; y: number; w: number; h: number }
+export type { Crop } from './types';
 
 interface State {
   design: PanelDesign;
@@ -41,6 +43,8 @@ interface State {
   sourceImage: ImageData | null;
   sourceUrl: string | null;
   sourceLabel: string | null;
+  /** The picture as it arrived, so it can be stored and restored intact. */
+  sourceBlob: Blob | null;
   crop: Crop | null;
   detect: DetectSettings;
   detecting: boolean;
@@ -68,9 +72,13 @@ interface State {
 
   /** What the last import did, for the UI to report. */
   lastImport: (MergeReport & { at: number }) | null;
+  /** False until the saved session has been read back, if there is one. */
+  hydrated: boolean;
+  /** Set when a refresh restored unsaved work, so the UI can say so. */
+  restoredAt: number | null;
 
   setDesign: (patch: Partial<PanelDesign>) => void;
-  setSource: (img: ImageData, url: string, label: string, kind?: SourceKind, knownHp?: number) => void;
+  setSource: (img: ImageData, url: string, label: string, kind?: SourceKind, knownHp?: number, blob?: Blob | null) => void;
   clearSource: () => void;
   setCrop: (c: Crop) => void;
   setDetect: (patch: Partial<DetectSettings>) => void;
@@ -93,6 +101,7 @@ interface State {
   placeDecor: (id: string, x: number, y: number, originRings?: Ring[]) => void;
 
   loadLibraryFromStorage: () => Promise<void>;
+  discardRestored: () => void;
   saveCurrentDesign: (name?: string) => void;
   openDesign: (id: string) => void;
   newDesign: () => void;
@@ -144,6 +153,7 @@ export const useStore = create<State>((set, get) => ({
   sourceImage: null,
   sourceUrl: null,
   sourceLabel: null,
+  sourceBlob: null,
   crop: null,
   detect: DEFAULT_DETECT_SETTINGS,
   detecting: false,
@@ -165,10 +175,12 @@ export const useStore = create<State>((set, get) => ({
   dirty: false,
   rack: defaultRack(),
   lastImport: null,
+  hydrated: false,
+  restoredAt: null,
 
   setDesign: (patch) => set((s) => ({ design: { ...s.design, ...patch }, dirty: true })),
 
-  setSource: (img, url, label, kind, knownHp) => {
+  setSource: (img, url, label, kind, knownHp, blob) => {
     const crop = autoCrop(img);
     // Guess HP from the crop's aspect ratio: panel height is fixed by format,
     // so the width in millimetres follows, and HP is that over the 5.08 pitch.
@@ -186,6 +198,7 @@ export const useStore = create<State>((set, get) => ({
       sourceImage: img,
       sourceUrl: url,
       sourceLabel: label,
+      sourceBlob: blob ?? null,
       crop,
       error: null,
       design: { ...s.design, hp },
@@ -195,7 +208,10 @@ export const useStore = create<State>((set, get) => ({
   },
 
   clearSource: () =>
-    set({ sourceImage: null, sourceUrl: null, sourceLabel: null, crop: null, mmPerPx: null }),
+    set({
+      sourceImage: null, sourceUrl: null, sourceLabel: null, sourceBlob: null,
+      crop: null, mmPerPx: null, droppedAsMarkings: 0,
+    }),
 
   setCrop: (crop) => set({ crop }),
 
@@ -240,8 +256,8 @@ export const useStore = create<State>((set, get) => ({
       const src = url.startsWith('data:') || url.startsWith('blob:')
         ? url
         : `/api/proxy-image?url=${encodeURIComponent(url)}`;
-      const img = await imageDataFromSource(src);
-      get().setSource(img, src, label ?? 'Image', kind, knownHp);
+      const { blob, image } = await fetchImage(src);
+      get().setSource(image, src, label ?? 'Image', kind, knownHp, blob);
     } catch (e) {
       set({ error: e instanceof Error ? e.message : 'Could not load that image' });
     }
@@ -425,9 +441,46 @@ export const useStore = create<State>((set, get) => ({
   loadLibraryFromStorage: async () => {
     // Anything left by the localStorage era moves across once, then stays put.
     await migrateFromLocalStorage();
-    const [library, rack] = await Promise.all([loadDesigns(), dbLoadRack()]);
+    const [library, rack, session] = await Promise.all([loadDesigns(), dbLoadRack(), loadSession()]);
     set({ library, rack: rack ?? defaultRack() });
+
+    if (session) {
+      set({
+        design: session.design,
+        designName: session.designName,
+        activeDesignId: session.activeDesignId,
+        dirty: session.dirty,
+        crop: session.crop,
+        detect: session.detect,
+        mmPerPx: session.mmPerPx,
+        sourceLabel: session.sourceLabel,
+        sourceBlob: session.sourceBlob,
+        view: (['2d', '3d', 'rack'] as const).includes(session.view as ViewMode)
+          ? (session.view as ViewMode) : '2d',
+        tab: (['panel', 'features', 'decor', 'export', 'library'] as const).includes(session.tab as InspectorTab)
+          ? (session.tab as InspectorTab) : 'panel',
+        gridMm: session.gridMm,
+        showSource: session.showSource,
+        sourceOpacity: session.sourceOpacity,
+        restoredAt: session.savedAt,
+      });
+
+      // Decoding the picture is the slow part, so it happens after the panel
+      // is already on screen rather than holding it up.
+      if (session.sourceBlob) {
+        void imageDataFromBlob(session.sourceBlob)
+          .then((image) => set({ sourceImage: image }))
+          .catch(() => set({ sourceBlob: null }));
+      }
+    }
+
+    // Only now may the session be written back. Saving before this point would
+    // overwrite the stored work with the empty panel the app starts on.
+    set({ hydrated: true });
   },
+
+  /** Put the restore notice away; the work itself stays. */
+  discardRestored: () => set({ restoredAt: null }),
 
   saveCurrentDesign: (name) => {
     const { library, design, designName, activeDesignId } = get();
@@ -460,13 +513,15 @@ export const useStore = create<State>((set, get) => ({
       sourceImage: null,
       sourceUrl: null,
       sourceLabel: null,
+      sourceBlob: null,
       crop: null,
       mmPerPx: null,
       view: '2d',
     });
   },
 
-  newDesign: () =>
+  newDesign: () => {
+    void clearSession();
     set({
       design: DEFAULT_DESIGN,
       activeDesignId: null,
@@ -476,10 +531,13 @@ export const useStore = create<State>((set, get) => ({
       sourceImage: null,
       sourceUrl: null,
       sourceLabel: null,
+      sourceBlob: null,
       crop: null,
       mmPerPx: null,
       view: '2d',
-    }),
+      restoredAt: null,
+    });
+  },
 
   deleteDesign: (id) => {
     const items = get().library.filter((i) => i.id !== id);
@@ -721,6 +779,58 @@ function downloadJson(data: unknown, filename: string): void {
 }
 
 /** Convenience selectors used across the UI. */
+/**
+ * Keep the work in progress written down.
+ *
+ * Subscribing in one place rather than calling a save from every action means
+ * nothing can be added later that quietly forgets to persist. Debounced,
+ * because a drag changes state on every pointer move and none of the
+ * intermediate positions are worth a write.
+ */
+const SESSION_DEBOUNCE_MS = 600;
+let sessionTimer: ReturnType<typeof setTimeout> | null = null;
+
+useStore.subscribe((state, prev) => {
+  if (!state.hydrated) return;
+  const changed =
+    state.design !== prev.design ||
+    state.designName !== prev.designName ||
+    state.activeDesignId !== prev.activeDesignId ||
+    state.crop !== prev.crop ||
+    state.detect !== prev.detect ||
+    state.sourceBlob !== prev.sourceBlob ||
+    state.sourceLabel !== prev.sourceLabel ||
+    state.view !== prev.view ||
+    state.tab !== prev.tab ||
+    state.gridMm !== prev.gridMm ||
+    state.showSource !== prev.showSource ||
+    state.sourceOpacity !== prev.sourceOpacity;
+  if (!changed) return;
+
+  if (sessionTimer) clearTimeout(sessionTimer);
+  sessionTimer = setTimeout(() => {
+    const s = useStore.getState();
+    const session: Session = {
+      design: s.design,
+      designName: s.designName,
+      activeDesignId: s.activeDesignId,
+      dirty: s.dirty,
+      crop: s.crop,
+      detect: s.detect,
+      mmPerPx: s.mmPerPx,
+      sourceLabel: s.sourceLabel,
+      sourceBlob: s.sourceBlob,
+      view: s.view,
+      tab: s.tab,
+      gridMm: s.gridMm,
+      showSource: s.showSource,
+      sourceOpacity: s.sourceOpacity,
+      savedAt: Date.now(),
+    };
+    void saveSession(session);
+  }, SESSION_DEBOUNCE_MS);
+});
+
 export const selectPanelSize = (s: State) => ({
   w: panelWidthMm(s.design.hp),
   h: panelHeightMm(s.design.format),

@@ -117,6 +117,39 @@ export function percentiles(g: Gray, lo = 0.05, hi = 0.95): [number, number] {
   return [loV, Math.max(loV + 1, hiV)];
 }
 
+/**
+ * Decode an encoded image into pixels.
+ *
+ * Kept separate from fetching so the original bytes can be held on to. Storing
+ * those rather than the decoded pixels is the difference between about a
+ * megabyte and fifty for a phone photograph, and avoids re-encoding detail
+ * that the detector needs.
+ */
+export async function imageDataFromBlob(blob: Blob): Promise<ImageData> {
+  const url = URL.createObjectURL(blob);
+  try {
+    return await imageDataFromSource(url);
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+/** Fetch an image and return both its bytes and its pixels. */
+export async function fetchImage(src: string): Promise<{ blob: Blob; image: ImageData }> {
+  const res = await fetch(src);
+  if (!res.ok) {
+    // The proxy explains itself in JSON; pass that on rather than a bare code.
+    let reason = `Could not load that image (${res.status})`;
+    try {
+      const body = await res.clone().json();
+      if (typeof body?.error === 'string') reason = body.error;
+    } catch { /* not JSON, keep the generic message */ }
+    throw new Error(reason);
+  }
+  const blob = await res.blob();
+  return { blob, image: await imageDataFromBlob(blob) };
+}
+
 export async function imageDataFromSource(src: string): Promise<ImageData> {
   const img = await loadImage(src);
   const canvas = document.createElement('canvas');

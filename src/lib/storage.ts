@@ -1,6 +1,6 @@
 'use client';
 
-import { migrateDesign, type PanelDesign } from './types';
+import { migrateDesign, type PanelDesign, type Session } from './types';
 import type { Rack } from './rack';
 
 /**
@@ -21,6 +21,7 @@ const DB_VERSION = 1;
 const DESIGNS = 'designs';
 const META = 'meta';
 const RACK_KEY = 'rack';
+const SESSION_KEY = 'session';
 
 const LEGACY_LIBRARY = 'eurorack-panel-generator/library/v1';
 const LEGACY_RACK = 'eurorack-panel-generator/rack/v1';
@@ -109,6 +110,41 @@ export async function loadRack(): Promise<Rack | null> {
 
 export async function saveRack(rack: Rack): Promise<void> {
   await tx(META, 'readwrite', (s) => s.put(rack, RACK_KEY));
+}
+
+/**
+ * The work in progress.
+ *
+ * Written continuously rather than on demand, so a refresh, a crash or a
+ * closed tab costs nothing. Failures are swallowed: a browser with storage
+ * blocked should still run the app, it just will not remember.
+ */
+export async function loadSession(): Promise<Session | null> {
+  try {
+    const s = await tx<Session | undefined>(META, 'readonly', (st) =>
+      st.get(SESSION_KEY) as IDBRequest<Session | undefined>);
+    if (!s || !s.design || !Array.isArray(s.design.features)) return null;
+    return { ...s, design: migrateDesign(s.design) };
+  } catch {
+    return null;
+  }
+}
+
+export async function saveSession(session: Session): Promise<void> {
+  if (typeof indexedDB === 'undefined') return;
+  try {
+    await tx(META, 'readwrite', (st) => st.put(session, SESSION_KEY));
+  } catch {
+    // Quota, private browsing, or storage switched off entirely.
+  }
+}
+
+export async function clearSession(): Promise<void> {
+  try {
+    await tx(META, 'readwrite', (st) => st.delete(SESSION_KEY));
+  } catch {
+    // Nothing to do; the next save will overwrite it anyway.
+  }
 }
 
 /**

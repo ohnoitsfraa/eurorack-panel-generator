@@ -693,6 +693,87 @@ console.log('\nEditor actions');
     fail(`reopen: ${st().design.features.length} features, name "${st().designName}"`);
   }
 
+  // The work in progress must survive a refresh. Panels reach the library
+  // only when saved deliberately, so without this an afternoon's work is the
+  // price of never having pressed Save.
+  {
+    const storage = await import('../src/lib/storage');
+    st().newDesign();
+    st().addFeature('circle', 11, 22);
+    st().addFeature('rect', 30, 44);
+    st().setDesignName('Work in progress');
+    st().setDesign({ hp: 14, backgroundColor: '#123456' });
+    const expected = st().design.features.length;
+
+    // The store writes on a timer; the check is of what gets written and read.
+    await storage.saveSession({
+      design: st().design,
+      designName: st().designName,
+      activeDesignId: st().activeDesignId,
+      dirty: st().dirty,
+      crop: { x: 1, y: 2, w: 300, h: 400 },
+      detect: st().detect,
+      mmPerPx: 0.25,
+      sourceLabel: 'photo.jpg',
+      sourceBlob: null,
+      view: '3d',
+      tab: 'decor',
+      gridMm: 2.54,
+      showSource: false,
+      sourceOpacity: 0.3,
+      savedAt: Date.now(),
+    });
+
+    // Wipe the editor the way a page reload would.
+    st().newDesign();
+    if (st().design.features.length === 0) pass('a fresh start really is empty');
+    else fail('newDesign left work behind');
+
+    // newDesign clears the stored session too, so put it back for the reload.
+    await storage.saveSession({
+      design: { ...st().design, hp: 14, backgroundColor: '#123456',
+        features: [{ id: 'k', kind: 'jack', x: 11, y: 22, shape: 'circle', w: 6, h: 6, radius: 3, rotation: 0 }] },
+      designName: 'Work in progress',
+      activeDesignId: null, dirty: true,
+      crop: { x: 1, y: 2, w: 300, h: 400 },
+      detect: st().detect, mmPerPx: 0.25,
+      sourceLabel: 'photo.jpg', sourceBlob: null,
+      view: '3d', tab: 'decor', gridMm: 2.54,
+      showSource: false, sourceOpacity: 0.3, savedAt: 1234,
+    });
+
+    await st().loadLibraryFromStorage();
+    const s2 = st();
+    if (s2.design.features.length === 1 && s2.design.hp === 14 && s2.design.backgroundColor === '#123456') {
+      pass('the panel comes back after a reload');
+    } else {
+      fail(`restored ${s2.design.features.length} cutouts at ${s2.design.hp} HP`);
+    }
+    if (s2.designName === 'Work in progress' && s2.dirty) pass('its name and unsaved state come back too');
+    else fail(`restored name "${s2.designName}", dirty=${s2.dirty}`);
+    if (s2.crop?.w === 300 && s2.mmPerPx === 0.25 && s2.sourceLabel === 'photo.jpg') {
+      pass('the crop and scale of the source picture come back');
+    } else {
+      fail('the source details were lost');
+    }
+    if (s2.view === '3d' && s2.tab === 'decor' && s2.gridMm === 2.54 && s2.sourceOpacity === 0.3) {
+      pass('the view, tab and editing preferences come back');
+    } else {
+      fail(`restored view=${s2.view} tab=${s2.tab} grid=${s2.gridMm}`);
+    }
+    if (s2.restoredAt === 1234) pass('the restore is flagged so the app can mention it');
+    else fail('nothing recorded that work had been restored');
+    if (s2.hydrated) pass('saving is only enabled once the reload has finished');
+    else fail('the store never marked itself hydrated');
+
+    // Starting a new panel must not leave the old session to come back.
+    st().newDesign();
+    await new Promise((r) => setTimeout(r, 50));
+    if ((await storage.loadSession()) === null) pass('starting a new panel clears the stored session');
+    else fail('the old session survived starting a new panel');
+    void expected;
+  }
+
   // A stated width must not be replaced by a guess from the image. A render is
   // often padded a pixel or two, which is enough to put a 30 HP module on 29,
   // and being one pitch out misplaces every hole on the panel.

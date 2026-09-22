@@ -235,6 +235,42 @@ export const DEFAULT_DETECT_SETTINGS: DetectSettings = {
   snapMm: 0,
 };
 
+/** A rectangle in source-image pixels. */
+export interface Crop { x: number; y: number; w: number; h: number }
+
+/**
+ * The work in progress, as it survives a page refresh.
+ *
+ * Distinct from the library: a panel is in the library because it was saved
+ * there deliberately, whereas this is whatever was on screen a moment ago.
+ * Losing an afternoon's work to a stray refresh is not an acceptable cost for
+ * never having pressed Save, so the session is written continuously and
+ * restored on load — without claiming the panel has been saved.
+ *
+ * The source picture is kept as the original encoded bytes rather than as
+ * decoded pixels: a 4000 x 3000 photograph is 48 MB as ImageData and about a
+ * megabyte as the JPEG it arrived as, and re-encoding would lose detail the
+ * detector relies on.
+ */
+export interface Session {
+  design: PanelDesign;
+  designName: string;
+  activeDesignId: string | null;
+  /** Whether the panel differs from its saved copy, if it has one. */
+  dirty: boolean;
+  crop: Crop | null;
+  detect: DetectSettings;
+  mmPerPx: number | null;
+  sourceLabel: string | null;
+  sourceBlob: Blob | null;
+  view: string;
+  tab: string;
+  gridMm: number;
+  showSource: boolean;
+  sourceOpacity: number;
+  savedAt: number;
+}
+
 export function uid(prefix = 'f'): string {
   return `${prefix}_${Math.random().toString(36).slice(2, 10)}`;
 }

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useStore } from '@/lib/store';
-import { imageDataFromSource } from '@/lib/cv/image';
+import { imageDataFromBlob } from '@/lib/cv/image';
 import { Button, Field, NumberInput, Section, Select, Slider, Toggle } from './ui';
 import { searchUrl, slugFromInput, type MGModule } from '@/lib/modulargrid';
 
@@ -26,8 +26,10 @@ export function SourcePanel() {
       }
       const url = URL.createObjectURL(file);
       try {
-        const img = await imageDataFromSource(url);
-        setSource(img, url, file.name);
+        const img = await imageDataFromBlob(file);
+        // The file itself is kept, so the picture survives a refresh without
+        // being re-encoded. The object URL is only for this page's lifetime.
+        setSource(img, url, file.name, undefined, undefined, file);
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Could not read that image');
       }

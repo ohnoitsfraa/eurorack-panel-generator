@@ -141,6 +141,50 @@ async function open() {
   await page.close();
 }
 
+// --- a refresh must not cost the work in progress ---
+{
+  const { page, problems } = await open();
+  const toScreen = (mx: number, my: number) =>
+    page.evaluate(([x, y]) => {
+      const el = document.querySelector('svg')!;
+      const p = new DOMPoint(x, y).matrixTransform(el.getScreenCTM()!);
+      return { x: p.x, y: p.y };
+    }, [mx, my] as [number, number]);
+
+  await page.getByRole('button', { name: 'Cutouts', exact: true }).click();
+  for (const [x, y] of [[12, 30], [28, 30], [12, 60], [28, 60]] as const) {
+    await page.getByRole('button', { name: 'Circle', exact: true }).click();
+    const p = await toScreen(x, y);
+    await page.mouse.click(p.x, p.y);
+    await page.waitForTimeout(150);
+  }
+  const positionsBefore = await page.locator('svg circle').evaluateAll((els) =>
+    [...new Set(els.map((e) => `${(+(e.getAttribute('cx') ?? 0)).toFixed(1)},${(+(e.getAttribute('cy') ?? 0)).toFixed(1)}`))]);
+
+  // The session is written on a timer; give it a moment to land.
+  await page.waitForTimeout(1200);
+  await page.reload({ waitUntil: 'networkidle' });
+  await page.waitForTimeout(1500);
+
+  const after = await page.locator('body').innerText();
+  const count = after.match(/·\s*(\d+)\s*cutouts?/);
+  if (count && count[1] === '4') pass('a refresh keeps the cutouts that were on the panel');
+  else fail(`after a refresh there are ${count?.[1] ?? '?'} cutouts, expected 4`);
+
+  const positionsAfter = await page.locator('svg circle').evaluateAll((els) =>
+    [...new Set(els.map((e) => `${(+(e.getAttribute('cx') ?? 0)).toFixed(1)},${(+(e.getAttribute('cy') ?? 0)).toFixed(1)}`))]);
+  const kept = positionsBefore.every((p) => positionsAfter.includes(p));
+  if (kept) pass('they come back in the same places, not just the same number');
+  else fail('cutout positions changed across the refresh');
+
+  if (/Picked up where you left off/i.test(after)) pass('the app says it restored the work');
+  else fail('nothing told the user their work had been restored');
+
+  if (problems.length === 0) pass('no uncaught errors across the refresh');
+  else fail(`across the refresh: ${[...new Set(problems)].join(' | ')}`);
+  await page.close();
+}
+
 // --- alignment guides ---
 {
   const { page, problems } = await open();

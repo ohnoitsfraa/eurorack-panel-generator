@@ -31,6 +31,9 @@ export default function Page() {
   const loadLibraryFromStorage = useStore((s) => s.loadLibraryFromStorage);
   const designName = useStore((s) => s.designName);
   const dirty = useStore((s) => s.dirty);
+  const restoredAt = useStore((s) => s.restoredAt);
+  const discardRestored = useStore((s) => s.discardRestored);
+  const newDesign = useStore((s) => s.newDesign);
   const { result } = usePanelBuild();
 
   // localStorage is only reachable on the client, so the library and rack are
@@ -138,6 +141,31 @@ export default function Page() {
           </div>
         </aside>
       </div>
+
+      {restoredAt !== null && (
+        <div
+          role="status"
+          className="fixed bottom-4 left-1/2 z-40 flex -translate-x-1/2 items-center gap-3 rounded-lg
+                     border border-ink-700 bg-ink-850 px-4 py-2.5 text-xs text-ink-100 shadow-xl"
+        >
+          <span>Picked up where you left off.</span>
+          <button
+            type="button"
+            onClick={() => { newDesign(); }}
+            className="text-ink-400 underline-offset-2 hover:text-ink-100 hover:underline"
+          >
+            Start a new panel
+          </button>
+          <button
+            type="button"
+            onClick={discardRestored}
+            className="text-ink-400 hover:text-ink-100"
+            aria-label="Dismiss"
+          >
+            ×
+          </button>
+        </div>
+      )}
 
       {error && (
         <div

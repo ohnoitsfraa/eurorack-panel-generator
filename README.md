@@ -167,6 +167,15 @@ the nut.
 
 ### Saving, export and import
 
+Whatever is on screen is written down continuously and comes back after a
+refresh, a crash or a closed tab — the panel, its name, the source photo, the
+crop, the detection settings, even which view you were in. Losing an
+afternoon's work is not a fair price for never having pressed Save. The app
+says so when it restores, and offers to start fresh instead.
+
+That is separate from the library. A panel is in the library because you put it
+there; the session is just where you were.
+
 Panels and racks are kept in this browser, in IndexedDB. Not localStorage: that
 caps out around 5 MB for the whole origin, and one panel with traced artwork
 carries thousands of points, so a modest library reaches the limit and saves
@@ -277,6 +286,10 @@ print, so the script checks the properties a preview cannot show:
   as copies rewires the rack to the copies
 - storage works and the move off localStorage carries a library across once,
   clears the old keys, and does nothing on a second run
+- a reload restores the panel, its name, the source picture's crop and scale,
+  and the view you were in, and writing only begins once the reload has
+  finished so the restored work cannot be overwritten by the empty panel the
+  app starts on
 
 It caught every interesting bug in this codebase, including a crash on the
 default font and a triangulation that silently dropped four of eleven rings
