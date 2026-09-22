@@ -339,7 +339,8 @@ export function PanelCanvas2D() {
 
   return (
     <CanvasFrame.Provider value={svgRef}>
-    <div className="relative h-full w-full overflow-hidden bg-ink-950">
+    <div className="relative h-full w-full overflow-hidden"
+      style={{ background: 'var(--stage)' }}>
       <svg
         ref={svgRef}
         viewBox={viewBox}
@@ -355,7 +356,7 @@ export function PanelCanvas2D() {
             <rect x={0} y={0} width={W} height={H} rx={design.cornerRadiusMm} />
           </clipPath>
           <pattern id="hpGrid" width={5.08} height={5.08} patternUnits="userSpaceOnUse">
-            <path d="M 5.08 0 L 0 0 0 5.08" fill="none" stroke="#ffffff14" strokeWidth={0.12} />
+            <path d="M 5.08 0 L 0 0 0 5.08" fill="none" stroke="var(--grid-line)" strokeWidth={0.12} />
           </pattern>
         </defs>
 
@@ -399,7 +400,7 @@ export function PanelCanvas2D() {
         {/* Panel edge */}
         <rect
           x={0} y={0} width={W} height={H} rx={design.cornerRadiusMm}
-          fill="none" stroke="#ffffff33" strokeWidth={0.2}
+          fill="none" stroke="var(--panel-edge)" strokeWidth={0.2}
         />
 
         {mountSlots.map((p, i) => (
@@ -411,7 +412,7 @@ export function PanelCanvas2D() {
             height={MOUNT_SLOT.heightMm}
             rx={MOUNT_SLOT.heightMm / 2}
             fill="#0a0a0c"
-            stroke="#ffffff40"
+            stroke="var(--panel-edge)"
             strokeWidth={0.15}
           />
         ))}
@@ -468,7 +469,7 @@ export function PanelCanvas2D() {
               <circle
                 key={`o${i}`}
                 cx={p.x} cy={p.y} r={handleMm * 0.9}
-                fill="none" stroke="#ffffff50" strokeWidth={handleMm * 0.14}
+                fill="none" stroke="var(--color-ink-400)" strokeWidth={handleMm * 0.14}
                 strokeDasharray={`${handleMm * 0.3} ${handleMm * 0.25}`}
               />
             ))}
@@ -597,7 +598,7 @@ function FeatureShape({
   onPointerDown: (e: React.PointerEvent) => void;
   handleMm: number;
 }) {
-  const stroke = selected ? 'var(--color-accent)' : '#ffffff55';
+  const stroke = selected ? 'var(--color-accent)' : 'var(--panel-edge)';
   const sw = selected ? handleMm * 0.28 : handleMm * 0.16;
   // Low-confidence detections are flagged so the user knows where to look
   // rather than having to compare against the photo hole by hole.

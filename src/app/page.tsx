@@ -11,6 +11,7 @@ import { ExportTab } from '@/components/ExportTab';
 import { LibraryTab } from '@/components/LibraryTab';
 import { RackView } from '@/components/RackView';
 import { usePanelBuild } from '@/lib/usePanelBuild';
+import { ThemeToggle } from '@/components/ThemeToggle';
 
 const TABS: Array<{ id: InspectorTab; label: string }> = [
   { id: 'panel', label: 'Panel' },
@@ -80,6 +81,7 @@ export default function Page() {
 
 
         <div className="ml-auto flex items-center gap-3 text-[11px] text-ink-400">
+          <ThemeToggle />
           {result.warnings.length > 0 && (
             <button
               type="button"

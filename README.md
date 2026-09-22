@@ -124,6 +124,14 @@ readings are concentric, while a word's are smeared along its length. On a real
 30 HP panel the two together take the spurious cutouts from 24 down to a
 handful.
 
+### Light and dark
+
+Follow the system, or pin it either way. The choice is applied by a small
+script in the document head, before anything is drawn, because otherwise every
+load of a light-themed page flashes dark for a frame. The 3D preview is told
+the theme directly, since it builds its colours in JavaScript and cannot
+inherit them through CSS.
+
 ### Editing
 
 Cutouts, text, shapes and traced artwork are all draggable on the canvas.
@@ -316,6 +324,9 @@ print, so the script checks the properties a preview cannot show:
 - alignment snaps to a shared axis however far apart two cutouts are, draws a
   guide reaching both, takes the nearer of two candidates, and leaves a miss
   alone
+- module search ranks the module above replacement panels for it, collapses
+  the duplicate entries ModularGrid keeps, and offers every variant of a name
+  like "disting" rather than guessing which was meant
 - editor actions hold up: duplicating returns the new ids and copies land
   exactly on the original (which is what Alt-drag relies on), dragging artwork
   translates its outlines, and designs round-trip through storage
@@ -343,10 +354,29 @@ there is none or nothing is running.
 
 ## ModularGrid
 
-Paste a module link — `modulargrid.net/e/make-noise-maths`, or just the slug —
-and the panel image, name and HP all arrive. It works in the plain URL field
-too, since pasting a module link there is an obvious thing to do; without that
-the link goes to the image proxy, which quite correctly refuses a page of HTML.
+Type a module name — "Maths", "Disting", "Plaits" — and pick from what comes
+back. Pasting a link works too, in the ModularGrid field or the plain URL one,
+since pasting a module link there is an obvious thing to do; without that the
+link goes to the image proxy, which quite correctly refuses a page of HTML.
+
+Searching is done here rather than through a search engine. Every engine
+refuses this from a server: Google answers a plain request with a "turn on
+JavaScript" page, DuckDuckGo returns its home page, Bing and Mojeek block
+outright — and that is from a home connection, which a deployment does not
+have. The paid APIs all want a key, which is a poor trade for looking up a
+module name.
+
+ModularGrid publishes a sitemap, which is a list of every page they have and
+exists to be read by tools. Their addresses are simply the maker and the model
+hyphenated, so that list is also an index of every module by name. It is
+fetched twice a day, twelve hours apart, and held here in between, so typing
+costs their servers nothing and a module added this morning is findable this
+evening. Two fetches of a five megabyte file, against the hundreds of page
+requests the same searching would otherwise cost them.
+
+Replacement faceplates are listed on ModularGrid under the same names as the
+modules they replace, so they are ranked below them — "bluebox" finds the 1010
+Music module first, with the panels after it.
 
 The width comes from the module's page rather than from the picture. A render
 is often padded by a pixel or two, which is enough to read a 30 HP module as

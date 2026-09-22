@@ -27,6 +27,9 @@ import {
   type Placement, type Rack, type RackRow,
 } from './rack';
 import type { Ring } from './geom/poly';
+import {
+  applyTheme, readChoice, writeChoice, type ResolvedTheme, type ThemeChoice,
+} from './theme';
 import { fetchImage, imageDataFromBlob } from './cv/image';
 import { loadFont } from './model/text';
 
@@ -76,6 +79,9 @@ interface State {
   hydrated: boolean;
   /** Set when a refresh restored unsaved work, so the UI can say so. */
   restoredAt: number | null;
+  theme: ThemeChoice;
+  /** What `theme` currently works out to, for the parts that cannot read CSS. */
+  resolvedTheme: ResolvedTheme;
 
   setDesign: (patch: Partial<PanelDesign>) => void;
   setSource: (img: ImageData, url: string, label: string, kind?: SourceKind, knownHp?: number, blob?: Blob | null) => void;
@@ -102,6 +108,9 @@ interface State {
 
   loadLibraryFromStorage: () => Promise<void>;
   discardRestored: () => void;
+  setTheme: (choice: ThemeChoice) => void;
+  /** Re-resolve after the system preference changes underneath a 'system' choice. */
+  syncTheme: () => void;
   saveCurrentDesign: (name?: string) => void;
   openDesign: (id: string) => void;
   newDesign: () => void;
@@ -177,6 +186,8 @@ export const useStore = create<State>((set, get) => ({
   lastImport: null,
   hydrated: false,
   restoredAt: null,
+  theme: 'system',
+  resolvedTheme: 'dark',
 
   setDesign: (patch) => set((s) => ({ design: { ...s.design, ...patch }, dirty: true })),
 
@@ -481,6 +492,16 @@ export const useStore = create<State>((set, get) => ({
 
   /** Put the restore notice away; the work itself stays. */
   discardRestored: () => set({ restoredAt: null }),
+
+  setTheme: (choice) => {
+    writeChoice(choice);
+    set({ theme: choice, resolvedTheme: applyTheme(choice) });
+  },
+
+  syncTheme: () => {
+    const choice = readChoice();
+    set({ theme: choice, resolvedTheme: applyTheme(choice) });
+  },
 
   saveCurrentDesign: (name) => {
     const { library, design, designName, activeDesignId } = get();

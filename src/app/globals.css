@@ -1,23 +1,66 @@
 @import "tailwindcss";
 
-/* A dark, instrument-panel palette: the work is mostly looking at a rendered
-   faceplate, and a bright chrome around it skews colour judgement. */
+/* The palette is one scale from the page background (950) to the brightest
+   text (100), so the same token means the same thing in either theme and
+   components never need to know which one is in force. Dark is the default
+   because the work is mostly judging a rendered faceplate, and bright chrome
+   around it skews colour perception. */
 @theme {
-  --color-ink-950: #0c0d10;
-  --color-ink-900: #131519;
-  --color-ink-850: #191c21;
-  --color-ink-800: #21252b;
-  --color-ink-700: #2d323a;
-  --color-ink-600: #3d444e;
-  --color-ink-400: #7c8593;
-  --color-ink-300: #a6aebb;
-  --color-ink-100: #e6e9ee;
-  --color-accent: #ffb454;
-  --color-accent-dim: #8a5f28;
-  --color-danger: #ff6b6b;
+  --color-ink-950: var(--ink-950);
+  --color-ink-900: var(--ink-900);
+  --color-ink-850: var(--ink-850);
+  --color-ink-800: var(--ink-800);
+  --color-ink-700: var(--ink-700);
+  --color-ink-600: var(--ink-600);
+  --color-ink-400: var(--ink-400);
+  --color-ink-300: var(--ink-300);
+  --color-ink-100: var(--ink-100);
+  --color-accent: var(--accent);
+  --color-accent-dim: var(--accent-dim);
+  --color-danger: var(--danger);
 }
 
-:root { color-scheme: dark; }
+:root,
+:root[data-theme='dark'] {
+  --ink-950: #0c0d10;
+  --ink-900: #131519;
+  --ink-850: #191c21;
+  --ink-800: #21252b;
+  --ink-700: #2d323a;
+  --ink-600: #3d444e;
+  --ink-400: #7c8593;
+  --ink-300: #a6aebb;
+  --ink-100: #e6e9ee;
+  --accent: #ffb454;
+  --accent-dim: #8a5f28;
+  --danger: #ff6b6b;
+  /* The surround behind the panel in both editors. */
+  --stage: #0c0d10;
+  --panel-edge: #ffffff33;
+  --grid-line: #ffffff14;
+  color-scheme: dark;
+}
+
+/* Light runs the same scale the other way up. The accent is darkened because
+   the dark theme's amber is unreadable on white. */
+:root[data-theme='light'] {
+  --ink-950: #f4f5f7;
+  --ink-900: #ffffff;
+  --ink-850: #ffffff;
+  --ink-800: #eceef1;
+  --ink-700: #dcdfe4;
+  --ink-600: #c3c8d0;
+  --ink-400: #6b7280;
+  --ink-300: #414852;
+  --ink-100: #14171c;
+  --accent: #b46a00;
+  --accent-dim: #e0a355;
+  --danger: #c0362c;
+  --stage: #e8eaee;
+  --panel-edge: #00000033;
+  --grid-line: #00000012;
+  color-scheme: light;
+}
 
 html, body {
   height: 100%;

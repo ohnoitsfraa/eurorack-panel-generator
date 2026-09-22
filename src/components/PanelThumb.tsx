@@ -88,7 +88,7 @@ export function PanelThumb({
 
       <rect
         x={0} y={0} width={W} height={H} rx={design.cornerRadiusMm}
-        fill="none" stroke="#ffffff30" strokeWidth={0.25}
+        fill="none" stroke="var(--panel-edge)" strokeWidth={0.25}
       />
     </svg>
   );

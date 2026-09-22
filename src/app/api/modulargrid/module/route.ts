@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
-import { fetchModule, isEnabled, slugFromInput, takeToken } from '@/lib/modulargrid';
+import {
+  fetchModule, isEnabled, looksLikeLink, slugFromInput, slugFromName, takeToken,
+} from '@/lib/modulargrid';
 
 export async function GET(req: Request) {
   if (!isEnabled()) {
@@ -9,13 +11,17 @@ export async function GET(req: Request) {
     );
   }
 
-  // Validate before spending a token. Someone typing a URL a character at a
+  // Validate before spending a token. Someone typing a name a character at a
   // time should not exhaust their budget on requests that never leave here.
   const raw = new URL(req.url).searchParams.get('q') ?? '';
-  const slug = slugFromInput(raw);
+  // A link is taken at its word; anything else is treated as a module name and
+  // turned into the address it would have.
+  const fromLink = looksLikeLink(raw) ? slugFromInput(raw) : null;
+  const slug = fromLink ?? slugFromName(raw);
+  const guessed = fromLink === null;
   if (!slug) {
     return NextResponse.json(
-      { error: 'Paste a ModularGrid module link, such as modulargrid.net/e/make-noise-maths' },
+      { error: 'Type a module name, such as "Make Noise Maths", or paste its ModularGrid link.' },
       { status: 400 },
     );
   }
@@ -28,9 +34,18 @@ export async function GET(req: Request) {
   try {
     return NextResponse.json(await fetchModule(slug));
   } catch (e) {
-    return NextResponse.json(
-      { error: e instanceof Error ? e.message : 'Lookup failed' },
-      { status: 502 },
-    );
+    const message = e instanceof Error ? e.message : 'Lookup failed';
+    // A guessed address that does not exist is an ordinary miss, not a
+    // failure: the name needs the maker in it, or a search will find it.
+    if (guessed && /No module called/i.test(message)) {
+      return NextResponse.json(
+        {
+          error: 'No module of that name. Include the maker — "Make Noise Maths" rather than "Maths" — or search for it.',
+          notFound: true,
+        },
+        { status: 404 },
+      );
+    }
+    return NextResponse.json({ error: message }, { status: 502 });
   }
 }

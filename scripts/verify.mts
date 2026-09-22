@@ -1018,6 +1018,84 @@ console.log('\nAlignment guides');
   }
 }
 
+// ------------------------------------------------- 6d. finding a module by name
+console.log('\nModule search');
+{
+  const { rankModules, nameFromSlug, slugFromName, slugFromInput } =
+    await import('../src/lib/modulargrid');
+
+  // A slice of real ModularGrid addresses, including the awkward ones.
+  const slugs = [
+    'make-noise-maths', 'make-noise-maths-', 'grayscale-maths-grayscale-panel',
+    'mutable-instruments-plaits', 'before-void-plaits-clone',
+    '1010-music-bluebox', 'moerk-modules-bluebox-black-panel',
+    'expert-sleepers-disting-mk4', 'expert-sleepers-disting-mk3', 'expert-sleepers-disting-nt',
+    'alm-busy-circuits-pamela-s-workout', 'intellijel-quadrax', 'doepfer-a-110-1',
+  ];
+
+  // A bare model name has to find the module, not a replacement panel for it.
+  const maths = rankModules('maths', slugs);
+  if (maths[0]?.slug === 'make-noise-maths') pass('a bare model name finds the module itself');
+  else fail(`"maths" ranked ${maths[0]?.slug} first`);
+
+  // Several modules answering to one name is the reason there is a list.
+  const disting = rankModules('disting', slugs);
+  if (disting.length >= 3 && disting.every((r) => r.slug.includes('disting'))) {
+    pass(`"disting" offers all ${disting.length} of them to choose between`);
+  } else {
+    fail(`"disting" returned ${disting.length} results`);
+  }
+
+  // Naming the maker should pin it down.
+  const exact = rankModules('mutable instruments plaits', slugs);
+  if (exact[0]?.slug === 'mutable-instruments-plaits') pass('naming the maker picks that maker\'s module');
+  else fail(`ranked ${exact[0]?.slug} first`);
+
+  // Duplicate entries end in a hyphen and should not outrank the real one.
+  if (rankModules('maths', slugs)[0].slug === 'make-noise-maths') {
+    pass('a trailing-hyphen duplicate ranks below the real address');
+  } else {
+    fail('a duplicate entry outranked the module');
+  }
+
+  // The same module is listed under several addresses; the list should show
+  // it once, not three identical-looking rows.
+  const dupes = rankModules('maths', slugs);
+  const names = dupes.map((r) => r.name.toLowerCase());
+  if (new Set(names).size === names.length) pass('duplicate entries collapse to one row');
+  else fail(`the list repeats a name: ${names.join(', ')}`);
+
+  // Replacement faceplates share a module's name and should not outrank it.
+  const bluebox = rankModules('bluebox', slugs);
+  if (bluebox[0]?.slug === '1010-music-bluebox') pass('the module beats a replacement panel for it');
+  else fail(`"bluebox" ranked ${bluebox[0]?.slug} first`);
+  if (bluebox.some((r) => r.slug.includes('panel'))) pass('replacement panels are still offered, lower down');
+  else fail('replacement panels vanished from the list entirely');
+
+  if (rankModules('zzzznothing', slugs).length === 0) pass('nonsense matches nothing');
+  else fail('nonsense produced matches');
+  if (rankModules('', slugs).length === 0) pass('an empty query matches nothing');
+  else fail('an empty query produced matches');
+
+  // Names shown in the list come from the address.
+  if (nameFromSlug('make-noise-maths') === 'Make Noise Maths') pass('addresses read back as names');
+  else fail(`nameFromSlug gave "${nameFromSlug('make-noise-maths')}"`);
+  if (nameFromSlug('alm-busy-circuits-pamela-s-workout').includes("Pamela's")) {
+    pass('an apostrophe in a name survives the round trip');
+  } else {
+    fail(`apostrophe handling gave "${nameFromSlug('alm-busy-circuits-pamela-s-workout')}"`);
+  }
+
+  // Typing a full name still resolves directly, without a search.
+  if (slugFromName('Make Noise Maths') === 'make-noise-maths') pass('a full name maps straight to its address');
+  else fail(`slugFromName gave ${slugFromName('Make Noise Maths')}`);
+  if (slugFromInput('https://modulargrid.net/e/make-noise-maths') === 'make-noise-maths') {
+    pass('a pasted link still opens directly');
+  } else {
+    fail('a link stopped resolving');
+  }
+}
+
 // ------------------------------------------------------- 7. files and storage
 console.log('\nExport, import and local storage');
 {

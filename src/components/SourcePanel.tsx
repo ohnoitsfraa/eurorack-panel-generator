@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useStore } from '@/lib/store';
 import { imageDataFromBlob } from '@/lib/cv/image';
 import { Button, Field, NumberInput, Section, Select, Slider, Toggle } from './ui';
-import { searchUrl, slugFromInput, type MGModule } from '@/lib/modulargrid';
+import { looksLikeLink, slugFromInput, type MGMatch, type MGModule } from '@/lib/modulargrid';
 
 export function SourcePanel() {
   const sourceImage = useStore((s) => s.sourceImage);
@@ -130,7 +130,7 @@ function UrlLoader({ onLoad }: { onLoad: (url: string, label?: string) => Promis
 
   // A ModularGrid page is not an image, but pasting one here is an obvious
   // thing to do, so treat it as the module link it is rather than refusing it.
-  const asModule = slugFromInput(url);
+  const asModule = looksLikeLink(url) && slugFromInput(url) !== null;
 
   const go = async () => {
     const value = url.trim();
@@ -185,10 +185,12 @@ async function openModule(
   input: string,
   loadFromUrl: (url: string, label?: string, kind?: 'photo' | 'artwork', hp?: number) => Promise<void>,
   setDesign: (patch: { hp: number }) => void,
-): Promise<{ module: MGModule } | { error: string; disabled?: boolean }> {
+): Promise<{ module: MGModule } | { error: string; disabled?: boolean; notFound?: boolean }> {
   const res = await fetch(`/api/modulargrid/module?q=${encodeURIComponent(input.trim())}`);
-  const data: MGModule & { error?: string; disabled?: boolean } = await res.json();
-  if (!res.ok) return { error: data.error ?? 'Lookup failed', disabled: data.disabled };
+  const data: MGModule & { error?: string; disabled?: boolean; notFound?: boolean } = await res.json();
+  if (!res.ok) {
+    return { error: data.error ?? 'Lookup failed', disabled: data.disabled, notFound: data.notFound };
+  }
 
   if (data.hp) setDesign({ hp: data.hp });
   if (!data.imageUrl) return { error: `No panel image found for ${data.name}.` };
@@ -213,29 +215,58 @@ function ModularGridLoader() {
   const [input, setInput] = useState('');
   const [state, setState] = useState<'idle' | 'busy' | 'off'>('idle');
   const [message, setMessage] = useState<string | null>(null);
+  const [results, setResults] = useState<MGMatch[] | null>(null);
   const [found, setFound] = useState<MGModule | null>(null);
 
-  const looksLikeLink = slugFromInput(input) !== null;
+  const isLink = looksLikeLink(input);
+  const canGo = isLink || input.trim().length >= 3;
 
-  const load = async () => {
-    if (!looksLikeLink) return;
+  /** Load one module, by link or by the address from a search result. */
+  const open = async (ref: string, label?: string) => {
     setState('busy');
     setMessage(null);
     setFound(null);
     try {
-      const result = await openModule(input, loadFromUrl, setDesign);
+      const result = await openModule(ref, loadFromUrl, setDesign);
       if ('error' in result) {
         setState(result.disabled ? 'off' : 'idle');
         setMessage(result.error);
         return;
       }
       setState('idle');
+      setResults(null);
       setFound(result.module);
     } catch (e) {
       setState('idle');
-      // Say what actually went wrong. "Could not reach ModularGrid" was the
-      // same answer for a network failure, a bad reply and a bug here, which
-      // made a working link look broken.
+      setMessage(e instanceof Error ? e.message : `Could not open ${label ?? 'that module'}.`);
+    }
+  };
+
+  const go = async () => {
+    if (!canGo) return;
+    // A link is unambiguous, so it opens straight away; a name is searched for,
+    // because several modules can answer to one and the choice is not ours.
+    if (isLink) { await open(input); return; }
+
+    setState('busy');
+    setMessage(null);
+    setResults(null);
+    setFound(null);
+    try {
+      const res = await fetch(`/api/modulargrid/search?q=${encodeURIComponent(input.trim())}`);
+      const data: { results?: MGMatch[]; error?: string; disabled?: boolean } = await res.json();
+      if (!res.ok) {
+        setState(data.disabled ? 'off' : 'idle');
+        setMessage(data.error ?? 'Search failed');
+        return;
+      }
+      setState('idle');
+      setResults(data.results ?? []);
+      if ((data.results ?? []).length === 0) {
+        setMessage('Nothing matched. Try the maker as well as the model.');
+      }
+    } catch (e) {
+      setState('idle');
       setMessage(e instanceof Error ? e.message : 'Could not reach ModularGrid.');
     }
   };
@@ -245,31 +276,39 @@ function ModularGridLoader() {
       <div className="flex gap-1">
         <input
           value={input}
-          placeholder="Paste a link, or type a name"
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter' && looksLikeLink) void load(); }}
+          placeholder="Maths, Plaits, Disting…"
+          onChange={(e) => { setInput(e.target.value); setResults(null); setMessage(null); }}
+          onKeyDown={(e) => { if (e.key === 'Enter' && canGo) void go(); }}
           className="w-full rounded-md border border-ink-600 bg-ink-900 px-2 py-1.5 text-xs outline-none
                      focus:border-accent"
         />
-        <Button onClick={() => void load()} disabled={!looksLikeLink || state === 'busy'}>
-          {state === 'busy' ? '…' : 'Load'}
+        <Button onClick={() => void go()} disabled={!canGo || state === 'busy'}>
+          {state === 'busy' ? '…' : isLink ? 'Open' : 'Search'}
         </Button>
       </div>
 
-      {input.trim() && !looksLikeLink && (
-        <a
-          href={searchUrl(input)}
-          target="_blank"
-          rel="noreferrer noopener"
-          className="block rounded-md border border-ink-700 bg-ink-900 px-2.5 py-2 text-[11px]
-                     leading-relaxed text-ink-300 hover:border-ink-400"
-        >
-          <span className="font-medium text-accent">Search ModularGrid for “{input.trim()}” ↗</span>
-          <span className="mt-1 block text-ink-400">
-            Opens in a new tab with the term filled in. Copy the module's link
-            from there and paste it back here.
-          </span>
-        </a>
+      {results && results.length > 0 && (
+        <>
+          <p className="text-[11px] text-ink-400">
+            {results.length} match{results.length === 1 ? '' : 'es'} — pick one:
+          </p>
+          <ul className="max-h-64 space-y-0.5 overflow-y-auto">
+            {results.map((r) => (
+              <li key={r.slug}>
+                <button
+                  type="button"
+                  onClick={() => void open(r.slug, r.name)}
+                  disabled={state === 'busy'}
+                  className="w-full rounded-md border border-ink-700 bg-ink-900 px-2 py-1.5 text-left
+                             text-[11px] text-ink-100 hover:border-ink-400 disabled:opacity-50"
+                >
+                  {r.name}
+                  <span className="block truncate font-mono text-[10px] text-ink-400">{r.slug}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </>
       )}
 
       {found && (
@@ -292,8 +331,8 @@ function ModularGridLoader() {
       {message && state !== 'off' && <p className="text-[11px] text-danger">{message}</p>}
 
       <p className="text-[11px] leading-relaxed text-ink-400">
-        ModularGrid has no public API, so this reads their module page — one
-        request, cached. Please go easy on their servers.
+        Searches ModularGrid&apos;s own index of pages, refreshed twice a day and
+        held here in between, so typing costs their servers nothing.
       </p>
     </div>
   );

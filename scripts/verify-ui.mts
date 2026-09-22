@@ -51,8 +51,9 @@ console.log(`\nBrowser checks against ${BASE}`);
 const browser: Browser = await chromium.launch({ executablePath: exe, headless: true });
 
 /** Open a page that reports anything the browser complains about. */
-async function open() {
-  const page = await browser.newPage();
+async function open(colorScheme: 'light' | 'dark' = 'dark') {
+  const ctx = await browser.newContext({ colorScheme });
+  const page = await ctx.newPage();
   const problems: string[] = [];
   page.on('pageerror', (e) => problems.push(`uncaught: ${e.message}`));
   page.on('response', (r) => {
@@ -243,9 +244,81 @@ async function open() {
   await page.close();
 }
 
+// --- light and dark ---
+{
+  for (const scheme of ['dark', 'light'] as const) {
+    const { page } = await open(scheme);
+    const applied = await page.evaluate(() => document.documentElement.getAttribute('data-theme'));
+    if (applied === scheme) pass(`a ${scheme} machine gets the ${scheme} theme`);
+    else fail(`system ${scheme} produced data-theme=${applied}`);
+    await page.close();
+  }
+
+  const { page, problems } = await open('dark');
+  await page.getByRole('button', { name: 'Light' }).click();
+  await page.waitForTimeout(300);
+  const forced = await page.evaluate(() => ({
+    attr: document.documentElement.getAttribute('data-theme'),
+    bg: getComputedStyle(document.body).backgroundColor,
+  }));
+  if (forced.attr === 'light' && forced.bg !== 'rgb(12, 13, 16)') pass('light can be chosen on a dark machine');
+  else fail(`forcing light gave ${JSON.stringify(forced)}`);
+
+  // The theme is applied before the first paint, or every load of a light
+  // theme flashes dark for a frame.
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  const early = await page.evaluate(() => document.documentElement.getAttribute('data-theme'));
+  if (early === 'light') pass('the choice is applied before anything is drawn, so there is no flash');
+  else fail(`before hydration the theme was ${early}`);
+
+  await page.waitForLoadState('networkidle');
+  await page.waitForTimeout(600);
+  await page.getByRole('button', { name: 'Match the system' }).click();
+  await page.waitForTimeout(400);
+  const back = await page.evaluate(() => document.documentElement.getAttribute('data-theme'));
+  if (back === 'dark') pass('handing it back to the system follows the machine again');
+  else fail(`back on system the theme was ${back}`);
+
+  if (problems.length === 0) pass('no uncaught errors switching theme');
+  else fail(`switching theme: ${[...new Set(problems)].join(' | ')}`);
+  await page.close();
+}
+
+// --- searching for a module by name ---
+{
+  const { page, problems } = await open();
+  await page.getByRole('button', { name: 'ModularGrid', exact: true }).click();
+  await page.getByPlaceholder('Maths, Plaits, Disting…').fill('disting');
+
+  // A bare name searches; only a link opens one module directly.
+  const button = page.getByRole('button', { name: 'Search', exact: true });
+  if (await button.count()) pass('a typed name offers to search rather than to open');
+  else fail('typing a name did not offer a search');
+
+  await button.click();
+  await page.waitForTimeout(10000);
+
+  const options = await page.locator('aside li button').allInnerTexts();
+  if (options.length >= 3 && options.every((o) => /disting/i.test(o))) {
+    pass(`a name with several modules behind it lists all ${options.length}`);
+  } else {
+    fail(`search returned ${options.length} options`);
+  }
+
+  await page.locator('aside li button').first().click();
+  await page.waitForTimeout(16000);
+  const body = await page.locator('body').innerText();
+  if (/Loaded[^\n]*isting/i.test(body)) pass('picking one loads that module');
+  else fail('picking a result did not load it');
+
+  if (problems.length === 0) pass('no uncaught errors while searching');
+  else fail(`while searching: ${[...new Set(problems)].join(' | ')}`);
+  await page.close();
+}
+
 // --- a ModularGrid link, pasted in either place ---
 for (const [tab, placeholder, button] of [
-  ['ModularGrid', 'Paste a link, or type a name', 'Load'],
+  ['ModularGrid', 'Maths, Plaits, Disting…', 'Open'],
   ['url', 'https://…/module.jpg', 'Open module'],
 ] as const) {
   const { page, problems } = await open();

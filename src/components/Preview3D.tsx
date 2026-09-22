@@ -18,6 +18,12 @@ import type { Mesh as PanelMesh } from '@/lib/types';
 export function Preview3D() {
   const { result } = usePanelBuild();
   const thickness = useStore((s) => s.design.thicknessMm);
+  const theme = useStore((s) => s.resolvedTheme);
+  // Three builds its scene in JavaScript, so the theme has to be handed to it
+  // rather than inherited through CSS like everything else.
+  const scene = theme === 'light'
+    ? { background: '#e8eaee', cell: '#cfd3da', section: '#b9bfc8', ambient: 0.75 }
+    : { background: '#0c0d10', cell: '#22262c', section: '#2e343d', ambient: 0.45 };
 
   const geometries = useMemo(
     () => result.meshes.map((m) => ({ mesh: m, geometry: toGeometry(m) })),
@@ -27,14 +33,14 @@ export function Preview3D() {
   const { widthMm, heightMm } = result.stats;
 
   return (
-    <div className="relative h-full w-full bg-ink-950">
+    <div className="relative h-full w-full" style={{ background: 'var(--stage)' }}>
       <Canvas
         dpr={[1, 2]}
         camera={{ position: [0, 0, Math.max(widthMm, heightMm) * 1.5], fov: 35, near: 1, far: 4000 }}
         gl={{ antialias: true, preserveDrawingBuffer: true }}
       >
-        <color attach="background" args={['#0c0d10']} />
-        <hemisphereLight intensity={0.45} groundColor="#1a1c20" />
+        <color attach="background" args={[scene.background]} />
+        <hemisphereLight intensity={scene.ambient} groundColor={theme === 'light' ? '#c9ccd2' : '#1a1c20'} />
         <directionalLight position={[80, 120, 160]} intensity={1.5} castShadow={false} />
         <directionalLight position={[-120, -60, 80]} intensity={0.5} />
         <Environment preset="studio" environmentIntensity={0.35} />
@@ -59,9 +65,9 @@ export function Preview3D() {
           rotation={[Math.PI / 2, 0, 0]}
           args={[400, 400]}
           cellSize={5.08}
-          cellColor="#22262c"
+          cellColor={scene.cell}
           sectionSize={50.8}
-          sectionColor="#2e343d"
+          sectionColor={scene.section}
           fadeDistance={420}
           infiniteGrid
         />
