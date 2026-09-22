@@ -1,0 +1,246 @@
+'use client';
+
+import { useCallback, useRef, useState } from 'react';
+import { conflicts, useStore } from '@/lib/store';
+import { RACK_WIDTHS, panelSlotFill, rowHeightPx, type RackRow } from '@/lib/rack';
+import { PanelThumb } from './PanelThumb';
+import { Button } from './ui';
+
+/**
+ * Rack layout, in the spirit of ModularGrid.
+ *
+ * Rows are drawn at a pixel-per-HP scale so every panel lands on the same
+ * grid, which is what makes the layout legible: a 4 HP panel is visibly a
+ * quarter of a 16 HP one. Panels drag within and between rows and snap to
+ * whole HP, because rack rails are drilled on the HP pitch and a panel cannot
+ * sit between holes.
+ */
+
+/**
+ * Pixels per HP at zoom 1.
+ *
+ * Because a row's height is derived from this rather than set independently,
+ * the scale has to suit both axes: at 8 px/HP an 84 HP 3U row is 672 x 202 px,
+ * which fits a normal window with room for a couple of rows.
+ */
+const PX_PER_HP = 8;
+
+export function RackView() {
+  const rack = useStore((s) => s.rack);
+  const library = useStore((s) => s.library);
+  const fonts = useStore((s) => s.fonts);
+  const designWidthHp = useStore((s) => s.designWidthHp);
+  const movePlacement = useStore((s) => s.movePlacement);
+  const removePlacement = useStore((s) => s.removePlacement);
+  const addRow = useStore((s) => s.addRow);
+  const updateRow = useStore((s) => s.updateRow);
+  const removeRow = useStore((s) => s.removeRow);
+  const openDesign = useStore((s) => s.openDesign);
+  const exportRack = useStore((s) => s.exportRack);
+
+  const [zoom, setZoom] = useState(1);
+  const [dragging, setDragging] = useState<string | null>(null);
+  const scale = PX_PER_HP * zoom;
+
+  const rowRefs = useRef(new Map<string, HTMLDivElement>());
+  const drag = useRef<{
+    placementId: string;
+    widthHp: number;
+    grabOffsetHp: number;
+  } | null>(null);
+
+  const byId = new Map(library.map((d) => [d.id, d]));
+
+  /** Which row is under this pointer position, if any. */
+  const rowAt = useCallback((clientY: number): RackRow | null => {
+    for (const row of rack.rows) {
+      const el = rowRefs.current.get(row.id);
+      if (!el) continue;
+      const r = el.getBoundingClientRect();
+      if (clientY >= r.top && clientY <= r.bottom) return row;
+    }
+    return null;
+  }, [rack.rows]);
+
+  const onPointerMove = (e: React.PointerEvent) => {
+    const d = drag.current;
+    if (!d) return;
+    const row = rowAt(e.clientY);
+    if (!row) return;
+    const el = rowRefs.current.get(row.id);
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const hp = (e.clientX - r.left) / scale - d.grabOffsetHp;
+    const clamped = Math.max(0, Math.min(row.widthHp - d.widthHp, Math.round(hp)));
+    movePlacement(d.placementId, row.id, clamped);
+  };
+
+  const endDrag = () => { drag.current = null; setDragging(null); };
+
+  const totalHp = rack.rows.reduce((n, r) => n + r.widthHp, 0);
+  const usedTotal = rack.rows.reduce(
+    (n, r) => n + r.placements.reduce((m, p) => m + designWidthHp(p.designId), 0),
+    0,
+  );
+
+  return (
+    <div
+      className="flex h-full w-full flex-col overflow-auto bg-ink-950 p-5"
+      onPointerMove={onPointerMove}
+      onPointerUp={endDrag}
+      onPointerLeave={endDrag}
+    >
+      <div className="mb-4 flex items-center gap-3">
+        <h2 className="text-sm font-medium">{rack.name}</h2>
+        <span className="text-[11px] tabular-nums text-ink-400">
+          {usedTotal} of {totalHp} HP used · {rack.rows.length} row
+          {rack.rows.length === 1 ? '' : 's'}
+        </span>
+        <div className="ml-auto flex items-center gap-1">
+          <Button onClick={() => setZoom((z) => Math.max(0.5, z / 1.2))}>−</Button>
+          <Button onClick={() => setZoom((z) => Math.min(3, z * 1.2))}>+</Button>
+          <Button onClick={() => addRow()}>Add row</Button>
+          <Button onClick={exportRack} disabled={usedTotal === 0} title="Export this rack and its panels to a file">
+            Export rack
+          </Button>
+        </div>
+      </div>
+
+      {library.length === 0 && (
+        <div className="mb-4 rounded-lg border border-dashed border-ink-600 px-4 py-6 text-center">
+          <p className="text-xs text-ink-300">No saved panels yet</p>
+          <p className="mt-1 text-[11px] text-ink-400">
+            Design a panel in the Layout view and press Save, then it can go in the rack.
+          </p>
+        </div>
+      )}
+
+      <div className="space-y-3">
+        {rack.rows.map((row) => {
+          const bad = conflicts(row, designWidthHp);
+          const used = row.placements.reduce((n, p) => n + designWidthHp(p.designId), 0);
+          return (
+            <div key={row.id}>
+              <div className="mb-1 flex items-center gap-2 text-[11px] text-ink-400">
+                <select
+                  value={row.widthHp}
+                  onChange={(e) => updateRow(row.id, { widthHp: Number(e.target.value) })}
+                  className="rounded border border-ink-700 bg-ink-900 px-1.5 py-0.5 text-[11px]"
+                >
+                  {RACK_WIDTHS.map((w) => (
+                    <option key={w} value={w}>{w} HP</option>
+                  ))}
+                  {!RACK_WIDTHS.includes(row.widthHp as (typeof RACK_WIDTHS)[number]) && (
+                    <option value={row.widthHp}>{row.widthHp} HP</option>
+                  )}
+                </select>
+                <select
+                  value={row.format}
+                  onChange={(e) => updateRow(row.id, { format: e.target.value as RackRow['format'] })}
+                  className="rounded border border-ink-700 bg-ink-900 px-1.5 py-0.5 text-[11px]"
+                >
+                  <option value="3U">3U</option>
+                  <option value="1U-intellijel">1U Intellijel</option>
+                  <option value="1U-pulplogic">1U Pulp Logic</option>
+                </select>
+                <span className="tabular-nums">
+                  {used}/{row.widthHp} HP
+                  {row.widthHp - used > 0 ? ` · ${row.widthHp - used} free` : ''}
+                </span>
+                {bad.size > 0 && <span className="text-danger">panels overlap</span>}
+                <button
+                  type="button"
+                  onClick={() => removeRow(row.id)}
+                  className="ml-auto text-ink-400 hover:text-danger"
+                  title="Remove row"
+                >
+                  Remove row
+                </button>
+              </div>
+
+              <div
+                ref={(el) => { if (el) rowRefs.current.set(row.id, el); }}
+                className="relative rounded-md border border-ink-700 bg-ink-900"
+                style={{
+                  width: row.widthHp * scale,
+                  height: rowHeightPx(row, scale),
+                  // Rail ticks every HP, so free space is countable by eye.
+                  backgroundImage:
+                    'repeating-linear-gradient(to right, #ffffff10 0 1px, transparent 1px)',
+                  backgroundSize: `${scale}px 100%`,
+                }}
+              >
+                {row.placements.map((p) => {
+                  const saved = byId.get(p.designId);
+                  if (!saved) return null;
+                  const w = designWidthHp(p.designId) * scale;
+                  return (
+                    <div
+                      key={p.id}
+                      className={`group absolute top-0 h-full overflow-hidden rounded-sm
+                        ${bad.has(p.id) ? 'ring-2 ring-danger' : 'ring-1 ring-ink-600'}
+                        ${dragging === p.id ? 'z-10 opacity-80' : ''}`}
+                      style={{ left: p.hp * scale, width: w, cursor: 'grab' }}
+                      onPointerDown={(e) => {
+                        e.preventDefault();
+                        (e.currentTarget as Element).setPointerCapture?.(e.pointerId);
+                        const r = e.currentTarget.getBoundingClientRect();
+                        drag.current = {
+                          placementId: p.id,
+                          widthHp: designWidthHp(p.designId),
+                          // Keep the grab point under the cursor rather than
+                          // snapping the panel's left edge to it.
+                          grabOffsetHp: (e.clientX - r.left) / scale,
+                        };
+                        setDragging(p.id);
+                      }}
+                      title={`${saved.name} · ${saved.design.hp} HP`}
+                    >
+                      <PanelThumb
+                        design={saved.design}
+                        fonts={fonts}
+                        className="pointer-events-none h-full"
+                        // The panel is a touch narrower than its slot; the
+                        // remainder is the rack clearance, drawn as the seam.
+                        style={{ width: `${panelSlotFill(saved.design.hp) * 100}%` }}
+                      />
+                      <div className="pointer-events-none absolute inset-x-0 bottom-0 hidden bg-ink-950/80 px-1 py-0.5
+                                      text-[9px] leading-tight text-ink-100 group-hover:block">
+                        {saved.name}
+                      </div>
+                      <div className="absolute right-0 top-0 hidden group-hover:flex">
+                        <button
+                          type="button"
+                          onPointerDown={(e) => e.stopPropagation()}
+                          onClick={() => openDesign(p.designId)}
+                          className="bg-ink-950/85 px-1 text-[9px] text-ink-100 hover:text-accent"
+                          title="Edit this design"
+                        >
+                          edit
+                        </button>
+                        <button
+                          type="button"
+                          onPointerDown={(e) => e.stopPropagation()}
+                          onClick={() => removePlacement(p.id)}
+                          className="bg-ink-950/85 px-1 text-[9px] text-ink-100 hover:text-danger"
+                          title="Remove from rack"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <p className="mt-4 text-[11px] text-ink-400">
+        Drag panels to move them between and within rows; they snap to whole HP.
+        Add panels from the library on the right.
+      </p>
+    </div>
+  );
+}

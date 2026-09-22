@@ -1,0 +1,362 @@
+'use client';
+
+import { useState } from 'react';
+import { panelHeightMm, panelWidthMm } from '@/lib/eurorack';
+import { uid, type ArtElement, type ReliefMode, type ShapeElement, type TextElement } from '@/lib/types';
+import { useStore } from '@/lib/store';
+import { registerFont } from '@/lib/model/text';
+import { traceArtwork } from '@/lib/model/trace';
+import { FONT_FAMILIES, FONT_WEIGHTS } from '@/lib/fonts';
+import { Button, ColorInput, Field, NumberInput, Section, Select, Slider } from './ui';
+
+const RELIEF_OPTIONS: Array<{ value: ReliefMode; label: string }> = [
+  { value: 'raised', label: 'Raised — sits on the surface' },
+  { value: 'engraved', label: 'Engraved — cut into the surface' },
+];
+
+export function DecorTab() {
+  const design = useStore((s) => s.design);
+  const decor = design.decor;
+  const addDecor = useStore((s) => s.addDecor);
+  const removeDecor = useStore((s) => s.removeDecor);
+  const selectedIds = useStore((s) => s.selectedIds);
+  const select = useStore((s) => s.select);
+
+  const W = panelWidthMm(design.hp);
+  const H = panelHeightMm(design.format);
+
+  const addText = () => {
+    const el: TextElement = {
+      id: uid('t'), type: 'text', text: 'LABEL',
+      x: W / 2, y: 12, sizeMm: 3.2,
+      fontFamily: 'Inter', fontWeight: 700,
+      letterSpacing: 0.2, align: 'center', rotation: 0,
+      color: '#f2f2f0', mode: 'raised', reliefMm: 0.6,
+    };
+    addDecor(el);
+  };
+
+  const addShape = () => {
+    const el: ShapeElement = {
+      id: uid('s'), type: 'shape', shape: 'line',
+      x: W / 2, y: H / 2, w: W * 0.6, h: 0.8,
+      radius: 0.4, rotation: 0,
+      color: '#f2f2f0', mode: 'raised', reliefMm: 0.6,
+    };
+    addDecor(el);
+  };
+
+  const selected = decor.find((d) => selectedIds.includes(d.id));
+
+  return (
+    <>
+      <Section title="Add">
+        <div className="grid grid-cols-2 gap-1">
+          <Button onClick={addText}>Text label</Button>
+          <Button onClick={addShape}>Line / shape</Button>
+        </div>
+        <ArtworkTracer />
+      </Section>
+
+      <Section title={`Elements (${decor.length})`}>
+        {decor.length === 0 ? (
+          <p className="py-2 text-center text-xs leading-relaxed text-ink-400">
+            Nothing yet. Text and shapes become real geometry — raised off the
+            panel or cut into it — so they survive the export.
+          </p>
+        ) : (
+          <ul className="space-y-0.5">
+            {decor.map((d) => (
+              <li key={d.id} className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => select([d.id])}
+                  className={`flex min-w-0 flex-1 items-center gap-2 rounded px-2 py-1 text-left text-[11px]
+                    ${selectedIds.includes(d.id) ? 'bg-accent/15 text-accent' : 'text-ink-300 hover:bg-ink-800'}`}
+                >
+                  <span
+                    className="h-3 w-3 shrink-0 rounded-sm border border-ink-600"
+                    style={{ background: d.color }}
+                  />
+                  <span className="truncate">
+                    {d.type === 'text' ? d.text || '(empty)' : d.type === 'art' ? 'Traced artwork' : d.shape}
+                  </span>
+                  <span className="ml-auto shrink-0 text-ink-400">
+                    {d.mode === 'raised' ? '↑' : '↓'}{d.reliefMm.toFixed(1)}
+                  </span>
+                </button>
+                <Button variant="ghost" onClick={() => removeDecor(d.id)} title="Remove">×</Button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Section>
+
+      {selected && <DecorEditor id={selected.id} />}
+    </>
+  );
+}
+
+function DecorEditor({ id }: { id: string }) {
+  const el = useStore((s) => s.design.decor.find((d) => d.id === id));
+  const update = useStore((s) => s.updateDecor);
+  const design = useStore((s) => s.design);
+  const ensureFont = useStore((s) => s.ensureFont);
+  if (!el) return null;
+
+  const W = panelWidthMm(design.hp);
+  const H = panelHeightMm(design.format);
+
+  return (
+    <Section title="Selected element">
+      {el.type === 'text' && (
+        <>
+          <Field label="Text">
+            <input
+              value={el.text}
+              onChange={(e) => update(id, { text: e.target.value })}
+              className="w-full rounded-md border border-ink-600 bg-ink-900 px-2 py-1.5 text-sm outline-none
+                         focus:border-accent"
+            />
+          </Field>
+
+          <div className="grid grid-cols-2 gap-2">
+            <Field label="Font">
+              <Select
+                value={el.fontFamily}
+                onChange={(fontFamily) => { update(id, { fontFamily }); ensureFont(fontFamily, el.fontWeight); }}
+                options={FONT_FAMILIES.map((f) => ({ value: f, label: f }))}
+              />
+            </Field>
+            <Field label="Weight">
+              <Select
+                value={String(el.fontWeight)}
+                onChange={(w) => { update(id, { fontWeight: Number(w) }); ensureFont(el.fontFamily, Number(w)); }}
+                options={FONT_WEIGHTS.map((w) => ({ value: String(w), label: String(w) }))}
+              />
+            </Field>
+          </div>
+
+          <FontUpload />
+
+          <div className="grid grid-cols-2 gap-2">
+            <Field label="Cap height" hint="mm">
+              <NumberInput value={el.sizeMm} onChange={(sizeMm) => update(id, { sizeMm })} min={0.8} max={60} step={0.1} />
+            </Field>
+            <Field label="Letter spacing" hint="mm">
+              <NumberInput value={el.letterSpacing} onChange={(letterSpacing) => update(id, { letterSpacing })} min={-2} max={10} step={0.05} />
+            </Field>
+          </div>
+
+          <Field label="Alignment">
+            <Select
+              value={el.align}
+              onChange={(align) => update(id, { align })}
+              options={[
+                { value: 'left', label: 'Left' },
+                { value: 'center', label: 'Centre' },
+                { value: 'right', label: 'Right' },
+              ]}
+            />
+          </Field>
+        </>
+      )}
+
+      {el.type === 'shape' && (
+        <>
+          <Field label="Shape">
+            <Select
+              value={el.shape}
+              onChange={(shape) => update(id, { shape })}
+              options={[
+                { value: 'line', label: 'Line' },
+                { value: 'rect', label: 'Rectangle' },
+                { value: 'circle', label: 'Circle' },
+              ]}
+            />
+          </Field>
+          <div className="grid grid-cols-2 gap-2">
+            <Field label="Width" hint="mm">
+              <NumberInput value={el.w} onChange={(w) => update(id, { w })} min={0.2} max={300} step={0.1} />
+            </Field>
+            <Field label="Height" hint="mm">
+              <NumberInput value={el.h} onChange={(h) => update(id, { h })} min={0.2} max={300} step={0.1} />
+            </Field>
+          </div>
+          {el.shape === 'rect' && (
+            <Field label="Corner radius" hint="mm">
+              <NumberInput value={el.radius} onChange={(radius) => update(id, { radius })} min={0} max={30} step={0.1} />
+            </Field>
+          )}
+        </>
+      )}
+
+      {el.type === 'art' && (
+        <p className="text-[11px] leading-relaxed text-ink-400">
+          Traced artwork: {el.rings.length} outline{el.rings.length === 1 ? '' : 's'}. Re-trace
+          from the Add section to change the threshold.
+        </p>
+      )}
+
+      {el.type !== 'art' && (
+        <div className="grid grid-cols-2 gap-2">
+          <Field label="X" hint="mm">
+            <NumberInput value={el.x} onChange={(x) => update(id, { x })} min={-50} max={W + 50} step={0.1} />
+          </Field>
+          <Field label="Y" hint="mm">
+            <NumberInput value={el.y} onChange={(y) => update(id, { y })} min={-50} max={H + 50} step={0.1} />
+          </Field>
+        </div>
+      )}
+
+      {el.type !== 'art' && (
+        <Field label="Rotation" hint={`${el.rotation.toFixed(0)}°`}>
+          <Slider min={-180} max={180} step={1} value={el.rotation} onChange={(rotation) => update(id, { rotation })} />
+        </Field>
+      )}
+
+      <div className="border-t border-ink-800 pt-3">
+        <Field label="Relief">
+          <Select value={el.mode} onChange={(mode) => update(id, { mode })} options={RELIEF_OPTIONS} />
+        </Field>
+      </div>
+
+      <Field
+        label={el.mode === 'raised' ? 'Height above surface' : 'Depth into surface'}
+        hint={`${el.reliefMm.toFixed(2)} mm`}
+      >
+        <Slider
+          min={0.1}
+          max={el.mode === 'engraved' ? Math.max(0.2, design.thicknessMm - 0.4) : 3}
+          step={0.05}
+          value={el.reliefMm}
+          onChange={(reliefMm) => update(id, { reliefMm })}
+        />
+      </Field>
+      <p className="-mt-1 text-[11px] leading-relaxed text-ink-400">
+        {el.mode === 'raised'
+          ? 'Two or three layer heights is plenty — 0.4 to 0.6 mm reads clearly and prints fast.'
+          : 'An engraving stays part of the panel. Give it a different colour to also get a matching inlay piece for a second material.'}
+      </p>
+
+      <Field label="Colour">
+        <ColorInput value={el.color} onChange={(color) => update(id, { color })} />
+      </Field>
+    </Section>
+  );
+}
+
+function FontUpload() {
+  const [name, setName] = useState<string | null>(null);
+  const bump = useStore((s) => s.ensureFont);
+
+  return (
+    <Field label="Or use your own font">
+      <input
+        type="file"
+        accept=".ttf,.otf,font/ttf,font/otf"
+        onChange={async (e) => {
+          const f = e.target.files?.[0];
+          if (!f) return;
+          const buf = await f.arrayBuffer();
+          const family = f.name.replace(/\.(ttf|otf)$/i, '');
+          try {
+            // Registered under every weight, since a single file has just one.
+            for (const w of FONT_WEIGHTS) registerFont(family, w, buf.slice(0));
+            setName(family);
+            bump(family, 700);
+          } catch {
+            setName(null);
+          }
+          e.target.value = '';
+        }}
+        className="w-full text-[11px] text-ink-400 file:mr-2 file:rounded file:border-0
+                   file:bg-ink-700 file:px-2 file:py-1 file:text-[11px] file:text-ink-100"
+      />
+      {name && <p className="mt-1 text-[11px] text-ink-400">Loaded “{name}” — pick it from the Font list.</p>}
+    </Field>
+  );
+}
+
+/**
+ * Turn a bitmap into printable relief.
+ *
+ * A background image alone cannot be printed, so this traces it to outlines
+ * that get extruded like any other decor. The threshold is exposed because
+ * where the edge falls is a judgement call about the artwork, not something
+ * that can be inferred.
+ */
+function ArtworkTracer() {
+  const design = useStore((s) => s.design);
+  const addDecor = useStore((s) => s.addDecor);
+  const setError = useStore((s) => s.setError);
+  const [threshold, setThreshold] = useState(128);
+  const [invert, setInvert] = useState(false);
+  const [detail, setDetail] = useState(0.6);
+  const [file, setFile] = useState<File | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const run = async () => {
+    if (!file) return;
+    setBusy(true);
+    try {
+      const rings = await traceArtwork(file, {
+        threshold,
+        invert,
+        simplifyPx: detail,
+        targetWidthMm: panelWidthMm(design.hp) * 0.8,
+        panelWidthMm: panelWidthMm(design.hp),
+        panelHeightMm: panelHeightMm(design.format),
+      });
+      if (!rings.length) {
+        setError('Nothing traced — try moving the threshold or inverting.');
+        return;
+      }
+      const el: ArtElement = {
+        id: uid('a'), type: 'art', rings,
+        color: '#f2f2f0', mode: 'raised', reliefMm: 0.6,
+      };
+      addDecor(el);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not trace that image');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="space-y-2 border-t border-ink-800 pt-3">
+      <Field label="Trace an image into relief">
+        <input
+          type="file"
+          accept="image/*"
+          onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+          className="w-full text-[11px] text-ink-400 file:mr-2 file:rounded file:border-0
+                     file:bg-ink-700 file:px-2 file:py-1 file:text-[11px] file:text-ink-100"
+        />
+      </Field>
+
+      {file && (
+        <>
+          <Field label="Threshold" hint={String(threshold)}>
+            <Slider min={8} max={248} step={1} value={threshold} onChange={setThreshold} />
+          </Field>
+          <Field label="Detail" hint={detail <= 0.3 ? 'fine' : detail >= 1.4 ? 'coarse' : 'medium'}>
+            <Slider min={0.1} max={2.5} step={0.1} value={detail} onChange={setDetail} />
+          </Field>
+          <label className="flex items-center gap-2 text-[11px] text-ink-300">
+            <input type="checkbox" checked={invert} onChange={(e) => setInvert(e.target.checked)} />
+            Invert (trace the light areas instead)
+          </label>
+          <Button variant="primary" onClick={() => void run()} disabled={busy} className="w-full">
+            {busy ? 'Tracing…' : 'Trace to relief'}
+          </Button>
+          <p className="text-[11px] leading-relaxed text-ink-400">
+            Works best on flat, high-contrast art such as a logo. Photographs
+            trace into thousands of tiny islands.
+          </p>
+        </>
+      )}
+    </div>
+  );
+}

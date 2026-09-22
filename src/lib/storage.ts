@@ -1,0 +1,179 @@
+'use client';
+
+import type { PanelDesign } from './types';
+import type { Rack } from './rack';
+
+/**
+ * Where designs and racks live.
+ *
+ * IndexedDB rather than localStorage. localStorage caps out around 5 MB across
+ * the whole origin, and a single panel with traced artwork can carry thousands
+ * of points, so a modest library reaches the limit and saves start failing.
+ * IndexedDB has room to spare and stores structured values directly instead of
+ * re-serialising the entire library on every keystroke.
+ *
+ * Anything already in localStorage from an earlier version is moved across on
+ * first load, then left alone.
+ */
+
+const DB_NAME = 'eurorack-panel-generator';
+const DB_VERSION = 1;
+const DESIGNS = 'designs';
+const META = 'meta';
+const RACK_KEY = 'rack';
+
+const LEGACY_LIBRARY = 'eurorack-panel-generator/library/v1';
+const LEGACY_RACK = 'eurorack-panel-generator/rack/v1';
+
+export interface SavedDesign {
+  id: string;
+  name: string;
+  /** Epoch milliseconds. */
+  updatedAt: number;
+  design: PanelDesign;
+}
+
+let dbPromise: Promise<IDBDatabase> | null = null;
+
+function open(): Promise<IDBDatabase> {
+  if (dbPromise) return dbPromise;
+  dbPromise = new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, DB_VERSION);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains(DESIGNS)) db.createObjectStore(DESIGNS, { keyPath: 'id' });
+      if (!db.objectStoreNames.contains(META)) db.createObjectStore(META);
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error ?? new Error('Could not open the local database'));
+  });
+  // A failed open should not be cached, or every later call fails too.
+  dbPromise.catch(() => { dbPromise = null; });
+  return dbPromise;
+}
+
+function tx<T>(store: string, mode: IDBTransactionMode, run: (s: IDBObjectStore) => IDBRequest<T>): Promise<T> {
+  return open().then(
+    (db) =>
+      new Promise<T>((resolve, reject) => {
+        const t = db.transaction(store, mode);
+        const req = run(t.objectStore(store));
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error ?? new Error('Local database write failed'));
+      }),
+  );
+}
+
+export async function loadDesigns(): Promise<SavedDesign[]> {
+  try {
+    const all = await tx<SavedDesign[]>(DESIGNS, 'readonly', (s) => s.getAll() as IDBRequest<SavedDesign[]>);
+    return all.filter(isSaved).sort((a, b) => b.updatedAt - a.updatedAt);
+  } catch {
+    return [];
+  }
+}
+
+export async function putDesign(design: SavedDesign): Promise<void> {
+  await tx(DESIGNS, 'readwrite', (s) => s.put(design));
+}
+
+export async function putDesigns(designs: SavedDesign[]): Promise<void> {
+  if (designs.length === 0) return;
+  const db = await open();
+  await new Promise<void>((resolve, reject) => {
+    const t = db.transaction(DESIGNS, 'readwrite');
+    const store = t.objectStore(DESIGNS);
+    for (const d of designs) store.put(d);
+    t.oncomplete = () => resolve();
+    t.onerror = () => reject(t.error ?? new Error('Local database write failed'));
+  });
+}
+
+export async function deleteDesign(id: string): Promise<void> {
+  await tx(DESIGNS, 'readwrite', (s) => s.delete(id));
+}
+
+export async function loadRack(): Promise<Rack | null> {
+  try {
+    const r = await tx<Rack | undefined>(META, 'readonly', (s) => s.get(RACK_KEY) as IDBRequest<Rack | undefined>);
+    return r && Array.isArray(r.rows) ? r : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function saveRack(rack: Rack): Promise<void> {
+  await tx(META, 'readwrite', (s) => s.put(rack, RACK_KEY));
+}
+
+/**
+ * Move anything left in localStorage into IndexedDB.
+ *
+ * Runs once. The old keys are cleared only after the new copy is written, so
+ * an interruption leaves the originals to try again rather than nothing at all.
+ */
+export async function migrateFromLocalStorage(): Promise<number> {
+  let moved = 0;
+  try {
+    const rawLib = localStorage.getItem(LEGACY_LIBRARY);
+    if (rawLib) {
+      const parsed: unknown = JSON.parse(rawLib);
+      if (Array.isArray(parsed)) {
+        const designs = parsed.filter(isSaved);
+        await putDesigns(designs);
+        moved = designs.length;
+      }
+      localStorage.removeItem(LEGACY_LIBRARY);
+    }
+
+    const rawRack = localStorage.getItem(LEGACY_RACK);
+    if (rawRack) {
+      const parsed = JSON.parse(rawRack) as Rack;
+      if (parsed && Array.isArray(parsed.rows)) await saveRack(parsed);
+      localStorage.removeItem(LEGACY_RACK);
+    }
+
+    // Tombstones only ever existed to tell a server about deletions.
+    localStorage.removeItem('eurorack-panel-generator/tombstones/v1');
+  } catch {
+    // A browser with storage blocked still runs; it just will not remember.
+  }
+  return moved;
+}
+
+/** How much room is left, when the browser will say. */
+export async function storageEstimate(): Promise<{ usedMb: number; quotaMb: number } | null> {
+  try {
+    const e = await navigator.storage?.estimate?.();
+    if (!e || e.usage === undefined || e.quota === undefined) return null;
+    return { usedMb: e.usage / 1024 / 1024, quotaMb: e.quota / 1024 / 1024 };
+  } catch {
+    return null;
+  }
+}
+
+export function isSaved(v: unknown): v is SavedDesign {
+  if (!v || typeof v !== 'object') return false;
+  const o = v as Partial<SavedDesign>;
+  return (
+    typeof o.id === 'string' &&
+    typeof o.name === 'string' &&
+    typeof o.updatedAt === 'number' &&
+    !!o.design &&
+    typeof o.design === 'object' &&
+    typeof (o.design as PanelDesign).hp === 'number' &&
+    Array.isArray((o.design as PanelDesign).features)
+  );
+}
+
+/**
+ * A design without its reference bitmap.
+ *
+ * A background image is a data URL running to megabytes and is a guide for
+ * designing rather than part of the model, so it is dropped on save and on
+ * export.
+ */
+export function stripForStorage(design: PanelDesign): PanelDesign {
+  const { backgroundImage: _drop, ...rest } = design;
+  return rest;
+}
