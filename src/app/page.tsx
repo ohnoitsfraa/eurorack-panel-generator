@@ -56,7 +56,7 @@ export default function Page() {
       <header className="flex shrink-0 items-center gap-4 border-b border-ink-800 px-4 py-2.5">
         <h1 className="flex items-center gap-2 text-sm font-semibold tracking-tight">
           <Logo className="h-[18px] w-[18px] text-accent" />
-          Eurorack Panel Generator
+          Panelmate
         </h1>
 
         <div className="flex rounded-md border border-ink-700 p-0.5">

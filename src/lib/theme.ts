@@ -15,6 +15,7 @@
 export type ThemeChoice = 'system' | 'light' | 'dark';
 export type ResolvedTheme = 'light' | 'dark';
 
+// Unchanged across the rename, so nobody's chosen theme resets.
 export const THEME_KEY = 'eurorack-panel-generator/theme';
 
 export function readChoice(): ThemeChoice {

@@ -348,6 +348,9 @@ export function PanelCanvas2D() {
       <svg
         ref={svgRef}
         viewBox={viewBox}
+        role="application"
+        aria-label="Panel layout"
+        data-panel-canvas=""
         className={`h-full w-full ${tool ? 'cursor-crosshair' : 'cursor-default'}`}
         onPointerDown={onBackgroundPointerDown}
         onPointerMove={onPointerMove}

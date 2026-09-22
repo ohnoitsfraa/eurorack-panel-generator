@@ -1233,8 +1233,8 @@ console.log('\nExport, import and local storage');
   for (const [label, text] of [
     ['not JSON at all', 'this is not json'],
     ['JSON but not ours', '{"hello":"world"}'],
-    ['ours but from the future', '{"format":"eurorack-panel-generator","version":99,"panels":[]}'],
-    ['ours but empty', '{"format":"eurorack-panel-generator","version":1,"panels":[]}'],
+    ['ours but from the future', '{"format":"panelmate","version":99,"panels":[]}'],
+    ['ours but empty', '{"format":"panelmate","version":1,"panels":[]}'],
   ] as const) {
     try {
       parseBackup(text);
@@ -1245,8 +1245,16 @@ console.log('\nExport, import and local storage');
   }
 
   // Entries that are not panels are dropped rather than failing the whole file.
+  // Files exported before the app was renamed still have to open, or renaming
+  // it would quietly invalidate everyone's backups.
+  const legacy = parseBackup(JSON.stringify({
+    format: 'eurorack-panel-generator', version: 1, kind: 'library', panels: [one],
+  }));
+  if (legacy.backup.panels.length === 1) pass('a file written under the old name still opens');
+  else fail('renaming the app broke its own older exports');
+
   const partial = parseBackup(JSON.stringify({
-    format: 'eurorack-panel-generator', version: 1, kind: 'library',
+    format: 'panelmate', version: 1, kind: 'library',
     panels: [one, { id: 'x', name: 'broken' }, two],
   }));
   if (partial.backup.panels.length === 2 && partial.skipped === 1) {
@@ -1427,7 +1435,7 @@ async function ensureTestFont(): Promise<string | null> {
   try {
     const css = await fetch('https://fonts.googleapis.com/css2?family=Inter:wght@700', {
       // An unrecognised agent gets TrueType; a browser's own gets woff2.
-      headers: { 'User-Agent': 'EurorackPanelGenerator/verify' },
+      headers: { 'User-Agent': 'Panelmate/verify' },
       signal: AbortSignal.timeout(15_000),
     }).then((r) => r.text());
     const url = css.match(/url\((https:\/\/fonts\.gstatic\.com\/[^)]+\.ttf)\)/)?.[1];

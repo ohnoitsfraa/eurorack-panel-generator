@@ -67,7 +67,7 @@ async function open(colorScheme: 'light' | 'dark' = 'dark') {
 {
   const { page, problems } = await open();
   const title = await page.locator('h1').first().innerText();
-  if (title.includes('Eurorack')) pass('the app loads');
+  if (title.includes('Panelmate')) pass('the app loads');
   else fail(`unexpected heading: ${title}`);
   if (problems.length === 0) pass('no uncaught errors on load');
   else fail(`on load: ${[...new Set(problems)].join(' | ')}`);
@@ -79,7 +79,7 @@ async function open(colorScheme: 'light' | 'dark' = 'dark') {
   const { page, problems } = await open();
   await page.getByRole('button', { name: 'Cutouts', exact: true }).click();
   await page.getByRole('button', { name: 'Circle', exact: true }).click();
-  const canvas = page.locator('svg').first();
+  const canvas = page.locator('[data-panel-canvas]');
   await canvas.click({ position: { x: 200, y: 200 } });
   await page.waitForTimeout(300);
 
@@ -89,7 +89,7 @@ async function open(colorScheme: 'light' | 'dark' = 'dark') {
   if (/1 cutouts|· 1 cutout/.test(body)) pass('the canvas counts the new cutout');
 
   // Handles only appear for a single selection.
-  const handles = await page.locator('svg rect[style*="cursor"]').count();
+  const handles = await page.locator('[data-panel-canvas] rect[style*="cursor"]').count();
   if (handles > 0) pass('the selected cutout has drag handles');
   else fail('no handles appeared on the selected cutout');
 
@@ -103,7 +103,7 @@ async function open(colorScheme: 'light' | 'dark' = 'dark') {
   const { page, problems } = await open();
   await page.getByRole('button', { name: 'Cutouts', exact: true }).click();
   await page.getByRole('button', { name: 'Circle', exact: true }).click();
-  const svg = page.locator('svg').first();
+  const svg = page.locator('[data-panel-canvas]');
   await svg.click({ position: { x: 300, y: 300 } });
   await page.waitForTimeout(300);
 
@@ -118,7 +118,7 @@ async function open(colorScheme: 'light' | 'dark' = 'dark') {
   // It used to be created and then sit motionless under the original, so the
   // duplication was invisible until the pointer was released.
   const midBody = await page.locator('body').innerText();
-  const badges = await page.locator('svg text', { hasText: '+1' }).count();
+  const badges = await page.locator('[data-panel-canvas] text', { hasText: '+1' }).count();
   if (/Duplicating/i.test(midBody)) pass('the canvas says a copy is being dragged');
   else fail('nothing indicated a duplicate was in progress');
   if (badges > 0) pass('the copy is badged while it moves');
@@ -128,14 +128,16 @@ async function open(colorScheme: 'light' | 'dark' = 'dark') {
   await page.keyboard.up('Alt');
   await page.waitForTimeout(300);
 
-  const positions = await page.locator('svg circle').evaluateAll((els) =>
+  const positions = await page.locator('[data-panel-canvas] circle').evaluateAll((els) =>
     els.map((e) => `${(+(e.getAttribute('cx') ?? 0)).toFixed(1)},${(+(e.getAttribute('cy') ?? 0)).toFixed(1)}`));
   const distinct = new Set(positions);
   const after = (await page.locator('body').innerText()).match(/·\s*(\d+)\s*cutouts?/);
   if (after && after[1] === '2') pass('the drag leaves two cutouts behind');
   else fail(`after an Alt-drag there are ${after?.[1] ?? '?'} cutouts, expected 2`);
-  if (distinct.size >= 3) pass('the copy ended up somewhere else, not on top of the original');
-  else fail('the copy landed on the original');
+  // Two cutouts in two places. (This used to expect three, because the count
+  // swept up the header logo's circles as well as the canvas's.)
+  if (distinct.size >= 2) pass('the copy ended up somewhere else, not on top of the original');
+  else fail(`the copy landed on the original (${distinct.size} distinct position)`);
 
   if (problems.length === 0) pass('no uncaught errors during Alt-drag');
   else fail(`during Alt-drag: ${[...new Set(problems)].join(' | ')}`);
@@ -147,7 +149,7 @@ async function open(colorScheme: 'light' | 'dark' = 'dark') {
   const { page, problems } = await open();
   const toScreen = (mx: number, my: number) =>
     page.evaluate(([x, y]) => {
-      const el = document.querySelector('svg')!;
+      const el = document.querySelector('[data-panel-canvas]') as SVGSVGElement;
       const p = new DOMPoint(x, y).matrixTransform(el.getScreenCTM()!);
       return { x: p.x, y: p.y };
     }, [mx, my] as [number, number]);
@@ -159,7 +161,7 @@ async function open(colorScheme: 'light' | 'dark' = 'dark') {
     await page.mouse.click(p.x, p.y);
     await page.waitForTimeout(150);
   }
-  const positionsBefore = await page.locator('svg circle').evaluateAll((els) =>
+  const positionsBefore = await page.locator('[data-panel-canvas] circle').evaluateAll((els) =>
     [...new Set(els.map((e) => `${(+(e.getAttribute('cx') ?? 0)).toFixed(1)},${(+(e.getAttribute('cy') ?? 0)).toFixed(1)}`))]);
 
   // The session is written on a timer; give it a moment to land.
@@ -172,7 +174,7 @@ async function open(colorScheme: 'light' | 'dark' = 'dark') {
   if (count && count[1] === '4') pass('a refresh keeps the cutouts that were on the panel');
   else fail(`after a refresh there are ${count?.[1] ?? '?'} cutouts, expected 4`);
 
-  const positionsAfter = await page.locator('svg circle').evaluateAll((els) =>
+  const positionsAfter = await page.locator('[data-panel-canvas] circle').evaluateAll((els) =>
     [...new Set(els.map((e) => `${(+(e.getAttribute('cx') ?? 0)).toFixed(1)},${(+(e.getAttribute('cy') ?? 0)).toFixed(1)}`))]);
   const kept = positionsBefore.every((p) => positionsAfter.includes(p));
   if (kept) pass('they come back in the same places, not just the same number');
@@ -190,12 +192,12 @@ async function open(colorScheme: 'light' | 'dark' = 'dark') {
 {
   const { page, problems } = await open();
   await page.getByRole('button', { name: 'Cutouts', exact: true }).click();
-  const svg = page.locator('svg').first();
+  const svg = page.locator('[data-panel-canvas]');
 
   /** Panel millimetres to viewport pixels, through the SVG's own transform. */
   const toScreen = (mx: number, my: number) =>
     page.evaluate(([x, y]) => {
-      const el = document.querySelector('svg')!;
+      const el = document.querySelector('[data-panel-canvas]') as SVGSVGElement;
       const p = new DOMPoint(x, y).matrixTransform(el.getScreenCTM()!);
       return { x: p.x, y: p.y };
     }, [mx, my] as [number, number]);
@@ -219,7 +221,7 @@ async function open(colorScheme: 'light' | 'dark' = 'dark') {
   await page.mouse.move(to.x, to.y, { steps: 12 });
   await page.waitForTimeout(300);
 
-  const lines = await page.locator('svg line').count();
+  const lines = await page.locator('[data-panel-canvas] line').count();
   const status = await page.locator('body').innerText();
   if (lines > 0) pass('a guide line appears while dragging into alignment');
   else fail('no guide appeared');
@@ -229,14 +231,14 @@ async function open(colorScheme: 'light' | 'dark' = 'dark') {
   await page.mouse.up();
   await page.waitForTimeout(300);
 
-  const xs = await page.locator('svg circle').evaluateAll((els) =>
+  const xs = await page.locator('[data-panel-canvas] circle').evaluateAll((els) =>
     [...new Set(els.map((e) => +(e.getAttribute('cx') ?? 0)).filter((v) => v > 25 && v < 60))]);
   if (xs.length === 1 && Math.abs(xs[0] - 31) < 0.01) {
     pass('the dragged cutout snaps onto the other one\'s column');
   } else {
     fail(`columns after the drag: ${xs.map((v) => v.toFixed(2)).join(', ')}, expected just 31`);
   }
-  if ((await page.locator('svg line').count()) === 0) pass('guides disappear once the drag ends');
+  if ((await page.locator('[data-panel-canvas] line').count()) === 0) pass('guides disappear once the drag ends');
   else fail('guides were left on screen after the drag');
 
   if (problems.length === 0) pass('no uncaught errors while aligning');
@@ -250,7 +252,7 @@ async function open(colorScheme: 'light' | 'dark' = 'dark') {
   await page.getByRole('button', { name: 'Cutouts', exact: true }).click();
   await page.getByRole('button', { name: 'Circle', exact: true }).click();
   const pt = await page.evaluate(() => {
-    const el = document.querySelector('svg')!;
+    const el = document.querySelector('[data-panel-canvas]') as SVGSVGElement;
     const p = new DOMPoint(20, 60).matrixTransform(el.getScreenCTM()!);
     return { x: p.x, y: p.y };
   });
@@ -334,7 +336,10 @@ async function open(colorScheme: 'light' | 'dark' = 'dark') {
   await page.waitForTimeout(10000);
 
   const options = await page.locator('aside li button').allInnerTexts();
-  if (options.length >= 3 && options.every((o) => /disting/i.test(o))) {
+  const said = await page.locator('body').innerText();
+  if (/switched off|Too many/i.test(said)) {
+    skip('search: ModularGrid lookup is off or throttled right now');
+  } else if (options.length >= 3 && options.every((o) => /disting/i.test(o))) {
     pass(`a name with several modules behind it lists all ${options.length}`);
   } else {
     fail(`search returned ${options.length} options`);

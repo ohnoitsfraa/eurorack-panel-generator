@@ -19,7 +19,7 @@ const ALLOWED = new Set<string>(FONT_FAMILIES);
  * opposite: those UAs get routed to the EOT-era endpoint, which returns an
  * extension-less URL rather than a .ttf.
  */
-const UA = 'EurorackPanelGenerator/0.1 (+font resolution)';
+const UA = 'Panelmate/0.1 (+font resolution)';
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);

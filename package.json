@@ -1,5 +1,5 @@
 {
-  "name": "eurorack-panel-generator",
+  "name": "panelmate",
   "version": "0.1.0",
   "scripts": {
     "dev": "next dev",

@@ -15,7 +15,7 @@ export function ExportTab() {
   const [name, setName] = useState('');
 
   const filename = useMemo(() => {
-    const base = name.trim() || sourceLabel?.replace(/\.[a-z0-9]+$/i, '') || 'eurorack-panel';
+    const base = name.trim() || sourceLabel?.replace(/\.[a-z0-9]+$/i, '') || 'panelmate-panel';
     return `${base.replace(/[^\w.-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) || 'panel'}-${design.hp}hp`;
   }, [name, sourceLabel, design.hp]);
 

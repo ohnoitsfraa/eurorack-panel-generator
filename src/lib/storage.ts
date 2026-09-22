@@ -16,6 +16,13 @@ import type { Rack } from './rack';
  * first load, then left alone.
  */
 
+/**
+ * The database keeps its original name on purpose.
+ *
+ * It holds every panel anyone has saved. Renaming it when the app was renamed
+ * would not migrate that work, it would orphan it — the old database would sit
+ * there, full, while the app looked in an empty new one.
+ */
 const DB_NAME = 'eurorack-panel-generator';
 const DB_VERSION = 1;
 const DESIGNS = 'designs';

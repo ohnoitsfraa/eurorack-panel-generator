@@ -3,9 +3,10 @@ import { THEME_BOOT_SCRIPT } from '@/lib/theme';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'Eurorack Panel Generator',
+  title: 'Panelmate',
   description:
-    'Turn a photo of a Eurorack module into a customisable, 3D-printable faceplate. Exports STL and 3MF.',
+    'Design matching Eurorack faceplates from a photo of any module, so a rack of '
+    + 'mismatched hardware ends up looking like one instrument. Exports STL and 3MF.',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

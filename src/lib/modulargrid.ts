@@ -16,7 +16,7 @@
  */
 
 export const MG_BASE = 'https://modulargrid.net';
-const UA = 'EurorackPanelGenerator/0.1 (hobby faceplate tool)';
+const UA = 'Panelmate/0.1 (hobby faceplate tool)';
 
 export function isEnabled(): boolean {
   return process.env.MODULARGRID_ENABLED === '1';
@@ -30,21 +30,34 @@ export interface MGModule {
   pageUrl: string;
 }
 
-/** Crude per-process token bucket, keyed by client IP. */
+/**
+ * Crude per-process token bucket, keyed by client IP.
+ *
+ * Two allowances, because the two things cost ModularGrid very different
+ * amounts. Opening a module fetches a page from them, so it stays tight.
+ * Searching reads the index already held here and touches their servers not at
+ * all, so throttling it as though it did only locks people out of their own
+ * typing.
+ */
 const buckets = new Map<string, { tokens: number; last: number }>();
-const RATE = { capacity: 10, refillPerSec: 0.2 };
+const RATES = {
+  fetch: { capacity: 10, refillPerSec: 0.2 },
+  search: { capacity: 60, refillPerSec: 2 },
+} as const;
 
-export function takeToken(ip: string): boolean {
+export function takeToken(ip: string, kind: keyof typeof RATES = 'fetch'): boolean {
+  const RATE = RATES[kind];
+  const key = `${kind}:${ip}`;
   const now = Date.now() / 1000;
-  const b = buckets.get(ip) ?? { tokens: RATE.capacity, last: now };
+  const b = buckets.get(key) ?? { tokens: RATE.capacity, last: now };
   b.tokens = Math.min(RATE.capacity, b.tokens + (now - b.last) * RATE.refillPerSec);
   b.last = now;
   if (b.tokens < 1) {
-    buckets.set(ip, b);
+    buckets.set(key, b);
     return false;
   }
   b.tokens -= 1;
-  buckets.set(ip, b);
+  buckets.set(key, b);
   return true;
 }
 

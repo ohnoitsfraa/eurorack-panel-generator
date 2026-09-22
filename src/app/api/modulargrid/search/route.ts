@@ -14,7 +14,7 @@ export async function GET(req: Request) {
   if (q.length < 3) return NextResponse.json({ results: [] });
 
   const ip = req.headers.get('x-forwarded-for')?.split(',')[0].trim() ?? 'local';
-  if (!takeToken(ip)) {
+  if (!takeToken(ip, 'search')) {
     return NextResponse.json({ error: 'Too many searches. Give it a moment.' }, { status: 429 });
   }
 

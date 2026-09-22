@@ -7,7 +7,7 @@ import type { Mesh } from '../types';
  * that care about either should reach for 3MF. Every triangle stores its own
  * normal, which we already have per face.
  */
-export function meshesToBinarySTL(meshes: Mesh[], header = 'eurorack-panel'): ArrayBuffer {
+export function meshesToBinarySTL(meshes: Mesh[], header = 'panelmate'): ArrayBuffer {
   let tris = 0;
   for (const m of meshes) tris += m.positions.length / 9;
 

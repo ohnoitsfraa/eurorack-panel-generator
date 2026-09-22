@@ -11,7 +11,9 @@ import { migrateDesign, uid } from './types';
  * self-contained: hand someone a rack and they get the panels with it.
  */
 
-export const FORMAT = 'eurorack-panel-generator';
+export const FORMAT = 'panelmate';
+/** What files written before the app was renamed carry. Still accepted. */
+export const LEGACY_FORMAT = 'eurorack-panel-generator';
 export const FORMAT_VERSION = 1;
 
 export type BackupKind = 'panel' | 'rack' | 'library';
@@ -77,7 +79,7 @@ export function parseBackup(text: string): ParseResult {
 
   if (!raw || typeof raw !== 'object') throw new Error('That file is not a panel export.');
   const b = raw as Partial<Backup>;
-  if (b.format !== FORMAT) {
+  if (b.format !== FORMAT && b.format !== LEGACY_FORMAT) {
     throw new Error('That file was not written by this app.');
   }
   if (typeof b.version !== 'number' || b.version > FORMAT_VERSION) {

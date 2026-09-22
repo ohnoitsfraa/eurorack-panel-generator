@@ -1,8 +1,11 @@
-# Eurorack Panel Generator
+# Panelmate
 
-Turn a photo of a Eurorack module into a customisable faceplate you can 3D
-print. Upload or search for a module, let it find the jack, pot, LED and slider
-cutouts, restyle the panel, and export STL or 3MF.
+Design matching Eurorack faceplates, so a rack of mismatched hardware ends up
+looking like one instrument.
+
+Point it at a module — a photo, or its name on ModularGrid — and it finds the
+jack, pot, LED and slider cutouts for you. Restyle the panel, arrange your
+panels into a rack, and export STL or 3MF to print.
 
 ![No screenshot yet — run `npm run dev` and open http://localhost:3000](#)
 

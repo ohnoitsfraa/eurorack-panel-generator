@@ -70,7 +70,7 @@ export function meshesTo3MF(meshes: Mesh[], opts: ThreeMFOptions = {}): Uint8Arr
   const model = `<?xml version="1.0" encoding="UTF-8"?>
 <model unit="millimeter" xml:lang="en-US" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">
   <metadata name="Title">${escapeXml(title)}</metadata>
-  <metadata name="Application">Eurorack Panel Generator</metadata>
+  <metadata name="Application">Panelmate</metadata>
   <resources>
     <basematerials id="1">
 ${materials}

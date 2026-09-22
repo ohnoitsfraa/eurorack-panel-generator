@@ -13,6 +13,7 @@ import { uid } from './types';
  * floating-point overlap tests.
  */
 
+// The pre-IndexedDB key, still read once on upgrade. Never rename it.
 const KEY = 'eurorack-panel-generator/rack/v1';
 
 /** Common case widths, plus whatever the user types. */

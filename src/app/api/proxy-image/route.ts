@@ -34,7 +34,7 @@ export async function GET(req: Request) {
 
   try {
     const res = await fetch(target, {
-      headers: { 'User-Agent': 'EurorackPanelGenerator/0.1 (+image fetch)', Accept: 'image/*' },
+      headers: { 'User-Agent': 'Panelmate/0.1 (+image fetch)', Accept: 'image/*' },
       redirect: 'follow',
       signal: AbortSignal.timeout(15_000),
     });
