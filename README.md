@@ -66,6 +66,25 @@ principal axis.
 Detections you edit or place by hand are marked so that re-running detection
 leaves them alone. Anything the detector is unsure of is outlined in red.
 
+### Ignoring the printing
+
+Panels are covered in lettering, and a letter is small, dark and round enough
+that no amount of shape analysis separates an "o" from a 3 mm LED by looking at
+it alone.
+
+What does separate them is that they cannot both exist. Holes go through the
+panel, so two of them cannot intersect — there would be nothing left in
+between. Letters in a word sit about two thirds of their own width apart, so
+read as holes they overlap heavily, which is impossible. Anything that would
+run into its neighbour is discarded, and the count is reported rather than
+hidden.
+
+A second giveaway survives even when several letters get folded into one
+reading: a real hole is found in the same place at every exposure, so its
+readings are concentric, while a word's are smeared along its length. On a real
+30 HP panel the two together take the spurious cutouts from 24 down to a
+handful.
+
 ### Editing
 
 Cutouts, text, shapes and traced artwork are all draggable on the canvas.
@@ -74,7 +93,7 @@ Cutouts, text, shapes and traced artwork are all draggable on the canvas.
 | --- | --- |
 | drag | move |
 | drag a handle | resize, rotate, or round the corners |
-| **Alt** + drag | duplicate and drag the copy |
+| **Alt** + drag | duplicate — the copy comes with you, badged, while the original stays put |
 | **⌘/Ctrl** + drag | ignore the grid for this move |
 | **Shift** + click | add to or remove from the selection |
 | **Shift** + click *(with a tool armed)* | place, and stay armed for the next one |

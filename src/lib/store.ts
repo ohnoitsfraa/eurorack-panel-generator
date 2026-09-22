@@ -45,6 +45,8 @@ interface State {
   detect: DetectSettings;
   detecting: boolean;
   mmPerPx: number | null;
+  /** Marks the last detection discarded as printing rather than hardware. */
+  droppedAsMarkings: number;
   view: ViewMode;
   tab: InspectorTab;
   selectedIds: string[];
@@ -146,6 +148,7 @@ export const useStore = create<State>((set, get) => ({
   detect: DEFAULT_DETECT_SETTINGS,
   detecting: false,
   mmPerPx: null,
+  droppedAsMarkings: 0,
   view: '2d',
   tab: 'panel',
   selectedIds: [],
@@ -220,6 +223,7 @@ export const useStore = create<State>((set, get) => ({
             features: [...s.design.features.filter((f) => f.locked), ...res.features],
           },
           mmPerPx: res.mmPerPx,
+          droppedAsMarkings: res.droppedAsMarkings ?? 0,
           detecting: false,
           selectedIds: [],
         }));

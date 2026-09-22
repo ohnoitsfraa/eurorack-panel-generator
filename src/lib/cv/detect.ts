@@ -97,7 +97,11 @@ export function detectFeatures(input: DetectInput): DetectionResult {
 
   const merged = mergeCandidates(candidates, settings.mergeDistanceMm);
   const surviving = merged.filter((c) => c.score >= scoreFloor(settings.sensitivity));
-  const kept = unifyByCluster(surviving).map((c) => c.feature);
+  const unified = unifyByCluster(surviving);
+  const smeared = dropSmears(unified);
+  const impossible = dropImpossibleRuns(smeared.kept);
+  const droppedAsMarkings = smeared.dropped + impossible.droppedAsMarkings;
+  const kept = impossible.kept.map((c) => c.feature);
 
   const snapped = settings.snapMm > 0 ? kept.map((f) => snapFeature(f, settings.snapMm)) : kept;
   snapped.sort((a, b) => a.y - b.y || a.x - b.x);
@@ -105,7 +109,7 @@ export function detectFeatures(input: DetectInput): DetectionResult {
   // Report the scale against the crop the user actually sees, not the
   // downsampled copy we analysed, so the figure in the UI is checkable.
   const workScale = work.width / cropped.width;
-  return { features: snapped, mmPerPx: mmPerPx * workScale, crop };
+  return { features: snapped, mmPerPx: mmPerPx * workScale, crop, droppedAsMarkings };
 }
 
 function sweepThresholds(gray: Gray, settings: DetectSettings, mmPerPx: number): Blob[] {
@@ -141,15 +145,25 @@ function sweepThresholds(gray: Gray, settings: DetectSettings, mmPerPx: number):
 function mergeCandidates(cands: Candidate[], mergeMm: number): Candidate[] {
   const sorted = [...cands].sort((a, b) => b.score - a.score);
   const out: Candidate[] = [];
+  // How far apart the readings folded into each result were. A real hole is
+  // found at the same place at every exposure, so its readings are
+  // concentric; a row of letters absorbed into one result is smeared along
+  // the line of the word.
+  const spread = new Map<string, number>();
 
   for (const c of sorted) {
     const near = out.find((o) => {
       const dx = o.feature.x - c.feature.x;
       const dy = o.feature.y - c.feature.y;
-      return Math.hypot(dx, dy) <= mergeMm;
+      // Scaled by size as well as a flat distance: the same 2 mm wobble is one
+      // hole found twice on a 3 mm LED and two distinct holes on a 20 mm knob.
+      const reach = Math.max(mergeMm, (holeRadius(o) + holeRadius(c)) * 0.55);
+      return Math.hypot(dx, dy) <= reach;
     });
     if (near) {
       near.support++;
+      const dist = Math.hypot(near.feature.x - c.feature.x, near.feature.y - c.feature.y);
+      spread.set(near.feature.id, Math.max(spread.get(near.feature.id) ?? 0, dist));
       // Keep the best-scoring geometry, but let repeated sightings of a
       // different shape correct an early mistake.
       if (c.score > near.score) {
@@ -166,8 +180,94 @@ function mergeCandidates(cands: Candidate[], mergeMm: number): Candidate[] {
     const stability = Math.min(1, (c.support - 1) / 4);
     c.score = c.score * (0.55 + 0.45 * stability);
     c.feature.confidence = Math.round(Math.max(0, Math.min(1, c.score)) * 100) / 100;
+    c.spreadMm = spread.get(c.feature.id) ?? 0;
   }
   return out;
+}
+
+/**
+ * Discard results that are a smear rather than a hole.
+ *
+ * Merging folds together the readings of one hole taken at different
+ * exposures, which for a real hole all land on the same spot. Lettering
+ * defeats that: the marks of a word are close enough to be folded together
+ * too, and what comes out is a single result standing for a stretch of
+ * printing rather than anything you could drill.
+ *
+ * The giveaway is how far apart the folded readings were. A jack's readings
+ * sit within a fraction of a millimetre of each other; a word's are spread
+ * across it.
+ */
+function dropSmears(cands: Candidate[]): { kept: Candidate[]; dropped: number } {
+  const kept = cands.filter((c) => {
+    const size = c.feature.shape === 'circle' ? c.feature.w : Math.min(c.feature.w, c.feature.h);
+    return (c.spreadMm ?? 0) <= size * 0.6;
+  });
+  return { kept, dropped: cands.length - kept.length };
+}
+
+/** Radius of the cutout itself, not of the part sitting in it. */
+function holeRadius(c: Candidate): number {
+  const f = c.feature;
+  return (f.shape === 'circle' ? f.w : Math.min(f.w, f.h)) / 2;
+}
+
+/**
+ * Throw out detections that could not physically be holes.
+ *
+ * Printing on a panel — labels, the lettering on a button cap, a logo — is
+ * dark, small and round-ish, and no amount of shape analysis separates the
+ * letter "o" from a 3 mm LED by looking at it alone.
+ *
+ * What does separate them is that they cannot both exist. Holes are drilled
+ * through metal or plastic: two of them cannot intersect, or there would be
+ * nothing left between. Letters in a word sit about two thirds of their own
+ * width apart, so read as holes they overlap heavily — which is impossible.
+ *
+ * So detections that would intersect are discarded. Merging runs first and
+ * folds together anything that was one hole found twice, so what remains
+ * overlapping afterwards is two claims that cannot both be right — and on a
+ * panel covered in labels, overwhelmingly, neither is.
+ */
+function dropImpossibleRuns(cands: Candidate[]): { kept: Candidate[]; droppedAsMarkings: number } {
+  const n = cands.length;
+  if (n < 2) return { kept: cands, droppedAsMarkings: 0 };
+
+  // Union-find over "these two would intersect".
+  const parent = Array.from({ length: n }, (_, i) => i);
+  const find = (i: number): number => (parent[i] === i ? i : (parent[i] = find(parent[i])));
+  const union = (a: number, b: number) => { parent[find(a)] = find(b); };
+
+  for (let i = 0; i < n; i++) {
+    for (let j = i + 1; j < n; j++) {
+      const a = cands[i].feature;
+      const b = cands[j].feature;
+      const gap = Math.hypot(a.x - b.x, a.y - b.y);
+      if (gap < holeRadius(cands[i]) + holeRadius(cands[j])) union(i, j);
+    }
+  }
+
+  const groups = new Map<number, number[]>();
+  for (let i = 0; i < n; i++) {
+    const root = find(i);
+    const g = groups.get(root);
+    if (g) g.push(i); else groups.set(root, [i]);
+  }
+
+  const drop = new Set<number>();
+  for (const members of groups.values()) {
+    // Two is enough. Merging has already folded together anything that was one
+    // hole found twice, so whatever still overlaps afterwards is two separate
+    // detections claiming to be holes that would run into each other — which
+    // cannot be true of either, so both go.
+    if (members.length < 2) continue;
+    for (const i of members) drop.add(i);
+  }
+
+  return {
+    kept: cands.filter((_, i) => !drop.has(i)),
+    droppedAsMarkings: drop.size,
+  };
 }
 
 /**

@@ -97,6 +97,50 @@ async function open() {
   await page.close();
 }
 
+// --- Alt-drag duplicates, and does so visibly ---
+{
+  const { page, problems } = await open();
+  await page.getByRole('button', { name: 'Cutouts', exact: true }).click();
+  await page.getByRole('button', { name: 'Circle', exact: true }).click();
+  const svg = page.locator('svg').first();
+  await svg.click({ position: { x: 300, y: 300 } });
+  await page.waitForTimeout(300);
+
+  const box = await svg.boundingBox();
+  await page.keyboard.down('Alt');
+  await page.mouse.move(box!.x + 300, box!.y + 300);
+  await page.mouse.down();
+  await page.mouse.move(box!.x + 380, box!.y + 360, { steps: 12 });
+  await page.waitForTimeout(250);
+
+  // The copy has to be visibly in hand during the drag, not only after it.
+  // It used to be created and then sit motionless under the original, so the
+  // duplication was invisible until the pointer was released.
+  const midBody = await page.locator('body').innerText();
+  const badges = await page.locator('svg text', { hasText: '+1' }).count();
+  if (/Duplicating/i.test(midBody)) pass('the canvas says a copy is being dragged');
+  else fail('nothing indicated a duplicate was in progress');
+  if (badges > 0) pass('the copy is badged while it moves');
+  else fail('no badge on the copy during the drag');
+
+  await page.mouse.up();
+  await page.keyboard.up('Alt');
+  await page.waitForTimeout(300);
+
+  const positions = await page.locator('svg circle').evaluateAll((els) =>
+    els.map((e) => `${(+(e.getAttribute('cx') ?? 0)).toFixed(1)},${(+(e.getAttribute('cy') ?? 0)).toFixed(1)}`));
+  const distinct = new Set(positions);
+  const after = (await page.locator('body').innerText()).match(/·\s*(\d+)\s*cutouts?/);
+  if (after && after[1] === '2') pass('the drag leaves two cutouts behind');
+  else fail(`after an Alt-drag there are ${after?.[1] ?? '?'} cutouts, expected 2`);
+  if (distinct.size >= 3) pass('the copy ended up somewhere else, not on top of the original');
+  else fail('the copy landed on the original');
+
+  if (problems.length === 0) pass('no uncaught errors during Alt-drag');
+  else fail(`during Alt-drag: ${[...new Set(problems)].join(' | ')}`);
+  await page.close();
+}
+
 // --- a ModularGrid link, pasted in either place ---
 for (const [tab, placeholder, button] of [
   ['ModularGrid', 'Paste a link, or type a name', 'Load'],

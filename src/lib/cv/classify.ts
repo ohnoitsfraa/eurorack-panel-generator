@@ -19,6 +19,8 @@ export interface Candidate {
   score: number;
   /** What was actually measured, before it was snapped to a standard size. */
   measuredMm: number;
+  /** Set during merging: how far apart the folded readings were, in mm. */
+  spreadMm?: number;
 }
 
 /** Shape decision thresholds, tuned against renders and photos alike. */

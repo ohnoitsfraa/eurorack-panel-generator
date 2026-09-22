@@ -407,6 +407,7 @@ function DetectSection() {
   const runDetection = useStore((s) => s.runDetection);
   const detecting = useStore((s) => s.detecting);
   const mmPerPx = useStore((s) => s.mmPerPx);
+  const droppedAsMarkings = useStore((s) => s.droppedAsMarkings);
   const showSource = useStore((s) => s.showSource);
   const setShowSource = useStore((s) => s.setShowSource);
   const sourceOpacity = useStore((s) => s.sourceOpacity);
@@ -475,6 +476,14 @@ function DetectSection() {
       {mmPerPx && (
         <p className="text-[11px] tabular-nums text-ink-400">
           Scale: {(1 / mmPerPx).toFixed(1)} px/mm
+        </p>
+      )}
+
+      {droppedAsMarkings > 0 && (
+        <p className="text-[11px] leading-relaxed text-ink-400">
+          {droppedAsMarkings} mark{droppedAsMarkings === 1 ? '' : 's'} ignored as printing —
+          lettering and logos look like small holes, but holes that would run
+          into each other cannot both be real.
         </p>
       )}
 

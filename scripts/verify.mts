@@ -309,6 +309,87 @@ console.log('\nDetection on a synthetic panel');
     else fail(`${badRadius.length} circles have an inconsistent radius`);
   }
 
+  // Lettering must not become cutouts. Printing on a panel is small, dark and
+  // round enough to fool shape analysis, but read as holes the letters of a
+  // word overlap each other, and holes cannot intersect.
+  {
+    const img2 = new ImageDataShim(iw, ih);
+    for (let i = 0; i < iw * ih; i++) {
+      const p = i * 4;
+      img2.data[p] = 205; img2.data[p + 1] = 205; img2.data[p + 2] = 200; img2.data[p + 3] = 255;
+    }
+    const dot = (cxMm: number, cyMm: number, dMm: number) => {
+      const cx = cxMm * PPMM, cy = cyMm * PPMM, r = (dMm / 2) * PPMM;
+      for (let y = Math.floor(cy - r - 1); y <= Math.ceil(cy + r + 1); y++) {
+        for (let x = Math.floor(cx - r - 1); x <= Math.ceil(cx + r + 1); x++) {
+          if (x < 0 || y < 0 || x >= iw || y >= ih) continue;
+          if ((x + 0.5 - cx) ** 2 + (y + 0.5 - cy) ** 2 <= r * r) {
+            const p = (y * iw + x) * 4;
+            img2.data[p] = 18; img2.data[p + 1] = 18; img2.data[p + 2] = 20;
+          }
+        }
+      }
+    };
+
+    // Two well-spaced jacks, and a "word": six separate marks 2.5 mm apart.
+    // The marks do not touch each other — real lettering does not — but read
+    // as 3 mm LED holes they would intersect, which is the giveaway.
+    dot(8, 30, 8);
+    dot(32, 30, 8);
+    // 2.2 mm marks 2.6 mm apart: clearly separate in the picture, but as the
+    // 3 mm LEDs they would be taken for, they would run into each other.
+    for (let i = 0; i < 6; i++) dot(10 + i * 2.6, 70, 2.2);
+
+    const r2 = detectFeatures({
+      image: img2 as unknown as ImageData,
+      hp: HP, format: '3U',
+      crop: { x: 0, y: 0, w: iw, h: ih },
+      settings: { ...DEFAULT_DETECT_SETTINGS, sensitivity: 0.5 },
+    });
+
+    const nearWord = r2.features.filter((f) => Math.abs(f.y - 70) < 4);
+    const realHoles = r2.features.filter((f) => Math.abs(f.y - 30) < 4);
+    if (nearWord.length === 0) pass('a run of overlapping marks is ignored as printing');
+    else fail(`${nearWord.length} cutouts were taken from a word`);
+    if (realHoles.length === 2) pass('well-separated holes beside it are still found');
+    else fail(`${realHoles.length} of 2 real holes survived the printing filter`);
+    if ((r2.droppedAsMarkings ?? 0) >= 2) pass(`${r2.droppedAsMarkings} marks reported as ignored`);
+    else fail('the ignored marks were not reported');
+  }
+
+  // Two holes that would intersect cannot both be real, whatever they look
+  // like, so neither is taken on trust.
+  {
+    const img3 = new ImageDataShim(iw, ih);
+    for (let i = 0; i < iw * ih; i++) {
+      const p = i * 4;
+      img3.data[p] = 205; img3.data[p + 1] = 205; img3.data[p + 2] = 200; img3.data[p + 3] = 255;
+    }
+    const fill = (cxMm: number, cyMm: number, dMm: number) => {
+      const cx = cxMm * PPMM, cy = cyMm * PPMM, r = (dMm / 2) * PPMM;
+      for (let y = Math.floor(cy - r - 1); y <= Math.ceil(cy + r + 1); y++)
+        for (let x = Math.floor(cx - r - 1); x <= Math.ceil(cx + r + 1); x++) {
+          if (x < 0 || y < 0 || x >= iw || y >= ih) continue;
+          if ((x + 0.5 - cx) ** 2 + (y + 0.5 - cy) ** 2 <= r * r) {
+            const p = (y * iw + x) * 4;
+            img3.data[p] = 18; img3.data[p + 1] = 18; img3.data[p + 2] = 20;
+          }
+        }
+    };
+    // Two jack nuts 9 mm apart: the nuts clear each other, and the 6 mm holes
+    // beneath them leave 3 mm of material. Tight but entirely buildable, so
+    // both must survive.
+    fill(13, 40, 8);
+    fill(22, 40, 8);
+    const r3 = detectFeatures({
+      image: img3 as unknown as ImageData, hp: HP, format: '3U',
+      crop: { x: 0, y: 0, w: iw, h: ih },
+      settings: { ...DEFAULT_DETECT_SETTINGS, sensitivity: 0.5 },
+    });
+    if (r3.features.length === 2) pass('holes that are close but not intersecting are kept');
+    else fail(`${r3.features.length} cutouts from two tight but legal holes`);
+  }
+
   // Every detection must map to a known component so the UI can label it.
   const unknown = res.features.filter((f) => !COMPONENT_SPECS[f.kind]);
   if (unknown.length === 0) pass('every detection has a component type');

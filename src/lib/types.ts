@@ -205,6 +205,8 @@ export interface DetectionResult {
   crop: { x: number; y: number; w: number; h: number };
   /** Debug mask, same size as the analysed image, for the overlay view. */
   debugMask?: ImageData;
+  /** Detections discarded as printing rather than hardware. */
+  droppedAsMarkings?: number;
 }
 
 export interface DetectSettings {

@@ -55,6 +55,8 @@ export function PanelCanvas2D() {
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [marquee, setMarquee] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
+  /** Set while an Alt-drag is carrying a fresh copy, so the canvas can say so. */
+  const [duplicating, setDuplicating] = useState<{ from: Array<{ x: number; y: number }> } | null>(null);
 
   // Padding in mm so the panel never sits flush against the viewport edge.
   const pad = 8;
@@ -98,21 +100,28 @@ export function PanelCanvas2D() {
 
   const drag = useRef<{ items: DragItem[]; start: { x: number; y: number }; moved: boolean } | null>(null);
 
-  const dragItemsFor = useCallback(
-    (ids: string[]): DragItem[] => {
-      const out: DragItem[] = [];
-      for (const id of ids) {
-        const f = features.find((x) => x.id === id);
-        if (f) { out.push({ kind: 'feature', id, ox: f.x, oy: f.y }); continue; }
-        const d = decor.find((x) => x.id === id);
-        if (!d) continue;
-        if (d.type === 'art') out.push({ kind: 'art', id, rings: d.rings });
-        else out.push({ kind: 'decor', id, ox: d.x, oy: d.y });
-      }
-      return out;
-    },
-    [features, decor],
-  );
+  /**
+   * Snapshot what a drag will move.
+   *
+   * Read from the store rather than from this render's props. Alt-drag creates
+   * the copies and starts dragging them inside one event handler, before React
+   * has re-rendered, so anything captured in the closure does not know the
+   * copies exist yet — the drag would find nothing to move and the duplicate
+   * would sit motionless under the original until the pointer was released.
+   */
+  const dragItemsFor = useCallback((ids: string[]): DragItem[] => {
+    const { features: nowFeatures, decor: nowDecor } = useStore.getState().design;
+    const out: DragItem[] = [];
+    for (const id of ids) {
+      const f = nowFeatures.find((x) => x.id === id);
+      if (f) { out.push({ kind: 'feature', id, ox: f.x, oy: f.y }); continue; }
+      const d = nowDecor.find((x) => x.id === id);
+      if (!d) continue;
+      if (d.type === 'art') out.push({ kind: 'art', id, rings: d.rings });
+      else out.push({ kind: 'decor', id, ox: d.x, oy: d.y });
+    }
+    return out;
+  }, []);
 
   /**
    * Begin dragging whatever was grabbed.
@@ -134,9 +143,18 @@ export function PanelCanvas2D() {
     if (e.altKey && base.length) {
       const featureIds = base.filter((i) => features.some((f) => f.id === i));
       const decorIds = base.filter((i) => decor.some((d) => d.id === i));
+      // Where the originals sit, so the canvas can show what is being left
+      // behind while the copy moves away.
+      const origins = [
+        ...features.filter((f) => featureIds.includes(f.id)).map((f) => ({ x: f.x, y: f.y })),
+        ...decor
+          .filter((d) => decorIds.includes(d.id) && d.type !== 'art')
+          .map((d) => ({ x: (d as { x: number }).x, y: (d as { y: number }).y })),
+      ];
       const copies = [...duplicateFeatures(featureIds, 0), ...duplicateDecor(decorIds, 0)];
       if (copies.length) {
         select(copies);
+        setDuplicating({ from: origins });
         drag.current = { items: dragItemsFor(copies), start: toMm(e), moved: false };
         return;
       }
@@ -195,6 +213,7 @@ export function PanelCanvas2D() {
       setMarquee(null);
     }
     drag.current = null;
+    setDuplicating(null);
   };
 
   const onBackgroundPointerDown = (e: React.PointerEvent) => {
@@ -349,9 +368,45 @@ export function PanelCanvas2D() {
           />
         ))}
 
+        {/* While an Alt-drag is in progress, ring what was left behind and
+            what is being carried, so it is obvious a copy is being made rather
+            than the original being moved. */}
+        {duplicating && (
+          <g pointerEvents="none">
+            {duplicating.from.map((p, i) => (
+              <circle
+                key={`o${i}`}
+                cx={p.x} cy={p.y} r={handleMm * 0.9}
+                fill="none" stroke="#ffffff50" strokeWidth={handleMm * 0.14}
+                strokeDasharray={`${handleMm * 0.3} ${handleMm * 0.25}`}
+              />
+            ))}
+            {features
+              .filter((f) => selectedIds.includes(f.id))
+              .map((f) => (
+                <g key={`c${f.id}`}>
+                  <circle
+                    cx={f.x} cy={f.y} r={handleMm * 1.05}
+                    fill="none" stroke="var(--color-accent)" strokeWidth={handleMm * 0.2}
+                  />
+                  <text
+                    x={f.x + handleMm * 1.3} y={f.y - handleMm * 0.9}
+                    fontSize={handleMm * 1.5}
+                    fill="var(--color-accent)"
+                    style={{ fontWeight: 700 }}
+                  >
+                    +1
+                  </text>
+                </g>
+              ))}
+          </g>
+        )}
+
         {/* Handles only for a lone selection: resizing several cutouts around
             different centres at once is more confusing than useful. */}
-        {!tool && soleSelection && <FeatureHandles f={soleSelection} handleMm={handleMm} />}
+        {!tool && !duplicating && soleSelection && (
+          <FeatureHandles f={soleSelection} handleMm={handleMm} />
+        )}
 
         {marquee && (
           <rect
@@ -372,7 +427,9 @@ export function PanelCanvas2D() {
           {design.hp} HP · {W.toFixed(1)} × {H.toFixed(1)} mm · {features.length} cutouts
         </span>
         <span>
-          {tool
+          {duplicating
+            ? 'Duplicating — release to drop the copy'
+            : tool
             ? `Click to place a ${(CUTOUT_PRESETS.find((p) => p.id === tool)?.label ?? 'cutout').toLowerCase()} · Shift-click to keep placing · Esc to stop`
             : 'Alt drag to duplicate · ⌘/Ctrl drag to ignore grid · ⌘/Ctrl scroll to zoom'}
         </span>
