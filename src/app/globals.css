@@ -34,8 +34,12 @@
   --accent: #ffb454;
   --accent-dim: #8a5f28;
   --danger: #ff6b6b;
-  /* The surround behind the panel in both editors. */
+  /* The surround behind the panel in both editors, and what shows through a
+     cutout — because that is what a hole is: the background, seen through the
+     panel. Tying them together means holes follow the theme for free, and read
+     as openings rather than as black paint. */
   --stage: #0c0d10;
+  --cutout: #08090b;
   --panel-edge: #ffffff33;
   --grid-line: #ffffff14;
   color-scheme: dark;
@@ -56,8 +60,12 @@
   --accent: #b46a00;
   --accent-dim: #e0a355;
   --danger: #c0362c;
-  --stage: #e8eaee;
-  --panel-edge: #00000033;
+  /* Deliberately a definite grey rather than near-white. The stage is also
+     what shows through every cutout, and against a white faceplate a
+     near-white hole would disappear. */
+  --stage: #d4d8de;
+  --cutout: #cdd2d9;
+  --panel-edge: #00000038;
   --grid-line: #00000012;
   color-scheme: light;
 }

@@ -22,7 +22,7 @@ export function Preview3D() {
   // Three builds its scene in JavaScript, so the theme has to be handed to it
   // rather than inherited through CSS like everything else.
   const scene = theme === 'light'
-    ? { background: '#e8eaee', cell: '#cfd3da', section: '#b9bfc8', ambient: 0.75 }
+    ? { background: '#d4d8de', cell: '#c2c7cf', section: '#aeb5bf', ambient: 0.75 }
     : { background: '#0c0d10', cell: '#22262c', section: '#2e343d', ambient: 0.45 };
 
   const geometries = useMemo(

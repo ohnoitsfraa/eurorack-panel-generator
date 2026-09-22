@@ -132,6 +132,14 @@ load of a light-themed page flashes dark for a frame. The 3D preview is told
 the theme directly, since it builds its colours in JavaScript and cannot
 inherit them through CSS.
 
+Cutouts are the one thing that ignores the theme, because a hole has to
+contrast with the *panel* it is cut through rather than with the interface
+around it. A dark hole is used wherever it can be seen, since that is what a
+hole really looks like; where it cannot — a black or dark green faceplate — the
+hole is lightened by exactly as much as the contrast formula asks for. A fixed
+pair of tones was legible on black but managed only 3.3:1 against dark green,
+which is the sort of gap that stays invisible until somebody picks that colour.
+
 ### Editing
 
 Cutouts, text, shapes and traced artwork are all draggable on the canvas.
@@ -324,6 +332,8 @@ print, so the script checks the properties a preview cannot show:
 - alignment snaps to a shared axis however far apart two cutouts are, draws a
   guide reaching both, takes the nearer of two candidates, and leaves a miss
   alone
+- a cutout stays visible on every panel colour the app offers, at 5:1 or
+  better, in either theme
 - module search ranks the module above replacement panels for it, collapses
   the duplicate entries ModularGrid keeps, and offers every variant of a name
   like "disting" rather than guessing which was meant

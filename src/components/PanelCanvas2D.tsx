@@ -7,6 +7,7 @@ import { useStore } from '@/lib/store';
 import { textToRings } from '@/lib/model/text';
 import { bbox, type Ring } from '@/lib/geom/poly';
 import { alignTo, snapToGrid, type AlignTarget, type Guide } from '@/lib/align';
+import { cutoutFill } from '@/lib/color';
 import type { Font as OpentypeFont } from 'opentype.js';
 import { shapeRingsForPreview } from '@/lib/model/preview';
 
@@ -336,6 +337,9 @@ export function PanelCanvas2D() {
   const handleMm = HANDLE_PX * mmPerPx;
   const soleSelection =
     selectedIds.length === 1 ? features.find((f) => f.id === selectedIds[0]) : undefined;
+  // Worked out from the panel rather than the theme: a hole has to contrast
+  // with the surface it is cut through, whatever colour that has been set to.
+  const holeFill = cutoutFill(design.backgroundColor);
 
   return (
     <CanvasFrame.Provider value={svgRef}>
@@ -411,7 +415,7 @@ export function PanelCanvas2D() {
             width={MOUNT_SLOT.lengthMm}
             height={MOUNT_SLOT.heightMm}
             rx={MOUNT_SLOT.heightMm / 2}
-            fill="#0a0a0c"
+            fill={holeFill}
             stroke="var(--panel-edge)"
             strokeWidth={0.15}
           />
@@ -424,6 +428,7 @@ export function PanelCanvas2D() {
             selected={selectedIds.includes(f.id)}
             onPointerDown={(e) => beginDrag(e, f.id, false)}
             handleMm={handleMm}
+            fill={holeFill}
           />
         ))}
 
@@ -591,12 +596,13 @@ function ZoomButton({ children, onClick }: { children: React.ReactNode; onClick:
 }
 
 function FeatureShape({
-  f, selected, onPointerDown, handleMm,
+  f, selected, onPointerDown, handleMm, fill,
 }: {
   f: Feature;
   selected: boolean;
   onPointerDown: (e: React.PointerEvent) => void;
   handleMm: number;
+  fill: string;
 }) {
   const stroke = selected ? 'var(--color-accent)' : 'var(--panel-edge)';
   const sw = selected ? handleMm * 0.28 : handleMm * 0.16;
@@ -605,7 +611,7 @@ function FeatureShape({
   const shaky = f.confidence !== undefined && f.confidence < 0.45;
 
   const common = {
-    fill: '#08090b',
+    fill,
     stroke: shaky && !selected ? 'var(--color-danger)' : stroke,
     strokeWidth: sw,
     strokeDasharray: shaky && !selected ? `${handleMm * 0.4} ${handleMm * 0.3}` : undefined,

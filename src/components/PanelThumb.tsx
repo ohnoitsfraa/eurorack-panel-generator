@@ -5,6 +5,7 @@ import type { Font } from 'opentype.js';
 import { MOUNT_SLOT, mountSlotPositions, panelHeightMm, panelWidthMm } from '@/lib/eurorack';
 import type { DecorElement, PanelDesign } from '@/lib/types';
 import { bbox, type Ring } from '@/lib/geom/poly';
+import { cutoutFill } from '@/lib/color';
 import { textToRings } from '@/lib/model/text';
 import { shapeRingsForPreview } from '@/lib/model/preview';
 import { ringToPath } from './PanelCanvas2D';
@@ -26,6 +27,7 @@ export function PanelThumb({
 }) {
   const W = panelWidthMm(design.hp);
   const H = panelHeightMm(design.format);
+  const holeFill = cutoutFill(design.backgroundColor);
 
   const decorPaths = useMemo(
     () => design.decor.map((d) => ({ d, rings: decorRings(d, fonts) })),
@@ -61,14 +63,14 @@ export function PanelThumb({
 
       {design.features.map((f) =>
         f.shape === 'circle' ? (
-          <circle key={f.id} cx={f.x} cy={f.y} r={f.w / 2} fill="#07080a" />
+          <circle key={f.id} cx={f.x} cy={f.y} r={f.w / 2} fill={holeFill} />
         ) : (
           <rect
             key={f.id}
             x={f.x - f.w / 2} y={f.y - f.h / 2} width={f.w} height={f.h}
             rx={Math.min(f.radius, Math.min(f.w, f.h) / 2)}
             transform={`rotate(${f.rotation} ${f.x} ${f.y})`}
-            fill="#07080a"
+            fill={holeFill}
           />
         ),
       )}
@@ -82,7 +84,7 @@ export function PanelThumb({
             width={MOUNT_SLOT.lengthMm}
             height={MOUNT_SLOT.heightMm}
             rx={MOUNT_SLOT.heightMm / 2}
-            fill="#07080a"
+            fill={holeFill}
           />
         ))}
 

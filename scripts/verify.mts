@@ -1018,6 +1018,44 @@ console.log('\nAlignment guides');
   }
 }
 
+// ------------------------------------------------------------ 6c2. hole colour
+console.log('\nCutout legibility');
+{
+  const { cutoutFill, contrastRatio, luminance } = await import('../src/lib/color');
+
+  // Every faceplate colour anyone would plausibly choose, and the colour
+  // presets the app itself offers.
+  const panels = [
+    '#0b0b0d', '#23262b', '#8a8f96', '#c9ccd1', '#f2f2f0',
+    '#1f3b57', '#57351f', '#7d1f2b', '#1f5740', '#ffffff', '#000000',
+  ];
+  let worst = Infinity;
+  let worstPanel = '';
+  for (const p of panels) {
+    const r = contrastRatio(cutoutFill(p), p);
+    if (r < worst) { worst = r; worstPanel = p; }
+  }
+  // 4.5:1 is the threshold for readable text; a hole only has to be findable,
+  // so clearing it on every panel colour is a comfortable margin.
+  if (worst >= 4.5) pass(`a cutout is visible on every panel colour (worst ${worst.toFixed(2)}:1 on ${worstPanel})`);
+  else fail(`a cutout is nearly invisible on ${worstPanel} at ${worst.toFixed(2)}:1`);
+
+  // Holes are dark in life, and on a pale panel that is what should be drawn.
+  if (luminance(cutoutFill('#f2f2f0')) < 0.1) pass('a hole in a pale panel is drawn dark, as it really is');
+  else fail('a pale panel got a pale hole');
+
+  // On a black faceplate a darker hole cannot be seen, so it goes the other way.
+  if (luminance(cutoutFill('#0b0b0d')) > 0.2) pass('a hole in a black panel is drawn light so it can be found');
+  else fail('a black panel got an invisible hole');
+
+  // Nonsense from a half-typed colour field must not throw or go transparent.
+  for (const bad of ['', '#', '#12', 'rgb(1,2,3)', 'not a colour']) {
+    const f = cutoutFill(bad);
+    if (!/^#[0-9a-f]{6}$/i.test(f)) { fail(`a malformed colour produced "${f}"`); break; }
+  }
+  pass('a half-typed colour still yields a usable hole colour');
+}
+
 // ------------------------------------------------- 6d. finding a module by name
 console.log('\nModule search');
 {
