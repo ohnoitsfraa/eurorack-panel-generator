@@ -3,8 +3,9 @@
 import { create } from 'zustand';
 import type { Font } from 'opentype.js';
 import {
-  COMPONENT_SPECS, HOLE_CLEARANCE, PLACEABLE_KINDS, hpFromWidthMm, panelHeightMm, panelWidthMm,
-  type FeatureKind, type PanelFormat, type SourceKind,
+  COMPONENT_SPECS, CUTOUT_PRESETS, HOLE_CLEARANCE, STANDARD_KINDS,
+  hpFromWidthMm, panelHeightMm, panelWidthMm,
+  type CutoutShapeId, type FeatureKind, type PanelFormat, type SourceKind,
 } from './eurorack';
 import {
   DEFAULT_DETECT_SETTINGS, uid,
@@ -29,8 +30,8 @@ import { loadFont } from './model/text';
 
 export type ViewMode = '2d' | '3d' | 'rack';
 export type InspectorTab = 'panel' | 'features' | 'decor' | 'export' | 'library';
-/** null = select/move; a FeatureKind = click on the canvas to place one. */
-export type Tool = null | FeatureKind;
+/** null = select/move; otherwise the shape the next canvas click will place. */
+export type Tool = null | CutoutShapeId;
 
 export interface Crop { x: number; y: number; w: number; h: number }
 
@@ -74,7 +75,7 @@ interface State {
   runDetection: () => void;
   loadFromUrl: (url: string, label?: string, kind?: SourceKind) => Promise<void>;
 
-  addFeature: (kind: FeatureKind, x: number, y: number) => void;
+  addFeature: (shape: CutoutShapeId, x: number, y: number) => void;
   updateFeature: (id: string, patch: Partial<Feature>) => void;
   removeFeatures: (ids: string[]) => void;
   duplicateFeatures: (ids: string[], offsetMm?: number) => string[];
@@ -235,12 +236,20 @@ export const useStore = create<State>((set, get) => ({
     }
   },
 
-  addFeature: (kind, x, y) => {
+  addFeature: (shape, x, y) => {
+    const preset = CUTOUT_PRESETS.find((p) => p.id === shape) ?? CUTOUT_PRESETS[0];
     const f: Feature = {
-      ...featureForKind(kind),
       id: uid(),
+      // Hand-placed cutouts start as plain shapes. Naming the component is a
+      // separate step, taken from the standard sizes once it is placed.
+      kind: 'custom',
       x,
       y,
+      shape: preset.shape,
+      w: preset.w,
+      h: preset.h,
+      radius: preset.radius,
+      rotation: 0,
       locked: true, // hand-placed, so a re-detect must not wipe it
     };
     set((s) => ({ design: { ...s.design, features: [...s.design.features, f] }, selectedIds: [f.id] }));
@@ -706,5 +715,5 @@ export const selectPanelSize = (s: State) => ({
   h: panelHeightMm(s.design.format),
 });
 
-export { PLACEABLE_KINDS, COMPONENT_SPECS, conflicts };
+export { CUTOUT_PRESETS, STANDARD_KINDS, COMPONENT_SPECS, conflicts };
 export type { FeatureKind, PanelFormat, SourceKind };

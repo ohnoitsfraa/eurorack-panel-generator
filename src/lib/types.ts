@@ -47,6 +47,21 @@ export interface Feature {
   locked?: boolean;
 }
 
+/**
+ * A short human description of a cutout.
+ *
+ * Named components use their name; anything placed by hand is described by
+ * what it actually is, since "Custom" tells you nothing when you are scanning
+ * a list of twenty cutouts.
+ */
+export function describeFeature(f: Feature, componentLabel?: string): string {
+  if (componentLabel && f.kind !== 'custom') return componentLabel;
+  const mm = (v: number) => (Math.round(v * 100) / 100).toString();
+  if (f.shape === 'circle') return `Circle ${mm(f.w)} mm`;
+  if (isStadium(f)) return `Slot ${mm(f.w)} × ${mm(f.h)} mm`;
+  return `${f.radius > 0 ? 'Rounded rect' : 'Rectangle'} ${mm(f.w)} × ${mm(f.h)} mm`;
+}
+
 /** True when the radius is large enough that the rectangle reads as a slot. */
 export function isStadium(f: Feature): boolean {
   return f.shape === 'rect' && f.radius >= Math.min(f.w, f.h) / 2 - 1e-6;

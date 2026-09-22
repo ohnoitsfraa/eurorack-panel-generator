@@ -1,7 +1,7 @@
 'use client';
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { COMPONENT_SPECS, MOUNT_SLOT, mountSlotPositions, panelHeightMm, panelWidthMm } from '@/lib/eurorack';
+import { CUTOUT_PRESETS, MOUNT_SLOT, mountSlotPositions, panelHeightMm, panelWidthMm } from '@/lib/eurorack';
 import type { DecorElement, Feature } from '@/lib/types';
 import { useStore } from '@/lib/store';
 import { textToRings } from '@/lib/model/text';
@@ -373,7 +373,7 @@ export function PanelCanvas2D() {
         </span>
         <span>
           {tool
-            ? `Click to place ${COMPONENT_SPECS[tool].label} · Shift-click to keep placing · Esc to stop`
+            ? `Click to place a ${(CUTOUT_PRESETS.find((p) => p.id === tool)?.label ?? 'cutout').toLowerCase()} · Shift-click to keep placing · Esc to stop`
             : 'Alt drag to duplicate · ⌘/Ctrl drag to ignore grid · ⌘/Ctrl scroll to zoom'}
         </span>
       </div>

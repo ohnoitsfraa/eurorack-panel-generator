@@ -192,10 +192,41 @@ export function rangeFor(spec: ComponentSpec, source: SourceKind): [number, numb
   return source === 'artwork' ? spec.artworkRangeMm : spec.visualRangeMm;
 }
 
-/** Kinds offered in the UI as manual "add a cutout" options, in a sensible order. */
-export const PLACEABLE_KINDS: FeatureKind[] = [
-  'jack', 'pot', 'led', 'led5', 'button', 'buttonLarge',
-  'toggle', 'slider', 'encoder', 'trimmer', 'display', 'custom',
+/**
+ * What the palette offers.
+ *
+ * Shapes, not components. Placing a cutout is placing a shape; which part
+ * eventually goes through it is a property of that shape, set afterwards from
+ * the standard sizes, not a decision needed before you can draw anything.
+ *
+ * A rounded rectangle and a slot are both rectangles with a corner radius —
+ * they are separate entries because reaching for "a slot" is common enough to
+ * be worth one click rather than a rectangle plus a radius drag.
+ */
+export type CutoutShapeId = 'circle' | 'rect' | 'roundrect' | 'slot';
+
+export interface CutoutPreset {
+  id: CutoutShapeId;
+  label: string;
+  /** Starting geometry, in mm. */
+  w: number;
+  h: number;
+  radius: number;
+  shape: 'circle' | 'rect';
+}
+
+export const CUTOUT_PRESETS: CutoutPreset[] = [
+  // 6 mm is the commonest hole on any Eurorack panel by a wide margin, so a
+  // fresh circle starts there rather than at an arbitrary round number.
+  { id: 'circle', label: 'Circle', shape: 'circle', w: 6, h: 6, radius: 3 },
+  { id: 'rect', label: 'Rectangle', shape: 'rect', w: 20, h: 10, radius: 0 },
+  { id: 'roundrect', label: 'Rounded rectangle', shape: 'rect', w: 20, h: 10, radius: 2 },
+  { id: 'slot', label: 'Slot', shape: 'rect', w: 30, h: 4, radius: 2 },
+];
+
+/** Components whose hole size is fixed by the hardware, for the size presets. */
+export const STANDARD_KINDS: FeatureKind[] = [
+  'jack', 'pot', 'encoder', 'led', 'led5', 'button', 'buttonLarge', 'toggle', 'trimmer',
 ];
 
 /** Infer HP from a panel width in mm (inverse of panelWidthMm), rounded to the grid. */

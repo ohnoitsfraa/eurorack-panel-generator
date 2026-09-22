@@ -1,9 +1,10 @@
 'use client';
 
 import {
-  COMPONENT_SPECS, HOLE_CLEARANCE, PLACEABLE_KINDS, THICKNESS, hasStandardSize, panelWidthMm,
+  COMPONENT_SPECS, CUTOUT_PRESETS, HOLE_CLEARANCE, STANDARD_KINDS, THICKNESS,
+  hasStandardSize, panelWidthMm,
 } from '@/lib/eurorack';
-import { isStadium, type Feature, type FeatureKind, type PanelFormat } from '@/lib/types';
+import { describeFeature, isStadium, type Feature, type FeatureKind, type PanelFormat } from '@/lib/types';
 import { featureForKind, useStore } from '@/lib/store';
 import { Button, ColorInput, Field, NumberInput, Section, Select, Slider, Toggle } from './ui';
 
@@ -29,14 +30,28 @@ function FeatureEditor({ feature: f }: { feature: Feature }) {
     });
 
   return (
-    <Section title={spec.label}>
-      <Field label="Type">
-        <Select<FeatureKind>
-          value={f.kind}
-          onChange={(kind) => updateFeature(f.id, { ...featureForKind(kind), x: f.x, y: f.y })}
-          options={PLACEABLE_KINDS.map((k) => ({ value: k, label: COMPONENT_SPECS[k].label }))}
+    <Section title={describeFeature(f, spec.label)}>
+      <Field label="Standard size" hint={standard ? `${spec.holeMm} mm` : undefined}>
+        <Select<FeatureKind | 'custom'>
+          value={standard ? f.kind : 'custom'}
+          onChange={(kind) =>
+            updateFeature(f.id, kind === 'custom'
+              ? { kind: 'custom' }
+              : { ...featureForKind(kind), x: f.x, y: f.y })
+          }
+          options={[
+            { value: 'custom', label: 'Custom size' },
+            ...STANDARD_KINDS.map((k) => ({
+              value: k,
+              label: `${COMPONENT_SPECS[k].label} — ${COMPONENT_SPECS[k].holeMm} mm`,
+            })),
+          ]}
         />
       </Field>
+      <p className="-mt-1 text-[11px] leading-relaxed text-ink-400">
+        Picking a component sets the hole to the size that hardware needs, and
+        keeps every cutout of that type matching.
+      </p>
 
       <Field label="Shape">
         <Select
@@ -134,6 +149,26 @@ function FeatureEditor({ feature: f }: { feature: Feature }) {
         <Button variant="danger" onClick={() => removeFeatures([f.id])}>Delete</Button>
       </div>
     </Section>
+  );
+}
+
+/** A small drawing of the shape, so the palette reads at a glance. */
+function ShapeGlyph({ preset }: { preset: (typeof CUTOUT_PRESETS)[number] }) {
+  const scale = 14 / Math.max(preset.w, preset.h);
+  const w = preset.w * scale;
+  const h = preset.h * scale;
+  return (
+    <svg width={16} height={16} viewBox="0 0 16 16" className="shrink-0" aria-hidden>
+      {preset.shape === 'circle' ? (
+        <circle cx={8} cy={8} r={6} fill="none" stroke="currentColor" strokeWidth={1.4} />
+      ) : (
+        <rect
+          x={8 - w / 2} y={8 - h / 2} width={w} height={h}
+          rx={Math.min(preset.radius * scale, Math.min(w, h) / 2)}
+          fill="none" stroke="currentColor" strokeWidth={1.4}
+        />
+      )}
+    </svg>
   );
 }
 
@@ -332,21 +367,29 @@ export function FeaturesTab() {
     <>
       <Section title="Add a cutout">
         <div className="grid grid-cols-2 gap-1">
-          {PLACEABLE_KINDS.map((kind) => (
+          {CUTOUT_PRESETS.map((preset) => (
             <button
-              key={kind}
+              key={preset.id}
               type="button"
-              onClick={() => setTool(tool === kind ? null : kind)}
-              className={`rounded-md border px-2 py-1.5 text-[11px] transition-colors
-                ${tool === kind
+              onClick={() => setTool(tool === preset.id ? null : preset.id)}
+              className={`flex items-center gap-2 rounded-md border px-2 py-1.5 text-[11px] transition-colors
+                ${tool === preset.id
                   ? 'border-accent bg-accent/10 text-accent'
                   : 'border-ink-700 bg-ink-900 text-ink-300 hover:border-ink-400'}`}
             >
-              {COMPONENT_SPECS[kind].label}
+              <ShapeGlyph preset={preset} />
+              <span className="truncate">{preset.label}</span>
             </button>
           ))}
         </div>
-        {tool && <p className="text-[11px] text-accent">Click on the panel to place it. Esc to cancel.</p>}
+        {tool
+          ? <p className="text-[11px] text-accent">Click on the panel to place it. Esc to cancel.</p>
+          : (
+            <p className="text-[11px] leading-relaxed text-ink-400">
+              Place a shape, then set its size — either by hand, by dragging its
+              handles, or from a standard component size.
+            </p>
+          )}
       </Section>
 
       <Section title={`Cutouts (${features.length})`}>
@@ -364,7 +407,9 @@ export function FeaturesTab() {
                   className={`flex w-full items-center justify-between gap-2 rounded px-2 py-1 text-left text-[11px]
                     ${selectedIds.includes(f.id) ? 'bg-accent/15 text-accent' : 'text-ink-300 hover:bg-ink-800'}`}
                 >
-                  <span className="truncate">{COMPONENT_SPECS[f.kind].label}</span>
+                  <span className="truncate">
+                    {describeFeature(f, COMPONENT_SPECS[f.kind].label)}
+                  </span>
                   <span className="shrink-0 tabular-nums text-ink-400">
                     {f.x.toFixed(1)}, {f.y.toFixed(1)}
                     {f.confidence !== undefined && f.confidence < 0.45 && (

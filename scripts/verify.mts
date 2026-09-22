@@ -532,8 +532,8 @@ console.log('\nEditor actions');
   const st = () => useStore.getState();
 
   st().newDesign();
-  st().addFeature('jack', 10, 20);
-  st().addFeature('jack', 20, 20);
+  st().addFeature('circle', 10, 20);
+  st().addFeature('circle', 20, 20);
   const ids = st().design.features.map((f) => f.id);
 
   // Alt-drag duplicates in place and then drags the copy, so the action has to
@@ -628,7 +628,7 @@ console.log('\nEditor actions');
 // --------------------------------------------- 6b. cutout shapes and standards
 console.log('\nCutout shapes, standards and clearance');
 {
-  const { migrateFeature, isStadium } = await import('../src/lib/types');
+  const { migrateFeature, isStadium, describeFeature } = await import('../src/lib/types');
   const { featureRing } = await import('../src/lib/model/build');
   const { bbox } = await import('../src/lib/geom/poly');
   const { COMPONENT_SPECS: SPECS, hasStandardSize } = await import('../src/lib/eurorack');
@@ -668,6 +668,46 @@ console.log('\nCutout shapes, standards and clearance');
     pass('migrating an already-migrated cutout changes nothing');
   } else {
     fail('a second migration altered the cutout');
+  }
+
+  // --- what the palette offers, and how cutouts are described ---
+  {
+    const { CUTOUT_PRESETS, STANDARD_KINDS } = await import('../src/lib/eurorack');
+    const ids = CUTOUT_PRESETS.map((p) => p.id).sort().join(',');
+    if (ids === 'circle,rect,roundrect,slot') pass('the palette offers shapes, not components');
+    else fail(`palette offers ${ids}`);
+
+    const everyPresetValid = CUTOUT_PRESETS.every(
+      (p) => p.w > 0 && p.h > 0 && p.radius >= 0 && p.radius <= Math.min(p.w, p.h) / 2,
+    );
+    if (everyPresetValid) pass('every preset has a usable starting size');
+    else fail('a preset has an impossible radius or size');
+
+    const slot = CUTOUT_PRESETS.find((p) => p.id === 'slot')!;
+    if (slot.radius === Math.min(slot.w, slot.h) / 2) pass('the slot preset is fully rounded');
+    else fail('the slot preset is not a stadium');
+
+    if (STANDARD_KINDS.every((k) => SPECS[k].holeMm > 0 && hasStandardSize(k))) {
+      pass(`${STANDARD_KINDS.length} component sizes are offered as presets`);
+    } else {
+      fail('a size preset points at a component with no standard size');
+    }
+
+    // A hand-placed shape should describe itself rather than say "Custom".
+    const plain = { id: 'z', kind: 'custom' as const, x: 0, y: 0, shape: 'circle' as const, w: 6, h: 6, radius: 3, rotation: 0 };
+    if (describeFeature(plain, SPECS.custom.label) === 'Circle 6 mm') pass('a plain shape describes itself');
+    else fail(`describeFeature gave "${describeFeature(plain, SPECS.custom.label)}"`);
+
+    const namedJack = { ...plain, kind: 'jack' as const };
+    if (describeFeature(namedJack, SPECS.jack.label) === SPECS.jack.label) {
+      pass('a named component keeps its name');
+    } else {
+      fail('a named component lost its label');
+    }
+
+    const stadium = { ...plain, shape: 'rect' as const, w: 30, h: 4, radius: 2 };
+    if (describeFeature(stadium, SPECS.custom.label).startsWith('Slot')) pass('a fully rounded rectangle reads as a slot');
+    else fail(`stadium described as "${describeFeature(stadium, SPECS.custom.label)}"`);
   }
 
   // --- geometry ---

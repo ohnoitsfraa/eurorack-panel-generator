@@ -100,6 +100,13 @@ needed: a radius of zero gives sharp corners, and a radius of half the shorter
 side gives the stadium that a fader slot or mounting slot actually is. Carrying
 a separate slot shape only meant three ways to describe the same geometry.
 
+The palette offers shapes rather than components — circle, rectangle, rounded
+rectangle, slot — because placing a cutout is placing a shape. Which part
+eventually goes through it is a property of that shape, set afterwards from
+**standard size** on the selected cutout, not a decision you should have to make
+before you can draw anything. Cutouts placed by hand are listed by what they
+are ("Circle 6 mm", "Slot 30 × 4 mm") until you name one.
+
 Sizes come from the hardware. A 3.5 mm jack is a Thonkiconn-style PJ301M with a
 6 mm bushing; a panel pot is an Alpha 9 mm with a 7 mm bushing; sub-miniature
 toggles are M6. Detection measures a hole to work out *what* it is and then
