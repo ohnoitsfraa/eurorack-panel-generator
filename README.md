@@ -24,6 +24,45 @@ unless you ask for it — `.env.local`:
 MODULARGRID_ENABLED=1
 ```
 
+## Publishing it
+
+The app is almost entirely client-side, but not quite: three routes have to run
+on a server.
+
+| route | why it cannot be in the browser |
+| --- | --- |
+| `/api/font` | Google Fonts serves woff2 to browsers, which opentype.js cannot parse; asking for TrueType needs a User-Agent a page cannot set |
+| `/api/proxy-image` | reading pixels from a cross-origin image taints the canvas |
+| `/api/modulargrid/module` | cross-origin, and ModularGrid has no API |
+
+So it wants a host that runs Next.js. **Vercel's Hobby plan** is the
+straightforward answer: it is Next's own host, free, needs no card, and takes no
+configuration — the defaults are already right.
+
+```bash
+npx vercel          # first run walks through login and setup
+npx vercel --prod   # subsequent deploys
+```
+
+Or connect the repository on vercel.com and every push deploys itself.
+
+Hobby is free for personal, non-commercial use, which this is. Nothing needs
+setting up: with no environment variables at all the app works, minus
+ModularGrid lookup, which stays off until `MODULARGRID_ENABLED=1` is set in the
+project's settings.
+
+**Before turning ModularGrid on in public**, note that rate limiting is held in
+memory, and a serverless host starts fresh instances constantly, so in practice
+it barely limits anything. Module pages are cached for a week, which does most
+of the work of keeping the load down, but if the URL is going to be shared
+around it is kinder to leave the lookup switched off and paste image URLs
+instead.
+
+Netlify and Cloudflare Pages also host Next, with a little more setup —
+Cloudflare needs `@opennextjs/cloudflare`. A purely static host such as GitHub
+Pages cannot run the three routes, which would cost ModularGrid lookup and
+loading images by URL; uploading and pasting would still work.
+
 ## How it works
 
 ### Scale comes free
