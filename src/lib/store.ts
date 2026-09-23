@@ -31,7 +31,7 @@ import {
   applyTheme, readChoice, writeChoice, type ResolvedTheme, type ThemeChoice,
 } from './theme';
 import { fetchImage, imageDataFromBlob } from './cv/image';
-import { loadFont } from './model/text';
+import { fontsUsedBy, loadFont } from './model/text';
 
 export type ViewMode = '2d' | '3d' | 'rack';
 export type InspectorTab = 'panel' | 'features' | 'decor' | 'export' | 'library';
@@ -922,3 +922,36 @@ export const selectPanelSize = (s: State) => ({
 
 export { CUTOUT_PRESETS, STANDARD_KINDS, COMPONENT_SPECS, conflicts };
 export type { FeatureKind, PanelFormat, SourceKind };
+
+
+/**
+ * Keep the fonts loaded in step with whatever is going to be built.
+ *
+ * This used to be an effect inside the 2D canvas, which meant the fonts a
+ * design needed were only ever requested while that design was open in the
+ * editor. Every other panel got built without them: open the rack and each
+ * saved panel's lettering was dropped, and the rack export went out with no
+ * lettering on it at all. Whose fonts are needed is a property of the state,
+ * not of which component happens to be mounted, so it belongs here.
+ *
+ * The designs that get built are the open one and any placed in the rack —
+ * not the whole library, which could be a hundred panels nobody is asking to
+ * see. ensureFont is idempotent and keyed by family and weight, so repeats
+ * cost nothing.
+ */
+export function fontNeedsForBuilds(
+  s: Pick<State, 'design' | 'library' | 'rack'>,
+): ReturnType<typeof fontsUsedBy> {
+  const placed = new Set(s.rack.rows.flatMap((r) => r.placements.map((p) => p.designId)));
+  const designs = [s.design, ...s.library.filter((d) => placed.has(d.id)).map((d) => d.design)];
+  const needed = new Map<string, { family: string; weight: number }>();
+  for (const design of designs) {
+    for (const need of fontsUsedBy(design)) needed.set(`${need.family}@${need.weight}`, need);
+  }
+  return [...needed.values()];
+}
+
+useStore.subscribe((state, prev) => {
+  if (state.design === prev.design && state.library === prev.library && state.rack === prev.rack) return;
+  for (const { family, weight } of fontNeedsForBuilds(state)) state.ensureFont(family, weight);
+});

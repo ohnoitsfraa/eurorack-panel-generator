@@ -2,11 +2,11 @@
 
 import { useMemo, useState } from 'react';
 import { useStore } from '@/lib/store';
-import { usePanelBuild } from '@/lib/usePanelBuild';
+import { meshesForExport, usePanelBuild } from '@/lib/usePanelBuild';
 import { download3MF, downloadSTL, downloadSTLSet } from '@/lib/export/download';
 import { meshesTo3MF } from '@/lib/export/threemf';
 import { meshesToBinarySTL } from '@/lib/export/stl';
-import { Button, Field, Section } from './ui';
+import { Button, Field, PendingFonts, Section } from './ui';
 
 export function ExportTab() {
   const design = useStore((s) => s.design);
@@ -35,6 +35,12 @@ export function ExportTab() {
 
   return (
     <>
+      {result.pending.length > 0 && (
+        <Section title="Lettering">
+          <PendingFonts families={result.pending} />
+        </Section>
+      )}
+
       {result.warnings.length > 0 && (
         <Section title="Needs attention">
           <ul className="space-y-2">
@@ -82,7 +88,7 @@ export function ExportTab() {
         </Field>
 
         <div className="space-y-2 pt-1">
-          <Button variant="primary" onClick={() => download3MF(result.meshes, filename)} className="w-full">
+          <Button variant="primary" onClick={async () => download3MF(await meshesForExport(), filename)} className="w-full">
             Download 3MF{sizes ? ` · ${kb(sizes.mf)}` : ''}
           </Button>
           <p className="text-[12.5px] leading-relaxed text-ink-400">
@@ -93,7 +99,7 @@ export function ExportTab() {
         </div>
 
         <div className="space-y-2 border-t border-ink-800 pt-3">
-          <Button onClick={() => downloadSTL(result.meshes, filename)} className="w-full">
+          <Button onClick={async () => downloadSTL(await meshesForExport(), filename)} className="w-full">
             Download STL{sizes ? ` · ${kb(sizes.stl)}` : ''}
           </Button>
           <p className="text-[12.5px] leading-relaxed text-ink-400">
@@ -103,7 +109,7 @@ export function ExportTab() {
 
         {colorCount > 1 && (
           <div className="space-y-2">
-            <Button onClick={() => downloadSTLSet(result.meshes, filename)} className="w-full">
+            <Button onClick={async () => downloadSTLSet(await meshesForExport(), filename)} className="w-full">
               Download STL set · zip
             </Button>
             <p className="text-[12.5px] leading-relaxed text-ink-400">

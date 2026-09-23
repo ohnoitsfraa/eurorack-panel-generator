@@ -209,6 +209,25 @@ export function Section({
   );
 }
 
+/**
+ * Lettering that is missing only because its font has not arrived.
+ *
+ * Deliberately not styled as a problem: it clears itself, usually before
+ * anyone reads it. It is shown at all because a font that never arrives would
+ * otherwise leave a panel silently unlettered, and that is only discovered
+ * after the print.
+ */
+export function PendingFonts({ families }: { families: string[] }) {
+  if (families.length === 0) return null;
+  return (
+    <p className="rounded-md border border-ink-700 bg-ink-800/60 px-2.5 py-2 text-[12.5px]
+                  leading-relaxed text-ink-300">
+      Waiting for {families.join(', ')}. Lettering appears, and exports, once
+      {families.length === 1 ? ' it arrives' : ' they arrive'}.
+    </p>
+  );
+}
+
 export function Empty({ children }: { children: React.ReactNode }) {
   return <p className="py-6 text-center text-[13.5px] leading-relaxed text-ink-400">{children}</p>;
 }

@@ -33,6 +33,13 @@ const ENGRAVE_CLEARANCE_MM = 0.25;
 export interface BuildResult {
   meshes: Mesh[];
   warnings: string[];
+  /**
+   * Families whose lettering is missing only because the font has not arrived
+   * yet. Kept apart from warnings: one is a design problem the user has to
+   * fix, the other clears itself in a moment, and showing them alike trains
+   * people to ignore both.
+   */
+  pending: string[];
   stats: { widthMm: number; heightMm: number; triangles: number; holes: number };
 }
 
@@ -43,6 +50,7 @@ export interface BuildOptions {
 
 export function buildPanel(design: PanelDesign, opts: BuildOptions): BuildResult {
   const warnings: string[] = [];
+  const pending: string[] = [];
   const W = panelWidthMm(design.hp);
   const H = panelHeightMm(design.format);
   const t = design.thicknessMm;
@@ -112,7 +120,7 @@ export function buildPanel(design: PanelDesign, opts: BuildOptions): BuildResult
     grownHoles.map((r) => ({ outer: r, holes: [] })),
   );
 
-  const decor = resolveDecor(design, opts, warnings);
+  const decor = resolveDecor(design, opts, warnings, pending);
   const engravedGroups: Array<{ regions: Region[]; depth: number; color: string }> = [];
   const raisedMeshes: Mesh[] = [];
   // Engraved areas already claimed, so two overlapping engravings at different
@@ -208,6 +216,7 @@ export function buildPanel(design: PanelDesign, opts: BuildOptions): BuildResult
   return {
     meshes,
     warnings,
+    pending: [...new Set(pending)],
     stats: { widthMm: W, heightMm: H, triangles, holes: holesUp.length },
   };
 }
@@ -258,7 +267,9 @@ interface ResolvedDecor {
   color: string;
 }
 
-function resolveDecor(design: PanelDesign, opts: BuildOptions, warnings: string[]): ResolvedDecor[] {
+function resolveDecor(
+  design: PanelDesign, opts: BuildOptions, warnings: string[], pending: string[],
+): ResolvedDecor[] {
   const out: ResolvedDecor[] = [];
 
   for (const el of design.decor) {
@@ -267,7 +278,7 @@ function resolveDecor(design: PanelDesign, opts: BuildOptions, warnings: string[
     if (el.type === 'text') {
       const font = opts.fonts.get(`${el.fontFamily}@${el.fontWeight}`);
       if (!font) {
-        warnings.push(`Font "${el.fontFamily}" is still loading, so "${el.text}" was left out.`);
+        pending.push(el.fontFamily);
         continue;
       }
       out.push({ ...common, label: `text: ${el.text.slice(0, 24)}`, rings: textToRings(el, font) });

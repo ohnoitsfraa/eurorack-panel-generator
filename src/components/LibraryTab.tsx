@@ -3,10 +3,11 @@
 import { useMemo, useRef, useState } from 'react';
 import { useStore } from '@/lib/store';
 import { buildRack } from '@/lib/model/rackBuild';
+import { fontsSettled } from '@/lib/model/text';
 import { panelAspect } from '@/lib/rack';
 import { download3MF, downloadSTL, downloadSTLSet } from '@/lib/export/download';
 import { PanelThumb } from './PanelThumb';
-import { Button, Field, Section } from './ui';
+import { Button, Field, PendingFonts, Section } from './ui';
 
 /** Saved panels, and everything to do with the rack as a whole. */
 export function LibraryTab() {
@@ -233,6 +234,14 @@ function RackExport() {
   const fonts = useStore((s) => s.fonts);
 
   const result = useMemo(() => buildRack(rack, library, fonts), [rack, library, fonts]);
+
+  // Same reasoning as the single-panel export: the preview may be missing a
+  // label for a moment, the file may not.
+  const meshesForExport = async () => {
+    await fontsSettled();
+    const s = useStore.getState();
+    return buildRack(s.rack, s.library, s.fonts).meshes;
+  };
   const name = (rack.name || 'rack').replace(/[^\w.-]+/g, '-').toLowerCase();
 
   return (
@@ -248,12 +257,12 @@ function RackExport() {
         <dd className="tabular-nums text-ink-100">{result.stats.triangles.toLocaleString()}</dd>
       </dl>
 
-      <Button variant="primary" onClick={() => download3MF(result.meshes, `${name}-rack`)} className="w-full">
+      <Button variant="primary" onClick={async () => download3MF(await meshesForExport(), `${name}-rack`)} className="w-full">
         Download rack as 3MF
       </Button>
       <div className="grid grid-cols-2 gap-1">
-        <Button onClick={() => downloadSTL(result.meshes, `${name}-rack`)}>STL</Button>
-        <Button onClick={() => downloadSTLSet(result.meshes, `${name}-rack`)}>STL set</Button>
+        <Button onClick={async () => downloadSTL(await meshesForExport(), `${name}-rack`)}>STL</Button>
+        <Button onClick={async () => downloadSTLSet(await meshesForExport(), `${name}-rack`)}>STL set</Button>
       </div>
 
       <p className="text-[12.5px] leading-relaxed text-ink-400">
@@ -262,6 +271,8 @@ function RackExport() {
         427 mm. For printing, export panels one at a time from the Export tab,
         or let your slicer rearrange the objects.
       </p>
+
+      <PendingFonts families={result.pending} />
 
       {result.warnings.length > 0 && (
         <ul className="space-y-1.5">

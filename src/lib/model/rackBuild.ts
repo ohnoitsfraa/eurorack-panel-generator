@@ -9,6 +9,8 @@ import { translateMesh } from './mesh';
 export interface RackBuildResult {
   meshes: Mesh[];
   warnings: string[];
+  /** Families still on their way; see BuildResult.pending. */
+  pending: string[];
   stats: { panels: number; triangles: number; widthMm: number; heightMm: number };
 }
 
@@ -32,6 +34,7 @@ export function buildRack(
   const cache = new Map<string, ReturnType<typeof buildPanel>>();
   const meshes: Mesh[] = [];
   const warnings: string[] = [];
+  const pending: string[] = [];
 
   const rowHeights = rack.rows.map((r) => PANEL_HEIGHTS[r.format]);
   const totalH = rowHeights.reduce((a, b) => a + b, 0);
@@ -59,6 +62,9 @@ export function buildRack(
         built = buildPanel(saved.design, { fonts });
         cache.set(p.designId, built);
         for (const w of built.warnings) warnings.push(`${saved.name}: ${w}`);
+        // Not prefixed with the panel: which panel is waiting on Inter is of
+        // no use to anyone, and the same font would be listed once per panel.
+        pending.push(...built.pending);
       }
 
       const dx = p.hp * HP_MM;
@@ -71,7 +77,7 @@ export function buildRack(
   }
 
   const triangles = meshes.reduce((n, m) => n + m.positions.length / 9, 0);
-  return { meshes, warnings, stats: { panels, triangles, widthMm: totalW, heightMm: totalH } };
+  return { meshes, warnings, pending: [...new Set(pending)], stats: { panels, triangles, widthMm: totalW, heightMm: totalH } };
 }
 
 /** Width in millimetres of a saved design, for layout maths. */

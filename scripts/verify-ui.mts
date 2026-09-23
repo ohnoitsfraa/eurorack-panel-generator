@@ -296,6 +296,59 @@ async function open(colorScheme: 'light' | 'dark' = 'dark') {
   await page.close();
 }
 
+// --- a panel in the rack gets its font loaded, not just the open one ---
+{
+  const { page, problems } = await open();
+  const fontRequests: string[] = [];
+  page.on('request', (r) => {
+    if (r.url().includes('/api/font')) fontRequests.push(new URL(r.url()).searchParams.get('family') ?? '');
+  });
+
+  // Lettering in a font the open design will not be using afterwards, so the
+  // only thing that can ask for it is the panel sitting in the rack.
+  await page.getByRole('button', { name: 'Text & art', exact: true }).click();
+  await page.getByRole('button', { name: 'Text label', exact: true }).click();
+  await page.waitForTimeout(300);
+  await page.getByRole('combobox').filter({ hasText: 'Inter' }).first().selectOption('Space Mono');
+  await page.waitForTimeout(1200);
+
+  await page.getByRole('button', { name: 'Rack', exact: true }).last().click();
+  await page.getByRole('textbox').first().fill('Lettered');
+  await page.getByRole('button', { name: 'Save to library' }).click();
+  await page.waitForTimeout(600);
+  await page.getByRole('button', { name: 'To rack', exact: true }).first().click();
+  await page.waitForTimeout(700);
+  await page.getByRole('button', { name: 'New panel', exact: true }).click();
+  await page.waitForTimeout(600);
+
+  // A reload clears the loaded fonts, leaving the rack panel as the only
+  // reason to want this one. Fonts used to be requested by the 2D canvas, for
+  // the open design alone, so this is where the lettering went missing.
+  fontRequests.length = 0;
+  await page.reload({ waitUntil: 'networkidle' });
+  await page.waitForTimeout(1500);
+  await page.getByRole('button', { name: 'Rack', exact: true }).first().click();
+  await page.waitForTimeout(1200);
+
+  if (fontRequests.includes('Space Mono')) pass('a rack panel\'s font is fetched after a reload');
+  else fail(`no request for the rack panel's font; asked for ${JSON.stringify(fontRequests)}`);
+
+  const body = await page.locator('body').innerText();
+  if (!/Waiting for/i.test(body)) pass('and the rack has its lettering, with nothing left pending');
+  else fail('the rack is still waiting on a font it should have asked for');
+
+  if (problems.length === 0) pass('no uncaught errors loading a rack panel\'s font');
+  else fail(`rack fonts: ${[...new Set(problems)].join(' | ')}`);
+
+  // Leave nothing behind for the checks that follow.
+  await page.getByRole('button', { name: /^Clear/ }).first().click();
+  await page.waitForTimeout(200);
+  const confirm = page.getByRole('button', { name: /clear everything/i }).first();
+  if (await confirm.count()) await confirm.click();
+  await page.waitForTimeout(600);
+  await page.close();
+}
+
 // --- light and dark ---
 {
   for (const scheme of ['dark', 'light'] as const) {

@@ -3,6 +3,8 @@
 import { useMemo } from 'react';
 import { useStore } from './store';
 import { buildPanel, type BuildResult } from './model/build';
+import { fontsSettled } from './model/text';
+import type { Mesh } from './types';
 
 /**
  * Build the panel mesh from current state.
@@ -25,4 +27,20 @@ export function usePanelBuild(): { result: BuildResult } {
   );
 
   return { result };
+}
+
+/**
+ * Meshes for export, with any font still in flight waited out first.
+ *
+ * The on-screen build uses whatever is loaded, because a preview that blocks
+ * on the network is worse than one missing a label for a moment. A download is
+ * the opposite case: the file is the thing being made, and a panel that
+ * reaches the printer without its lettering is a wasted print discovered an
+ * hour later. State is read fresh afterwards rather than closed over, since
+ * the await is exactly the window in which it changes.
+ */
+export async function meshesForExport(): Promise<Mesh[]> {
+  await fontsSettled();
+  const s = useStore.getState();
+  return buildPanel(s.design, { fonts: s.fonts }).meshes;
 }

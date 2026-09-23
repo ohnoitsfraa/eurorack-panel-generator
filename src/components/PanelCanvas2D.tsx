@@ -801,12 +801,7 @@ function DecorLayer({
   const decor = useStore((s) => s.design.decor);
   const fonts = useStore((s) => s.fonts);
   const fontVersion = useStore((s) => s.fontVersion);
-  const ensureFont = useStore((s) => s.ensureFont);
   const selectedIds = useStore((s) => s.selectedIds);
-
-  useEffect(() => {
-    for (const d of decor) if (d.type === 'text') ensureFont(d.fontFamily, d.fontWeight);
-  }, [decor, ensureFont]);
 
   return (
     <g>

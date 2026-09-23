@@ -19,6 +19,7 @@ import { readFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { createRequire } from 'node:module';
 import { buildPanel } from '../src/lib/model/build';
+import { buildRack } from '../src/lib/model/rackBuild';
 import { textToRings } from '../src/lib/model/text';
 import { nestRings } from '../src/lib/geom/poly';
 import { meshesTo3MF } from '../src/lib/export/threemf';
@@ -26,6 +27,7 @@ import { meshesToBinarySTL } from '../src/lib/export/stl';
 import { COMPONENT_SPECS, panelHeightMm, panelWidthMm } from '../src/lib/eurorack';
 import { DEFAULT_DETECT_SETTINGS } from '../src/lib/types';
 import type { Feature, Mesh, PanelDesign, TextElement } from '../src/lib/types';
+import type { SavedDesign } from '../src/lib/storage';
 
 /** Node has no ImageData, and the CV code only needs these three fields. */
 class ImageDataShim {
@@ -1443,6 +1445,91 @@ console.log('\nExport containers');
   // The colour count drives material assignment in the slicer.
   if (xml.includes('3dmodel.model')) pass('3MF contains the model part');
   else fail('3MF is missing 3D/3dmodel.model');
+}
+
+// ------------------------------------------------------------------ 8b. fonts
+console.log('\nLettering waits for its font');
+{
+  const { fontsUsedBy } = await import('../src/lib/model/text');
+  const { fontNeedsForBuilds } = await import('../src/lib/store');
+
+  const lettered = (id: string, family: string, weight: number): PanelDesign => ({
+    ...BASE,
+    decor: [{
+      id: `t_${id}`, type: 'text', text: 'MESSOR', x: 20, y: 100, sizeMm: 5,
+      fontFamily: family, fontWeight: weight, letterSpacing: 0, rotation: 0,
+      color: '#ffffff', mode: 'engraved', reliefMm: 0.4,
+    }],
+  });
+
+  // What a design needs, without repeating a family it uses twice.
+  {
+    const d = lettered('a', 'Inter', 700);
+    d.decor = [...d.decor, { ...d.decor[0], id: 't_b' }, { ...d.decor[0], id: 't_c', fontWeight: 400 }];
+    const needs = fontsUsedBy(d).map((n) => `${n.family}@${n.weight}`).sort();
+    if (needs.join() === 'Inter@400,Inter@700') pass('a design asks for each family and weight once');
+    else fail(`asked for ${needs.join(', ')}`);
+  }
+
+  // Text with no font yet is pending, not a warning: one clears itself and the
+  // other is the user's to fix, and reporting them alike taught people to
+  // ignore both.
+  {
+    const r = buildPanel(lettered('p', 'Inter', 700), { fonts: new Map() });
+    if (r.pending.join() === 'Inter') pass('a font still loading is reported as pending');
+    else fail(`pending was ${JSON.stringify(r.pending)}`);
+    if (r.warnings.length === 0) pass('and not as a warning');
+    else fail(`it also warned: ${r.warnings.join(' | ')}`);
+  }
+
+  // The bug this section exists for: fonts were only ever requested for the
+  // design open in the editor, so every panel in the rack built without its
+  // lettering and the rack export went out bare.
+  {
+    const inRack: SavedDesign = {
+      id: 'saved-1', name: 'Cosmotronic Messor', design: lettered('r', 'Space Mono', 400),
+      createdAt: 1, updatedAt: 1,
+    };
+    const loose: SavedDesign = {
+      id: 'saved-2', name: 'not placed', design: lettered('x', 'Oswald', 700),
+      createdAt: 1, updatedAt: 1,
+    };
+    const state = {
+      design: lettered('open', 'Inter', 700),
+      library: [inRack, loose],
+      rack: {
+        name: 'r', rows: [{
+          id: 'row0', widthHp: 84, format: '3U' as const,
+          placements: [{ designId: 'saved-1', hp: 0 }],
+        }],
+      },
+    };
+    const needs = fontNeedsForBuilds(state).map((n) => n.family).sort();
+    if (needs.includes('Space Mono')) pass('a rack panel\'s font is asked for, not only the open design\'s');
+    else fail(`asked for ${needs.join(', ')}, missing the rack panel's Space Mono`);
+    if (needs.includes('Inter')) pass('the open design\'s font is still asked for');
+    else fail('the open design was left out');
+    // A library of a hundred panels should not mean a hundred font fetches.
+    if (!needs.includes('Oswald')) pass('a library panel that is not in the rack is left alone');
+    else fail('fonts were fetched for panels nothing is going to build');
+  }
+
+  // And the rack build passes pending up, once per font rather than per panel.
+  {
+    const saved: SavedDesign = {
+      id: 's1', name: 'Cosmotronic Messor', design: lettered('r', 'Inter', 700),
+      createdAt: 1, updatedAt: 1,
+    };
+    const rack = {
+      name: 'r', rows: [{
+        id: 'row0', widthHp: 84, format: '3U' as const,
+        placements: [{ designId: 's1', hp: 0 }, { designId: 's1', hp: 10 }],
+      }],
+    };
+    const r = buildRack(rack, [saved], new Map());
+    if (r.pending.join() === 'Inter') pass('the rack reports each missing font once');
+    else fail(`rack pending was ${JSON.stringify(r.pending)}`);
+  }
 }
 
 // ------------------------------------------------------------------- 9. brand

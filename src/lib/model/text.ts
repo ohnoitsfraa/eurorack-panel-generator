@@ -1,5 +1,5 @@
 import { parse, type Font, type Path } from 'opentype.js';
-import type { Pt, TextElement } from '../types';
+import type { DecorElement, Pt, TextElement } from '../types';
 import type { Ring } from '../geom/poly';
 
 /**
@@ -49,6 +49,31 @@ export function registerFont(family: string, weight: number, buf: ArrayBuffer): 
 
 export function isFontLoaded(family: string, weight: number): boolean {
   return fontCache.has(fontKey(family, weight));
+}
+
+/** Every family and weight this design's lettering needs to build. */
+export function fontsUsedBy(design: { decor: TextElement[] | DecorElement[] }): FontNeed[] {
+  const needed = new Map<string, FontNeed>();
+  for (const d of design.decor) {
+    if (d.type !== 'text') continue;
+    needed.set(fontKey(d.fontFamily, d.fontWeight), { family: d.fontFamily, weight: d.fontWeight });
+  }
+  return [...needed.values()];
+}
+
+export interface FontNeed { family: string; weight: number }
+
+/**
+ * Resolve once every font asked for so far has settled.
+ *
+ * For the export paths: a panel that goes to the printer missing its lettering
+ * is a wasted print, so a download waits out a load that is still in flight
+ * rather than quietly building without it. Settled rather than resolved,
+ * because a font that cannot be fetched should not hang the download — that
+ * one surfaces as an error of its own.
+ */
+export async function fontsSettled(): Promise<void> {
+  await Promise.allSettled([...fontCache.values()]);
 }
 
 /**

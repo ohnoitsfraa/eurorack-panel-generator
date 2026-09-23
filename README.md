@@ -127,6 +127,28 @@ readings are concentric, while a word's are smeared along its length. On a real
 30 HP panel the two together take the spurious cutouts from 24 down to a
 handful.
 
+### Lettering and fonts
+
+Text is real geometry, so a panel cannot be built until the font it is set in
+has been fetched and parsed. Which fonts are needed is a property of the state
+rather than of the screen you happen to be on: the store watches the open
+design and every panel placed in the rack, and asks for their fonts. It used to
+be an effect inside the 2D canvas, which meant a design's fonts were only
+requested while that design was open in the editor — so opening the rack built
+every saved panel without its lettering, and the rack export went out bare.
+
+A font that has not arrived yet is reported as *pending* rather than as a
+warning. The two look the same to a user and are not the same thing: a warning
+is a design problem to fix, while pending clears itself in a moment, and
+showing them alike teaches people to ignore both. Pending is still shown,
+quietly, because a font that never arrives would otherwise leave a panel
+silently unlettered — a thing you find out after the print.
+
+Downloads wait. The on-screen build uses whatever is loaded, since a preview
+that blocks on the network is worse than one missing a label for a moment, but
+an export settles every outstanding font first and rebuilds from fresh state.
+The file is the thing being made.
+
 ### Branding
 
 The look comes from the kit in `panelmate-brand/`, and that folder is the
