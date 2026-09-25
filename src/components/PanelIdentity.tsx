@@ -31,18 +31,20 @@ export function PanelIdentity() {
   /**
    * Save, place, and go and look at it.
    *
-   * Saved first because the rack holds a reference to a library panel, so an
-   * unsaved one has nothing to point at — and the id has to be read back
-   * afterwards, since a panel saved for the first time only acquires one here.
+   * Only offered once the panel is in the library, because that is what the
+   * rack holds — a reference to a saved panel — and racking something that
+   * has never been named would make a library entry as a side effect of
+   * asking for something else. Changes since the last save are written first,
+   * so the rack shows the panel as it is rather than as it was.
    *
    * The view only follows on success: when there is no room the panel has not
    * moved, and arriving at a rack that looks unchanged reads as the click
    * having done nothing. The refusal says what happened instead.
    */
   const addThisPanel = () => {
-    saveCurrentDesign();
-    const id = useStore.getState().activeDesignId;
-    if (!id || !addToRack(id)) return;
+    if (!activeDesignId) return;
+    if (dirty) saveCurrentDesign();
+    if (!addToRack(activeDesignId)) return;
     setView('rack');
     setTab('library');
   };
@@ -67,7 +69,12 @@ export function PanelIdentity() {
       >
         {activeDesignId ? (dirty ? 'Save changes' : 'Saved') : 'Save to library'}
       </Button>
-      <IconButton onClick={addThisPanel} label="Add this panel to the rack">
+      <IconButton
+        onClick={addThisPanel}
+        disabled={activeDesignId === null}
+        label="Add this panel to the rack"
+        disabledLabel="Save this panel first, then it can go in the rack"
+      >
         {/* A rack row with panels in it, and room for one more. An arrow
             dropping into a tray was the first try and is simply the download
             icon — which the library already uses for exporting a panel. */}
@@ -84,17 +91,33 @@ export function PanelIdentity() {
   );
 }
 
+/**
+ * An icon-only button in the header.
+ *
+ * The label is the whole explanation for anyone not looking at the picture,
+ * so a disabled one says why rather than repeating what it would have done —
+ * a greyed control with no reason attached is just a dead end.
+ */
 function IconButton({
-  onClick, label, children,
-}: { onClick: () => void; label: string; children: React.ReactNode }) {
+  onClick, label, disabled, disabledLabel, children,
+}: {
+  onClick: () => void;
+  label: string;
+  disabled?: boolean;
+  disabledLabel?: string;
+  children: React.ReactNode;
+}) {
+  const reason = disabled ? (disabledLabel ?? label) : label;
   return (
     <button
       type="button"
       onClick={onClick}
-      title={label}
-      aria-label={label}
+      disabled={disabled}
+      title={reason}
+      aria-label={reason}
       className="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-md border
-                 border-ink-600 bg-ink-800 text-ink-100 transition-colors hover:bg-ink-700"
+                 border-ink-600 bg-ink-800 text-ink-100 transition-colors hover:bg-ink-700
+                 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-ink-800"
     >
       <svg
         viewBox="0 0 16 16"

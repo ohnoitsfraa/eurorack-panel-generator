@@ -328,23 +328,32 @@ async function open(colorScheme: 'light' | 'dark' = 'dark') {
   await page.close();
 }
 
-// --- the header can rack a panel that has never been saved ---
+// --- racking from the header waits until the panel is in the library ---
 {
   const { page, problems } = await open();
-  await page.getByLabel('Panel name').fill('Straight to the rack');
-  // No save first: the button has to do it, or the rack would be pointing at
-  // a library entry that does not exist.
-  await page.getByRole('button', { name: 'Add this panel to the rack' }).click();
-  await page.waitForTimeout(1000);
+  // The rack holds a reference to a saved panel, so there is nothing to point
+  // at until this one has been saved.
+  const rackIt = page.getByRole('button', { name: /Add this panel to the rack|Save this panel first/ });
+  if (await rackIt.isDisabled()) pass('a panel that has never been saved cannot be racked');
+  else fail('the rack button was live on an unsaved panel');
+  const why = await rackIt.getAttribute('aria-label');
+  if (/save this panel first/i.test(why ?? '')) pass('and says why rather than just greying out');
+  else fail(`the disabled button is labelled ${JSON.stringify(why)}`);
 
+  await page.getByLabel('Panel name').fill('Straight to the rack');
+  await page.getByRole('button', { name: 'Save to library' }).click();
+  await page.waitForTimeout(700);
+
+  if (await rackIt.isEnabled()) pass('saving turns it on');
+  else fail('the rack button stayed disabled after saving');
+
+  await rackIt.click();
+  await page.waitForTimeout(1000);
   if ((await page.locator('[data-rack-panel="Straight to the rack"]').count()) > 0) {
-    pass('adding from the header saves the panel and places it');
+    pass('and then it places the panel and shows you the rack');
   } else {
     fail('the panel did not reach the rack from the header');
   }
-  const settled = await page.getByRole('button', { name: /^Save/ }).first().innerText();
-  if (/^Saved$/.test(settled.trim())) pass('and the panel is saved once it has been placed');
-  else fail(`the save button still reads "${settled.trim()}"`);
 
   if (problems.length === 0) pass('no uncaught errors racking from the header');
   else fail(`racking from the header: ${[...new Set(problems)].join(' | ')}`);

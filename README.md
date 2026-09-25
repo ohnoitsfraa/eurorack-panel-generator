@@ -148,6 +148,9 @@ screen: you can be drawing cutouts, in the 3D preview or standing in the rack
 and still want to save what you have. Save keeps its words, since it is the
 only one that reports something (never saved, has changes, up to date) and an
 icon cannot say which; the other two are icons with labels attached.
+Add-to-rack is greyed until the panel is in the library, because the rack holds
+a reference to a saved panel rather than a copy of one, and its label says so
+instead of leaving a dead control with no reason attached.
 
 A file dragged in cannot be remembered this way. Its `blob:` address dies with
 the page, so there is nothing worth writing down, and re-saving a design from
