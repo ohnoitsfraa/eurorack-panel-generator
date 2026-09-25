@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useStore } from '@/lib/store';
+import { isRefetchable } from '@/lib/storage';
 import { imageDataFromBlob } from '@/lib/cv/image';
 import { Button, Field, NumberInput, Section, Select, Slider, Toggle } from './ui';
 import { looksLikeLink, slugFromInput, type MGMatch, type MGModule } from '@/lib/modulargrid';
@@ -9,6 +10,7 @@ import { looksLikeLink, slugFromInput, type MGMatch, type MGModule } from '@/lib
 export function SourcePanel() {
   const sourceImage = useStore((s) => s.sourceImage);
   const sourceLabel = useStore((s) => s.sourceLabel);
+  const sourceUrl = useStore((s) => s.sourceUrl);
   const setSource = useStore((s) => s.setSource);
   const clearSource = useStore((s) => s.clearSource);
   const setError = useStore((s) => s.setError);
@@ -109,9 +111,17 @@ export function SourcePanel() {
         {mode === 'modulargrid' && <ModularGridLoader />}
 
         {sourceLabel && (
-          <p className="truncate text-[12.5px] text-ink-400" title={sourceLabel}>
-            Loaded: {sourceLabel}
-          </p>
+          <>
+            <p className="truncate text-[12.5px] text-ink-400" title={sourceLabel}>
+              Loaded: {sourceLabel}
+            </p>
+            <p className="text-[12.5px] leading-relaxed text-ink-400">
+              {isRefetchable(sourceUrl)
+                ? 'Kept with the panel by its address, so it comes back when the design is reopened.'
+                : 'A dragged-in file cannot be kept with the panel: its address dies with the page, '
+                  + 'and holding the file itself would mean megabytes per panel.'}
+            </p>
+          </>
         )}
       </Section>
 

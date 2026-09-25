@@ -328,6 +328,35 @@ async function open(colorScheme: 'light' | 'dark' = 'dark') {
   await page.close();
 }
 
+// --- the header can rack a panel that has never been saved ---
+{
+  const { page, problems } = await open();
+  await page.getByLabel('Panel name').fill('Straight to the rack');
+  // No save first: the button has to do it, or the rack would be pointing at
+  // a library entry that does not exist.
+  await page.getByRole('button', { name: 'Add this panel to the rack' }).click();
+  await page.waitForTimeout(1000);
+
+  if ((await page.locator('[data-rack-panel="Straight to the rack"]').count()) > 0) {
+    pass('adding from the header saves the panel and places it');
+  } else {
+    fail('the panel did not reach the rack from the header');
+  }
+  const settled = await page.getByRole('button', { name: /^Save/ }).first().innerText();
+  if (/^Saved$/.test(settled.trim())) pass('and the panel is saved once it has been placed');
+  else fail(`the save button still reads "${settled.trim()}"`);
+
+  if (problems.length === 0) pass('no uncaught errors racking from the header');
+  else fail(`racking from the header: ${[...new Set(problems)].join(' | ')}`);
+
+  await page.getByRole('button', { name: /^Clear/ }).first().click();
+  await page.waitForTimeout(200);
+  const confirm = page.getByRole('button', { name: /clear everything/i }).first();
+  if (await confirm.count()) await confirm.click();
+  await page.waitForTimeout(600);
+  await page.close();
+}
+
 // --- a panel in the rack gets its font loaded, not just the open one ---
 {
   const { page, problems } = await open();
@@ -350,7 +379,7 @@ async function open(colorScheme: 'light' | 'dark' = 'dark') {
   await page.getByRole('button', { name: 'Library', exact: true }).click();
   await page.getByRole('button', { name: 'To rack', exact: true }).first().click();
   await page.waitForTimeout(700);
-  await page.getByRole('button', { name: 'New panel', exact: true }).click();
+  await page.getByRole('button', { name: 'Start a new panel' }).click();
   await page.waitForTimeout(600);
 
   // A reload clears the loaded fonts, leaving the rack panel as the only
@@ -488,7 +517,7 @@ for (const [tab, placeholder, button] of [
       await page.getByLabel('Panel name').fill('Reference kept');
       await page.getByRole('button', { name: 'Save to library' }).click();
       await page.waitForTimeout(700);
-      await page.getByRole('button', { name: 'New panel', exact: true }).click();
+      await page.getByRole('button', { name: 'Start a new panel' }).click();
       await page.waitForTimeout(600);
       if (!(await hasPhoto())) pass('starting a new panel clears the photo');
       else fail('the previous panel\'s photo was left underneath the new one');

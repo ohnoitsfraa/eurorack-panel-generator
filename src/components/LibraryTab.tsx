@@ -7,7 +7,7 @@ import { fontsSettled } from '@/lib/model/text';
 import { panelAspect } from '@/lib/rack';
 import { download3MF, downloadSTL, downloadSTLSet } from '@/lib/export/download';
 import { PanelThumb } from './PanelThumb';
-import { Button, Empty, Field, PendingFonts, Section } from './ui';
+import { Button, Field, PendingFonts, Section } from './ui';
 
 /** Saved panels, and everything to do with the rack as a whole. */
 export function LibraryTab() {
@@ -15,7 +15,6 @@ export function LibraryTab() {
   const rack = useStore((s) => s.rack);
   const fonts = useStore((s) => s.fonts);
   const activeDesignId = useStore((s) => s.activeDesignId);
-  const saveCurrentDesign = useStore((s) => s.saveCurrentDesign);
   const openDesign = useStore((s) => s.openDesign);
   const deleteDesign = useStore((s) => s.deleteDesign);
   const addToRack = useStore((s) => s.addToRack);
@@ -44,25 +43,6 @@ export function LibraryTab() {
 
   return (
     <>
-      <Section title="This panel">
-        {activeDesignId
-          ? (
-            <Button
-              onClick={() => { saveCurrentDesign(); placeAndShow(activeDesignId); }}
-              className="w-full"
-            >
-              Add to rack
-            </Button>
-          )
-          : <Empty>Name and save this panel in the header, then it can go in a rack.</Empty>}
-        <p className="text-[12.5px] leading-relaxed text-ink-400">
-          A photo loaded from a link is remembered by its address, so it comes
-          back under the panel when the design is reopened. A file dragged in
-          cannot be: a blob: address dies with the page, and keeping the file
-          itself would mean megabytes per panel.
-        </p>
-      </Section>
-
       <Section title={`Library (${library.length})`}>
         {library.length === 0 ? (
           <p className="py-2 text-center text-[13.5px] leading-relaxed text-ink-400">

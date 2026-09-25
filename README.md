@@ -142,6 +142,13 @@ outlast the user's interest — open one panel, change your mind, open another �
 so the picture that arrives checks it still belongs to the panel on screen
 before it lands.
 
+The panel's own controls — its name, save, add-to-rack and new — sit in the
+header rather than in an inspector tab, because they belong to whatever is on
+screen: you can be drawing cutouts, in the 3D preview or standing in the rack
+and still want to save what you have. Save keeps its words, since it is the
+only one that reports something (never saved, has changes, up to date) and an
+icon cannot say which; the other two are icons with labels attached.
+
 A file dragged in cannot be remembered this way. Its `blob:` address dies with
 the page, so there is nothing worth writing down, and re-saving a design from
 one of those keeps whichever address the panel already had rather than
