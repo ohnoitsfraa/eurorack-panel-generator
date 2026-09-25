@@ -127,6 +127,26 @@ readings are concentric, while a word's are smeared along its length. On a real
 30 HP panel the two together take the spurious cutouts from 24 down to a
 handful.
 
+### The reference photo
+
+A photo loaded from a link is remembered with the design, as its address
+rather than as pixels: a module render is a megabyte or two, and a library of
+them would be storing bytes the browser's own HTTP cache already holds. What
+is written down is the URL, the label and the crop — about 150 bytes — and
+reopening the design fetches the picture back and puts it under the panel.
+
+Restoring is not the same path as loading. Loading a photo re-reads the panel
+width from it and runs detection; restoring one does neither, or reopening a
+saved design would replace the cutouts it was saved with. The fetch can also
+outlast the user's interest — open one panel, change your mind, open another —
+so the picture that arrives checks it still belongs to the panel on screen
+before it lands.
+
+A file dragged in cannot be remembered this way. Its `blob:` address dies with
+the page, so there is nothing worth writing down, and re-saving a design from
+one of those keeps whichever address the panel already had rather than
+clearing it.
+
 ### Lettering and fonts
 
 Text is real geometry, so a panel cannot be built until the font it is set in

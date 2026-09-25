@@ -115,7 +115,7 @@ export function Button({
       onClick={onClick}
       disabled={disabled}
       title={title}
-      className={`rounded-md border px-2.5 py-1.5 text-[13.5px] transition-colors disabled:cursor-not-allowed
+      className={`whitespace-nowrap rounded-md border px-2.5 py-1.5 text-[13.5px] transition-colors disabled:cursor-not-allowed
                   disabled:opacity-40 ${styles} ${className}`}
     >
       {children}

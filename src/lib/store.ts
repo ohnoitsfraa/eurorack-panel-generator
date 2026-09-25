@@ -16,7 +16,7 @@ import { autoCrop, detectFeatures } from './cv/detect';
 import {
   clearSession, deleteDesign as dbDeleteDesign, loadDesigns, loadRack as dbLoadRack,
   loadSession, migrateFromLocalStorage, putDesign, putDesigns, saveRack as dbSaveRack,
-  saveSession, stripForStorage, type SavedDesign,
+  isRefetchable, saveSession, stripForStorage, type SavedDesign, type SourceReference,
 } from './storage';
 import {
   backupFilename, buildLibraryBackup, buildPanelBackup, buildRackBackup, mergeBackup,
@@ -113,6 +113,7 @@ interface State {
   syncTheme: () => void;
   saveCurrentDesign: (name?: string) => void;
   openDesign: (id: string) => void;
+  restoreReference: (designId: string, ref: SourceReference) => Promise<void>;
   newDesign: () => void;
   deleteDesign: (id: string) => void;
   renameDesign: (id: string, name: string) => void;
@@ -514,12 +515,21 @@ export const useStore = create<State>((set, get) => ({
   },
 
   saveCurrentDesign: (name) => {
-    const { library, design, designName, activeDesignId } = get();
+    const { library, design, designName, activeDesignId, sourceUrl, sourceLabel, crop } = get();
+    const id = activeDesignId ?? uid('d');
+    // Keep whichever reference the panel already had if the current one cannot
+    // be fetched again — re-saving a design after dragging a file in should
+    // not throw away the module address it was built from.
+    const previous = library.find((i) => i.id === id)?.reference;
+    const reference = isRefetchable(sourceUrl) && crop
+      ? { url: sourceUrl!, label: sourceLabel ?? 'Reference', crop }
+      : previous;
     const entry: SavedDesign = {
-      id: activeDesignId ?? uid('d'),
+      id,
       name: (name ?? designName).trim() || 'Untitled panel',
       updatedAt: Date.now(),
       design: stripForStorage(design),
+      ...(reference ? { reference } : {}),
     };
     const items = [entry, ...library.filter((i) => i.id !== entry.id)]
       .sort((a, b) => b.updatedAt - a.updatedAt);
@@ -539,16 +549,41 @@ export const useStore = create<State>((set, get) => ({
       designName: found.name,
       dirty: false,
       selectedIds: [],
-      // The reference photo is not saved with a design, so clear it rather
-      // than leaving another panel's picture underneath this one.
+      // Cleared first either way, so another panel's picture is never left
+      // sitting underneath this one while its own is on the way.
       sourceImage: null,
-      sourceUrl: null,
-      sourceLabel: null,
+      sourceUrl: found.reference?.url ?? null,
+      sourceLabel: found.reference?.label ?? null,
       sourceBlob: null,
-      crop: null,
+      crop: found.reference?.crop ?? null,
       mmPerPx: null,
       view: '2d',
     });
+    if (found.reference) void get().restoreReference(id, found.reference);
+  },
+
+  /**
+   * Fetch a saved design's reference photo back in.
+   *
+   * Deliberately not setSource: that one re-reads the width from the picture
+   * and runs detection again, which would replace the cutouts the design was
+   * saved with. This puts the photo back underneath and nothing else.
+   *
+   * The design id is carried through because the fetch can outlast the user's
+   * interest — open one panel, change your mind, open another — and the
+   * picture that arrives late belongs to the panel that asked for it.
+   */
+  restoreReference: async (designId, ref) => {
+    try {
+      const { blob, image } = await fetchImage(ref.url);
+      if (get().activeDesignId !== designId) return;
+      set({ sourceImage: image, sourceBlob: blob });
+    } catch {
+      if (get().activeDesignId !== designId) return;
+      // Not an error worth interrupting for: the panel is intact and the
+      // photo was only ever a tracing aid.
+      set({ sourceImage: null, sourceUrl: null, sourceLabel: null, crop: null });
+    }
   },
 
   newDesign: () => {

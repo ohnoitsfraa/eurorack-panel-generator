@@ -7,20 +7,16 @@ import { fontsSettled } from '@/lib/model/text';
 import { panelAspect } from '@/lib/rack';
 import { download3MF, downloadSTL, downloadSTLSet } from '@/lib/export/download';
 import { PanelThumb } from './PanelThumb';
-import { Button, Field, PendingFonts, Section } from './ui';
+import { Button, Empty, Field, PendingFonts, Section } from './ui';
 
 /** Saved panels, and everything to do with the rack as a whole. */
 export function LibraryTab() {
   const library = useStore((s) => s.library);
   const rack = useStore((s) => s.rack);
   const fonts = useStore((s) => s.fonts);
-  const designName = useStore((s) => s.designName);
-  const setDesignName = useStore((s) => s.setDesignName);
   const activeDesignId = useStore((s) => s.activeDesignId);
-  const dirty = useStore((s) => s.dirty);
   const saveCurrentDesign = useStore((s) => s.saveCurrentDesign);
   const openDesign = useStore((s) => s.openDesign);
-  const newDesign = useStore((s) => s.newDesign);
   const deleteDesign = useStore((s) => s.deleteDesign);
   const addToRack = useStore((s) => s.addToRack);
   const exportPanel = useStore((s) => s.exportPanel);
@@ -49,31 +45,21 @@ export function LibraryTab() {
   return (
     <>
       <Section title="This panel">
-        <Field label="Name">
-          <input
-            value={designName}
-            onChange={(e) => setDesignName(e.target.value)}
-            className="w-full rounded-md border border-ink-600 bg-ink-900 px-2 py-1.5 text-[15px] outline-none
-                       focus:border-accent"
-          />
-        </Field>
-        <div className="grid grid-cols-2 gap-1">
-          <Button variant="primary" onClick={() => saveCurrentDesign()}>
-            {activeDesignId ? (dirty ? 'Save changes' : 'Saved') : 'Save to library'}
-          </Button>
-          <Button onClick={newDesign}>New panel</Button>
-        </div>
-        {activeDesignId && (
-          <Button
-            onClick={() => { saveCurrentDesign(); placeAndShow(activeDesignId); }}
-            className="w-full"
-          >
-            Add to rack
-          </Button>
-        )}
+        {activeDesignId
+          ? (
+            <Button
+              onClick={() => { saveCurrentDesign(); placeAndShow(activeDesignId); }}
+              className="w-full"
+            >
+              Add to rack
+            </Button>
+          )
+          : <Empty>Name and save this panel in the header, then it can go in a rack.</Empty>}
         <p className="text-[12.5px] leading-relaxed text-ink-400">
-          A reference photo is not kept with the design — it can be megabytes,
-          and it is not part of the model.
+          A photo loaded from a link is remembered by its address, so it comes
+          back under the panel when the design is reopened. A file dragged in
+          cannot be: a blob: address dies with the page, and keeping the file
+          itself would mean megabytes per panel.
         </p>
       </Section>
 

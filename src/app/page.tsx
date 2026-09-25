@@ -13,13 +13,14 @@ import { RackView } from '@/components/RackView';
 import { usePanelBuild } from '@/lib/usePanelBuild';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { Logo } from '@/components/Logo';
+import { PanelIdentity } from '@/components/PanelIdentity';
 
 const TABS: Array<{ id: InspectorTab; label: string }> = [
   { id: 'panel', label: 'Panel' },
   { id: 'features', label: 'Cutouts' },
   { id: 'decor', label: 'Text & art' },
   { id: 'export', label: 'Export' },
-  { id: 'library', label: 'Rack' },
+  { id: 'library', label: 'Library' },
 ];
 
 export default function Page() {
@@ -31,8 +32,6 @@ export default function Page() {
   const setError = useStore((s) => s.setError);
   const detecting = useStore((s) => s.detecting);
   const loadLibraryFromStorage = useStore((s) => s.loadLibraryFromStorage);
-  const designName = useStore((s) => s.designName);
-  const dirty = useStore((s) => s.dirty);
   const restoredAt = useStore((s) => s.restoredAt);
   const discardRestored = useStore((s) => s.discardRestored);
   const newDesign = useStore((s) => s.newDesign);
@@ -82,7 +81,7 @@ export default function Page() {
               key={v}
               type="button"
               onClick={() => { setView(v); if (v === 'rack') setTab('library'); }}
-              className={`label rounded px-3 py-1 text-[12.5px] transition-colors
+              className={`label whitespace-nowrap rounded px-3 py-1 text-[12.5px] transition-colors
                 ${view === v ? 'bg-ink-700 text-ink-100' : 'text-ink-400 hover:text-ink-100'}`}
             >
               {label}
@@ -90,12 +89,9 @@ export default function Page() {
           ))}
         </div>
 
-        <span className="truncate text-[12.5px] text-ink-400" title={designName}>
-          {designName}{dirty ? ' ·' : ''}
-        </span>
+        <PanelIdentity />
 
-
-        <div className="ml-auto flex items-center gap-3 text-[12.5px] text-ink-400">
+        <div className="ml-auto flex shrink-0 items-center gap-3 text-[12.5px] text-ink-400">
           <ThemeToggle />
           {result.warnings.length > 0 && (
             <button
@@ -106,7 +102,7 @@ export default function Page() {
               {result.warnings.length} issue{result.warnings.length === 1 ? '' : 's'}
             </button>
           )}
-          <span className="label tabular-nums">{result.stats.triangles.toLocaleString()} triangles</span>
+          <span className="label whitespace-nowrap tabular-nums">{result.stats.triangles.toLocaleString()} triangles</span>
         </div>
       </header>
 

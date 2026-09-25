@@ -274,8 +274,7 @@ async function open(colorScheme: 'light' | 'dark' = 'dark') {
   await page.mouse.click(pt.x, pt.y);
   await page.waitForTimeout(300);
 
-  await page.getByRole('button', { name: 'Rack', exact: true }).last().click();
-  await page.getByRole('textbox').first().fill('Rack me');
+  await page.getByLabel('Panel name').fill('Rack me');
   await page.getByRole('button', { name: 'Save to library' }).click();
   await page.waitForTimeout(600);
 
@@ -283,6 +282,7 @@ async function open(colorScheme: 'light' | 'dark' = 'dark') {
   await page.getByRole('button', { name: 'Layout', exact: true }).click();
   await page.waitForTimeout(300);
 
+  await page.getByRole('button', { name: 'Library', exact: true }).click();
   await page.getByRole('button', { name: 'To rack', exact: true }).first().click();
   await page.waitForTimeout(800);
   const after = await page.locator('body').innerText();
@@ -344,10 +344,10 @@ async function open(colorScheme: 'light' | 'dark' = 'dark') {
   await page.getByRole('combobox').filter({ hasText: 'Inter' }).first().selectOption('Space Mono');
   await page.waitForTimeout(1200);
 
-  await page.getByRole('button', { name: 'Rack', exact: true }).last().click();
-  await page.getByRole('textbox').first().fill('Lettered');
+  await page.getByLabel('Panel name').fill('Lettered');
   await page.getByRole('button', { name: 'Save to library' }).click();
   await page.waitForTimeout(600);
+  await page.getByRole('button', { name: 'Library', exact: true }).click();
   await page.getByRole('button', { name: 'To rack', exact: true }).first().click();
   await page.waitForTimeout(700);
   await page.getByRole('button', { name: 'New panel', exact: true }).click();
@@ -478,6 +478,33 @@ for (const [tab, placeholder, button] of [
     else fail(`${tab} tab: panel came out at ${m?.[1] ?? '?'} HP, expected 30`);
     if (problems.length === 0) pass(`${tab} tab: no errors`);
     else fail(`${tab} tab: ${[...new Set(problems)].join(' | ')}`);
+
+    // Only worth doing once, and only where there is a real module loaded to
+    // do it with: save the panel, walk away from it, and come back.
+    if (tab === 'ModularGrid') {
+      const hasPhoto = () => page.evaluate(() =>
+        (document.querySelector('[data-panel-canvas] image')?.getAttribute('href') ?? '').length > 100);
+
+      await page.getByLabel('Panel name').fill('Reference kept');
+      await page.getByRole('button', { name: 'Save to library' }).click();
+      await page.waitForTimeout(700);
+      await page.getByRole('button', { name: 'New panel', exact: true }).click();
+      await page.waitForTimeout(600);
+      if (!(await hasPhoto())) pass('starting a new panel clears the photo');
+      else fail('the previous panel\'s photo was left underneath the new one');
+
+      await page.getByRole('button', { name: 'Library', exact: true }).click();
+      await page.locator('aside').last().getByRole('button', { name: 'Open', exact: true }).first().click();
+      await page.waitForTimeout(6000);
+      if (await hasPhoto()) pass('reopening the design brings its photo back');
+      else fail('the reference photo did not come back with the design');
+
+      await page.getByRole('button', { name: /^Clear/ }).first().click().catch(() => {});
+      await page.waitForTimeout(200);
+      const confirm = page.getByRole('button', { name: /clear everything/i }).first();
+      if (await confirm.count()) await confirm.click();
+      await page.waitForTimeout(500);
+    }
   } else {
     fail(`${tab} tab: the module did not load`);
   }

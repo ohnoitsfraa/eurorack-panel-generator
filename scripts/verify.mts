@@ -1447,6 +1447,70 @@ console.log('\nExport containers');
   else fail('3MF is missing 3D/3dmodel.model');
 }
 
+// ------------------------------------------------- 7b. the reference photo
+console.log('\nThe reference photo survives a save');
+{
+  const { useStore } = await import('../src/lib/store');
+  const { isRefetchable } = await import('../src/lib/storage');
+  const st = () => useStore.getState();
+
+  // An address is only worth writing down if it will still work later.
+  const addresses: Array<[string | null, boolean]> = [
+    ['/api/proxy-image?url=https%3A%2F%2Fexample.com%2Fm.jpg', true],
+    ['https://example.com/m.jpg', true],
+    ['blob:http://localhost:3000/8f2c', false],
+    ['data:image/png;base64,iVBOR', false],
+    [null, false],
+  ];
+  const wrong = addresses.filter(([url, want]) => isRefetchable(url) !== want);
+  if (wrong.length === 0) pass('a blob or data address is not worth saving, an http one is');
+  else fail(`misjudged ${wrong.map(([u]) => String(u).slice(0, 24)).join(', ')}`);
+
+  const proxied = '/api/proxy-image?url=https%3A%2F%2Fmodulargrid.net%2Fimg%2F45583.jpg';
+  const crop = { x: 0, y: 0, w: 960, h: 826 };
+
+  useStore.setState({ sourceUrl: proxied, sourceLabel: '1010 Music bluebox', crop });
+  st().setDesignName('Bluebox');
+  st().saveCurrentDesign();
+  const id = st().activeDesignId!;
+  const saved = st().library.find((d) => d.id === id);
+  if (saved?.reference?.url === proxied && saved.reference.crop.w === 960) {
+    pass('saving keeps where the photo came from, and the crop it was measured against');
+  } else {
+    fail(`reference stored as ${JSON.stringify(saved?.reference)}`);
+  }
+  // The address, not the picture: a couple of hundred bytes rather than a
+  // couple of megabytes, which is the whole reason this is a URL.
+  const bytes = JSON.stringify(saved?.reference).length;
+  if (bytes < 400) pass(`and costs ${bytes} bytes, not the megabyte the image weighs`);
+  else fail(`the reference came to ${bytes} bytes`);
+
+  // Dragging a file in afterwards must not throw away the module address:
+  // the blob cannot be saved, so the one already there stands.
+  useStore.setState({ sourceUrl: 'blob:http://localhost:3000/9a1', sourceLabel: 'photo.jpg' });
+  st().saveCurrentDesign();
+  if (st().library.find((d) => d.id === id)?.reference?.url === proxied) {
+    pass('re-saving over an unsaveable source keeps the reference already held');
+  } else {
+    fail('the reference was lost on the second save');
+  }
+
+  // Opening it puts the photo back, rather than clearing it as it used to.
+  st().newDesign();
+  st().openDesign(id);
+  const after = st();
+  if (after.sourceUrl === proxied && after.crop?.w === 960 && after.sourceLabel === '1010 Music bluebox') {
+    pass('opening the design asks for its photo again');
+  } else {
+    fail(`after opening: url=${after.sourceUrl} crop=${JSON.stringify(after.crop)}`);
+  }
+  // Reopening is not an edit.
+  if (after.dirty === false) pass('and does not mark the panel as changed');
+  else fail('opening a design marked it dirty');
+
+  await st().clearEverything();
+}
+
 // ------------------------------------------------------------------ 8b. fonts
 console.log('\nLettering waits for its font');
 {

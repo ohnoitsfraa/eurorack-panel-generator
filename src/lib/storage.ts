@@ -1,6 +1,6 @@
 'use client';
 
-import { migrateDesign, type PanelDesign, type Session } from './types';
+import { migrateDesign, type Crop, type PanelDesign, type Session } from './types';
 import type { Rack } from './rack';
 
 /**
@@ -39,6 +39,29 @@ export interface SavedDesign {
   /** Epoch milliseconds. */
   updatedAt: number;
   design: PanelDesign;
+  /**
+   * Where the reference photo came from, so reopening the design can put it
+   * back under the panel.
+   *
+   * The address rather than the picture: a module render is a megabyte or two,
+   * and a library of them would be storing the same bytes the browser's own
+   * HTTP cache already holds. Only addresses that can be fetched again are
+   * kept — a blob: URL from a file the user dragged in dies with the page, so
+   * there is nothing worth writing down.
+   */
+  reference?: SourceReference;
+}
+
+export interface SourceReference {
+  url: string;
+  label: string;
+  /** The crop the detection was run against, in source-image pixels. */
+  crop: Crop;
+}
+
+/** Is this an address that will still work in a later session? */
+export function isRefetchable(url: string | null): boolean {
+  return !!url && !url.startsWith('blob:') && !url.startsWith('data:');
 }
 
 let dbPromise: Promise<IDBDatabase> | null = null;
