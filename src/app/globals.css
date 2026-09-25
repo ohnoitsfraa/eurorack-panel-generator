@@ -58,6 +58,7 @@
      the mark keeps Signal Lime at full strength in both themes, and the
      pointer on its bowl stays Rack Ink because it sits on the lime. */
   --brand-lime: #cdf24b;
+  --brand-coral: #ff6b3d;
   --brand-ink: #121418;
   color-scheme: dark;
 }
@@ -93,6 +94,22 @@
    uppercase, generously tracked. It is a label style and not a text style —
    set a sentence in it and it becomes unreadable — so it is a class to be
    applied deliberately rather than anything inherited. */
+/* The small controls that float over a panel in the rack.
+ *
+ * A panel's colour belongs to whoever designed it, so these cannot borrow a
+ * theme token and expect to be seen: on a Brushed Alu panel the light theme's
+ * chrome vanishes, and on a dark one the dark theme's does. They are a dark
+ * chip in both themes instead, carrying the brand's own colours, which read on
+ * any faceplate — 14.4:1 for the lime and 6.5:1 for the coral.
+ */
+.rack-action {
+  background: color-mix(in srgb, var(--brand-ink) 88%, transparent);
+  color: #e8e6df;
+  border: 1px solid #e8e6df66;
+}
+.rack-action:hover { border-color: var(--brand-lime); color: var(--brand-lime); }
+.rack-action-remove:hover { border-color: var(--brand-coral); color: var(--brand-coral); }
+
 .label {
   font-family: var(--font-mono-face), ui-monospace, monospace;
   text-transform: uppercase;

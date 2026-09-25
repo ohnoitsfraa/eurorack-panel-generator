@@ -291,6 +291,38 @@ async function open(colorScheme: 'light' | 'dark' = 'dark') {
   if ((await page.locator('[title*="Rack me"]').count()) > 0) pass('and the panel is there when you arrive');
   else fail('the panel was not visible in the rack');
 
+  // The per-panel controls were 11px text, which is a hard thing to hit with
+  // a mouse and an easy thing to shave down again by accident.
+  // Addressed by the rack's own attribute: the title alone also matches the
+  // library row, and hovering that reveals nothing.
+  const panel = page.locator('[data-rack-panel="Rack me"]').first();
+  await panel.hover();
+  await page.waitForTimeout(250);
+  const controls = await page.evaluate(() => {
+    const panelBox = document.querySelector('[data-rack-panel="Rack me"]')!.getBoundingClientRect();
+    return [...document.querySelectorAll('button[aria-label]')]
+      .filter((e) => (e.getAttribute('aria-label') ?? '').includes('Rack me'))
+      .map((e) => {
+        const r = e.getBoundingClientRect();
+        return {
+          w: Math.round(r.width), h: Math.round(r.height),
+          inside: r.left >= panelBox.left - 0.5 && r.right <= panelBox.right + 0.5,
+        };
+      });
+  });
+  if (controls.length === 2) pass('a panel in the rack offers edit and remove');
+  else fail(`found ${controls.length} controls on the panel, expected 2`);
+  if (controls.every((c) => c.w >= 24 && c.h >= 24)) pass('and they are big enough to hit');
+  else fail(`controls measure ${controls.map((c) => `${c.w}x${c.h}`).join(', ')}`);
+  // They must not hang over the neighbouring panel, whose controls they are not.
+  if (controls.every((c) => c.inside)) pass('and stay on the panel they belong to');
+  else fail('a control overhangs its panel');
+
+  await page.locator('button[aria-label*="Remove Rack me"]').first().click();
+  await page.waitForTimeout(400);
+  if ((await page.locator('[data-rack-panel="Rack me"]').count()) === 0) pass('remove takes the panel out of the rack');
+  else fail('the panel was still in the rack after remove');
+
   if (problems.length === 0) pass('no uncaught errors putting a panel in the rack');
   else fail(`putting a panel in the rack: ${[...new Set(problems)].join(' | ')}`);
   await page.close();

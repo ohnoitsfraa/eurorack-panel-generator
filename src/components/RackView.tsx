@@ -235,6 +235,11 @@ export function RackView() {
                   const saved = byId.get(p.designId);
                   if (!saved) return null;
                   const w = designWidthHp(p.designId) * scale;
+                  // A comfortable target, unless the panel itself is narrower
+                  // than one: a 2 HP module is about 30px wide at the default
+                  // zoom, and a button that overhung it would sit on its
+                  // neighbour. Shrinking beats hanging over.
+                  const btnPx = Math.max(16, Math.min(28, Math.floor(w) - 8));
                   return (
                     <div
                       key={p.id}
@@ -256,6 +261,7 @@ export function RackView() {
                         setDragging(p.id);
                       }}
                       title={`${saved.name} · ${saved.design.hp} HP`}
+                      data-rack-panel={saved.name}
                     >
                       <PanelThumb
                         design={saved.design}
@@ -269,25 +275,30 @@ export function RackView() {
                                       text-[11px] leading-tight text-ink-100 group-hover:block">
                         {saved.name}
                       </div>
-                      <div className="absolute right-0 top-0 hidden group-hover:flex">
-                        <button
-                          type="button"
-                          onPointerDown={(e) => e.stopPropagation()}
+                      {/* Stacked rather than side by side: a panel is always
+                          tall enough for two of these, and often not wide
+                          enough. The gap between them is deliberate — one
+                          opens the design and the other throws it out of the
+                          rack, and they are a pointer-width apart. */}
+                      <div
+                        className="absolute right-1 top-1 hidden flex-col group-hover:flex"
+                        style={{ gap: Math.max(2, Math.round(btnPx * 0.14)) }}
+                      >
+                        <PanelAction
+                          size={btnPx}
                           onClick={() => openDesign(p.designId)}
-                          className="bg-ink-950/85 px-1 text-[11px] text-ink-100 hover:text-accent"
-                          title="Edit this design"
+                          title={`Edit ${saved.name}`}
                         >
-                          edit
-                        </button>
-                        <button
-                          type="button"
-                          onPointerDown={(e) => e.stopPropagation()}
+                          <path d="M11.6 2.4a1.4 1.4 0 0 1 2 2L6.2 11.8l-2.7.7.7-2.7z" />
+                        </PanelAction>
+                        <PanelAction
+                          size={btnPx}
                           onClick={() => removePlacement(p.id)}
-                          className="bg-ink-950/85 px-1 text-[11px] text-ink-100 hover:text-danger"
-                          title="Remove from rack"
+                          title={`Remove ${saved.name} from the rack`}
+                          className="rack-action-remove"
                         >
-                          ×
-                        </button>
+                          <path d="M4.2 4.2l7.6 7.6M11.8 4.2l-7.6 7.6" />
+                        </PanelAction>
                       </div>
                     </div>
                   );
@@ -374,5 +385,49 @@ function RowWidth({ row, onChange }: { row: RackRow; onChange: (hp: number) => v
       ))}
       <option value="custom">Custom…</option>
     </select>
+  );
+}
+
+/**
+ * One of the small controls that appear on a panel in the rack.
+ *
+ * Icon-only, so it carries its own label for anyone not looking at it. The
+ * square is the hit target and the glyph inside is half of it: the target is
+ * what you aim at, the glyph only has to be recognisable.
+ */
+function PanelAction({
+  size, onClick, title, className = '', children,
+}: {
+  size: number;
+  onClick: () => void;
+  title: string;
+  className?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      // The panel underneath starts a drag on pointerdown, which would
+      // otherwise steal the click.
+      onPointerDown={(e) => e.stopPropagation()}
+      onClick={onClick}
+      title={title}
+      aria-label={title}
+      style={{ width: size, height: size }}
+      className={`rack-action flex items-center justify-center rounded transition-colors ${className}`}
+    >
+      <svg
+        viewBox="0 0 16 16"
+        width={Math.round(size * 0.5)}
+        height={Math.round(size * 0.5)}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={1.7}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        {children}
+      </svg>
+    </button>
   );
 }
