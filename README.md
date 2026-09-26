@@ -127,6 +127,21 @@ readings are concentric, while a word's are smeared along its length. On a real
 30 HP panel the two together take the spurious cutouts from 24 down to a
 handful.
 
+### Unsaved changes
+
+A panel counts as changed the moment its design object stops being the one
+that was saved — a comparison by reference, made once in a subscription,
+rather than something each action declares alongside its edit.
+
+It was the latter, and most actions had never declared it: adding, moving,
+deleting and duplicating cutouts, the same for decor, and changing the panel
+itself all left the panel looking saved, so the Save button sat greyed out
+with real work in front of it. Only renaming worked. Every edit already
+replaces the design object, so one rule covers all of them, including the ones
+not written yet. Saving, opening and starting fresh clear the flag themselves,
+and a rename sets it directly, since that is a change the design object cannot
+show.
+
 ### The reference photo
 
 A photo loaded from a link is remembered with the design, as its address

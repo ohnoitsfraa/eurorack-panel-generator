@@ -108,8 +108,36 @@ async function open(colorScheme: 'light' | 'dark' = 'dark') {
   if (handles > 0) pass('the selected cutout has drag handles');
   else fail('no handles appeared on the selected cutout');
 
+  // Save, then edit: the button has to notice. Every kind of edit but a
+  // rename used to leave the panel looking saved, so deleting a cutout left
+  // the Save button greyed out with the deletion unrecorded.
+  const save = page.getByRole('button', { name: /^Save/ }).first();
+  await page.getByLabel('Panel name').fill('Edited');
+  await save.click();
+  await page.waitForTimeout(600);
+  if (await save.isDisabled()) pass('saving settles the button');
+  else fail('the save button stayed live after saving');
+
+  await canvas.click({ position: { x: 200, y: 200 } });
+  await page.waitForTimeout(200);
+  await page.keyboard.press('Backspace');
+  await page.waitForTimeout(400);
+  if (/0 cutouts|· 0 cutout/.test(await page.locator('body').innerText())) {
+    pass('the cutout can be deleted');
+  } else {
+    fail('the cutout was not deleted');
+  }
+  if (await save.isEnabled()) pass('and deleting it offers the save again');
+  else fail('the save button stayed greyed out after a deletion');
+
   if (problems.length === 0) pass('no uncaught errors while editing');
   else fail(`while editing: ${[...new Set(problems)].join(' | ')}`);
+
+  await page.getByRole('button', { name: /^Clear/ }).first().click().catch(() => {});
+  await page.waitForTimeout(200);
+  const gone = page.getByRole('button', { name: /clear everything/i }).first();
+  if (await gone.count()) await gone.click();
+  await page.waitForTimeout(500);
   await page.close();
 }
 

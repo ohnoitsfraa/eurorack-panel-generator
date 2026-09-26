@@ -42,6 +42,15 @@ export type { Crop } from './types';
 
 interface State {
   design: PanelDesign;
+  /**
+   * The design as last saved, opened or started, by identity.
+   *
+   * Every edit replaces the design object, so "has this been changed" is a
+   * comparison of references against this one rather than something each
+   * action has to remember to declare. See the subscription at the foot of
+   * this file.
+   */
+  savedDesign: PanelDesign;
   /** Original upload, kept at full resolution for re-detection after a re-crop. */
   sourceImage: ImageData | null;
   sourceUrl: string | null;
@@ -167,6 +176,7 @@ export const DEFAULT_DESIGN: PanelDesign = {
 
 export const useStore = create<State>((set, get) => ({
   design: DEFAULT_DESIGN,
+  savedDesign: DEFAULT_DESIGN,
   sourceImage: null,
   sourceUrl: null,
   sourceLabel: null,
@@ -198,7 +208,7 @@ export const useStore = create<State>((set, get) => ({
   theme: 'system',
   resolvedTheme: 'dark',
 
-  setDesign: (patch) => set((s) => ({ design: { ...s.design, ...patch }, dirty: true })),
+  setDesign: (patch) => set((s) => ({ design: { ...s.design, ...patch } })),
 
   setSource: (img, url, label, kind, knownHp, blob) => {
     const crop = autoCrop(img);
@@ -337,7 +347,6 @@ export const useStore = create<State>((set, get) => ({
     set((s) => ({
       design: { ...s.design, features: [...s.design.features, ...copies] },
       selectedIds: copies.map((c) => c.id),
-      dirty: true,
     }));
     return copies.map((c) => c.id);
   },
@@ -441,14 +450,12 @@ export const useStore = create<State>((set, get) => ({
     set((s) => ({
       design: { ...s.design, decor: [...s.design.decor, ...copies] },
       selectedIds: copies.map((c) => c.id),
-      dirty: true,
     }));
     return copies.map((c) => c.id);
   },
 
   placeDecor: (id, x, y, originRings) =>
     set((s) => ({
-      dirty: true,
       design: {
         ...s.design,
         decor: s.design.decor.map((d) => {
@@ -473,6 +480,7 @@ export const useStore = create<State>((set, get) => ({
     if (session) {
       set({
         design: session.design,
+        savedDesign: session.design,
         designName: session.designName,
         activeDesignId: session.activeDesignId,
         dirty: session.dirty,
@@ -539,7 +547,7 @@ export const useStore = create<State>((set, get) => ({
     const items = [entry, ...library.filter((i) => i.id !== entry.id)]
       .sort((a, b) => b.updatedAt - a.updatedAt);
 
-    set({ library: items, activeDesignId: entry.id, designName: entry.name, dirty: false });
+    set({ library: items, activeDesignId: entry.id, designName: entry.name, savedDesign: design, dirty: false });
     void putDesign(entry).catch(() =>
       set({ error: 'Could not save — the browser refused to write to local storage.' }),
     );
@@ -550,6 +558,7 @@ export const useStore = create<State>((set, get) => ({
     if (!found) return;
     set({
       design: found.design,
+      savedDesign: found.design,
       activeDesignId: id,
       designName: found.name,
       dirty: false,
@@ -596,6 +605,7 @@ export const useStore = create<State>((set, get) => ({
     void clearSession();
     set({
       design: DEFAULT_DESIGN,
+      savedDesign: DEFAULT_DESIGN,
       activeDesignId: null,
       designName: 'Untitled panel',
       dirty: false,
@@ -776,6 +786,7 @@ export const useStore = create<State>((set, get) => ({
       activeDesignId: null,
       designName: 'Untitled panel',
       design: DEFAULT_DESIGN,
+      savedDesign: DEFAULT_DESIGN,
       dirty: false,
       selectedIds: [],
       sourceImage: null,
@@ -999,4 +1010,25 @@ export function fontNeedsForBuilds(
 useStore.subscribe((state, prev) => {
   if (state.design === prev.design && state.library === prev.library && state.rack === prev.rack) return;
   for (const { family, weight } of fontNeedsForBuilds(state)) state.ensureFont(family, weight);
+});
+
+
+/**
+ * A panel counts as changed the moment its design stops being the one that
+ * was saved.
+ *
+ * This used to be each action's own business, declared alongside the edit,
+ * and most of them had simply never declared it: adding, moving and deleting
+ * cutouts and decor all left the panel looking saved, so the Save button sat
+ * there greyed out with real work in front of it. Deleting a cutout was where
+ * it was noticed.
+ *
+ * Every edit replaces the design object, so the comparison is by reference.
+ * Only ever set here, never cleared: saving, opening and starting fresh clear
+ * it themselves, and a rename is a change the design object cannot show.
+ */
+useStore.subscribe((state, prev) => {
+  if (state.design === prev.design || state.dirty) return;
+  if (state.design === state.savedDesign) return;
+  useStore.setState({ dirty: true });
 });

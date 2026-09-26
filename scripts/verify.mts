@@ -1447,6 +1447,62 @@ console.log('\nExport containers');
   else fail('3MF is missing 3D/3dmodel.model');
 }
 
+// ------------------------------------------------------- 7a. unsaved changes
+console.log('\nEvery edit leaves the panel unsaved');
+{
+  const { useStore } = await import('../src/lib/store');
+  const st = () => useStore.getState();
+
+  st().newDesign();
+  st().setDesignName('Edits');
+  st().saveCurrentDesign();
+
+  // Each of these used to be responsible for saying it had changed something,
+  // and most of them did not, so the Save button stayed greyed out over real
+  // work. Deleting a cutout was where it was noticed.
+  const edits: Array<[string, () => void]> = [
+    ['adding a cutout', () => { st().addFeature('circle', 20, 20); }],
+    ['moving one', () => { st().updateFeature(st().design.features[0].id, { x: 30 }); }],
+    ['deleting one', () => { st().removeFeatures([st().design.features[0].id]); }],
+    ['duplicating one', () => { st().duplicateFeatures([st().design.features[0].id]); }],
+    ['changing the panel', () => { st().setDesign({ hp: 12 }); }],
+    ['renaming it', () => { st().setDesignName('Renamed'); }],
+    ['adding decor', () => {
+      st().addDecor({
+        id: 'd_1', type: 'shape', shape: 'rect', x: 10, y: 10, w: 8, h: 3,
+        radius: 0, rotation: 0, color: '#ffffff', mode: 'raised', reliefMm: 0.6,
+      });
+    }],
+    ['deleting decor', () => { st().removeDecor('d_1'); }],
+  ];
+
+  const missed: string[] = [];
+  for (const [what, edit] of edits) {
+    // A cutout to work on, and a clean slate to judge against.
+    if (st().design.features.length === 0) st().addFeature('circle', 20, 20);
+    st().saveCurrentDesign();
+    if (st().dirty) { missed.push(`${what} (was already unsaved)`); continue; }
+    edit();
+    if (!st().dirty) missed.push(what);
+  }
+  if (missed.length === 0) pass(`all ${edits.length} kinds of edit leave the panel unsaved`);
+  else fail(`these left the panel looking saved: ${missed.join(', ')}`);
+
+  // And the other way: the things that are not edits must not claim to be.
+  st().saveCurrentDesign();
+  const id = st().activeDesignId!;
+  st().newDesign();
+  if (!st().dirty) pass('starting a new panel is not an unsaved change');
+  else fail('a new panel came up already unsaved');
+  st().openDesign(id);
+  if (!st().dirty) pass('nor is opening a saved one');
+  else fail('opening a saved panel marked it unsaved');
+
+  await st().clearEverything();
+  if (!st().dirty) pass('nor is clearing everything');
+  else fail('clearing everything left an empty panel looking unsaved');
+}
+
 // ------------------------------------------------- 7b. the reference photo
 console.log('\nThe reference photo survives a save');
 {
