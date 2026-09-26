@@ -388,7 +388,7 @@ async function open(colorScheme: 'light' | 'dark' = 'dark') {
   await page.getByRole('button', { name: 'Library', exact: true }).click();
   await page.getByRole('button', { name: 'To rack', exact: true }).first().click();
   await page.waitForTimeout(700);
-  await page.getByRole('button', { name: 'Start a new panel' }).click();
+  await page.getByRole('button', { name: 'New blank panel' }).click();
   await page.waitForTimeout(600);
 
   // A reload clears the loaded fonts, leaving the rack panel as the only
@@ -526,7 +526,7 @@ for (const [tab, placeholder, button] of [
       await page.getByLabel('Panel name').fill('Reference kept');
       await page.getByRole('button', { name: 'Save to library' }).click();
       await page.waitForTimeout(700);
-      await page.getByRole('button', { name: 'Start a new panel' }).click();
+      await page.getByRole('button', { name: 'New blank panel' }).click();
       await page.waitForTimeout(600);
       if (!(await hasPhoto())) pass('starting a new panel clears the photo');
       else fail('the previous panel\'s photo was left underneath the new one');
@@ -536,6 +536,26 @@ for (const [tab, placeholder, button] of [
       await page.waitForTimeout(6000);
       if (await hasPhoto()) pass('reopening the design brings its photo back');
       else fail('the reference photo did not come back with the design');
+
+      // The controls for the photo have to come back with it. They used to
+      // sit at the bottom of the Detection section, which you have no reason
+      // to open when you are editing a panel you saved yesterday.
+      const source = await page.locator('aside').first().innerText();
+      const opacityAt = source.toUpperCase().indexOf('UNDERLAY OPACITY');
+      const detectAt = source.toUpperCase().indexOf('DETECTION');
+      if (opacityAt > 0 && opacityAt < detectAt) pass('and its opacity control, beside the photo');
+      else fail(`underlay opacity at ${opacityAt}, detection at ${detectAt}`);
+
+      // The module's own width, as something to compare the panel against.
+      if (/·\s*30 HP/.test(source)) pass('and says the module is 30 HP');
+      else fail('the module\'s stated width was not shown with the source');
+      await page.getByRole('button', { name: 'Panel', exact: true }).click();
+      await page.waitForTimeout(300);
+      if (/the module is 30 hp/i.test(await page.locator('aside').last().innerText())) {
+        pass('and repeats it next to the panel width');
+      } else {
+        fail('the panel width has nothing to compare against');
+      }
 
       await page.getByRole('button', { name: /^Clear/ }).first().click().catch(() => {});
       await page.waitForTimeout(200);

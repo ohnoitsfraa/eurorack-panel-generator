@@ -11,6 +11,11 @@ export function SourcePanel() {
   const sourceImage = useStore((s) => s.sourceImage);
   const sourceLabel = useStore((s) => s.sourceLabel);
   const sourceUrl = useStore((s) => s.sourceUrl);
+  const sourceHp = useStore((s) => s.sourceHp);
+  const showSource = useStore((s) => s.showSource);
+  const setShowSource = useStore((s) => s.setShowSource);
+  const sourceOpacity = useStore((s) => s.sourceOpacity);
+  const setSourceOpacity = useStore((s) => s.setSourceOpacity);
   const setSource = useStore((s) => s.setSource);
   const clearSource = useStore((s) => s.clearSource);
   const setError = useStore((s) => s.setError);
@@ -114,6 +119,7 @@ export function SourcePanel() {
           <>
             <p className="truncate text-[12.5px] text-ink-400" title={sourceLabel}>
               Loaded: {sourceLabel}
+              {sourceHp ? <span className="label"> · {sourceHp} HP</span> : null}
             </p>
             <p className="text-[12.5px] leading-relaxed text-ink-400">
               {isRefetchable(sourceUrl)
@@ -122,6 +128,22 @@ export function SourcePanel() {
                   + 'and holding the file itself would mean megabytes per panel.'}
             </p>
           </>
+        )}
+
+        {/* With the photo rather than down in Detection, where these used to
+            live. You meet Detection once, when the module is first loaded;
+            afterwards the photo is a tracing aid you keep adjusting, and the
+            control for it should not be at the bottom of a section you have
+            no other reason to open. */}
+        {sourceImage && (
+          <div className="border-t border-ink-800 pt-3">
+            <Toggle checked={showSource} onChange={setShowSource} label="Show photo underlay" />
+            {showSource && (
+              <Field label="Underlay opacity" hint={`${Math.round(sourceOpacity * 100)}%`}>
+                <Slider min={0} max={1} step={0.05} value={sourceOpacity} onChange={setSourceOpacity} />
+              </Field>
+            )}
+          </div>
         )}
       </Section>
 
@@ -459,10 +481,6 @@ function DetectSection() {
   const detecting = useStore((s) => s.detecting);
   const mmPerPx = useStore((s) => s.mmPerPx);
   const droppedAsMarkings = useStore((s) => s.droppedAsMarkings);
-  const showSource = useStore((s) => s.showSource);
-  const setShowSource = useStore((s) => s.setShowSource);
-  const sourceOpacity = useStore((s) => s.sourceOpacity);
-  const setSourceOpacity = useStore((s) => s.setSourceOpacity);
 
   return (
     <Section title="Detection">
@@ -538,14 +556,6 @@ function DetectSection() {
         </p>
       )}
 
-      <div className="border-t border-ink-800 pt-3">
-        <Toggle checked={showSource} onChange={setShowSource} label="Show photo underlay" />
-        {showSource && (
-          <Field label="Underlay opacity" hint={`${Math.round(sourceOpacity * 100)}%`}>
-            <Slider min={0} max={1} step={0.05} value={sourceOpacity} onChange={setSourceOpacity} />
-          </Field>
-        )}
-      </div>
     </Section>
   );
 }

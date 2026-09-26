@@ -1469,7 +1469,7 @@ console.log('\nThe reference photo survives a save');
   const proxied = '/api/proxy-image?url=https%3A%2F%2Fmodulargrid.net%2Fimg%2F45583.jpg';
   const crop = { x: 0, y: 0, w: 960, h: 826 };
 
-  useStore.setState({ sourceUrl: proxied, sourceLabel: '1010 Music bluebox', crop });
+  useStore.setState({ sourceUrl: proxied, sourceLabel: '1010 Music bluebox', sourceHp: 30, crop });
   st().setDesignName('Bluebox');
   st().saveCurrentDesign();
   const id = st().activeDesignId!;
@@ -1484,6 +1484,16 @@ console.log('\nThe reference photo survives a save');
   const bytes = JSON.stringify(saved?.reference).length;
   if (bytes < 400) pass(`and costs ${bytes} bytes, not the megabyte the image weighs`);
   else fail(`the reference came to ${bytes} bytes`);
+
+  // Starting fresh forgets it, or the next panel would be compared against
+  // a module it has nothing to do with.
+  {
+    const held = st().sourceHp;
+    st().newDesign();
+    if (held === 30 && st().sourceHp === null) pass('starting a new panel forgets the stated width');
+    else fail(`sourceHp was ${held} before and ${st().sourceHp} after newDesign`);
+    st().openDesign(id);
+  }
 
   // Dragging a file in afterwards must not throw away the module address:
   // the blob cannot be saved, so the one already there stands.
@@ -1504,6 +1514,10 @@ console.log('\nThe reference photo survives a save');
   } else {
     fail(`after opening: url=${after.sourceUrl} crop=${JSON.stringify(after.crop)}`);
   }
+  // The width the module's own page stated, kept as the figure to compare the
+  // panel against however much the panel is then changed.
+  if (after.sourceHp === 30) pass('and remembers the width the module stated');
+  else fail(`the module's stated width came back as ${after.sourceHp}`);
   // Reopening is not an edit.
   if (after.dirty === false) pass('and does not mark the panel as changed');
   else fail('opening a design marked it dirty');

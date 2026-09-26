@@ -152,6 +152,17 @@ Add-to-rack is greyed until the panel is in the library, because the rack holds
 a reference to a saved panel rather than a copy of one, and its label says so
 instead of leaving a dead control with no reason attached.
 
+The width the module's page stated is kept alongside it, and shown next to the
+panel's own width as the figure to compare against — with a way to go back to
+it, since the panel's width is the one thing the guess can get wrong and the
+one thing that misplaces every hole.
+
+The controls for the photo sit with the photo, in the source panel, rather
+than at the bottom of the detection settings where they began. Detection is a
+section you meet once, when the module is first loaded; the underlay is a
+tracing aid you keep adjusting, and it stays useful long after the last thing
+was detected.
+
 A file dragged in cannot be remembered this way. Its `blob:` address dies with
 the page, so there is nothing worth writing down, and re-saving a design from
 one of those keeps whichever address the panel already had rather than

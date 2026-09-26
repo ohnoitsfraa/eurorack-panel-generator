@@ -57,6 +57,8 @@ export interface SourceReference {
   label: string;
   /** The crop the detection was run against, in source-image pixels. */
   crop: Crop;
+  /** Width the module's own page stated, kept as the figure to compare against. */
+  hp?: number;
 }
 
 /** Is this an address that will still work in a later session? */

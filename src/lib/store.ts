@@ -46,6 +46,8 @@ interface State {
   sourceImage: ImageData | null;
   sourceUrl: string | null;
   sourceLabel: string | null;
+  /** Width the module's page stated, kept to compare the panel against. */
+  sourceHp: number | null;
   /** The picture as it arrived, so it can be stored and restored intact. */
   sourceBlob: Blob | null;
   crop: Crop | null;
@@ -168,6 +170,7 @@ export const useStore = create<State>((set, get) => ({
   sourceImage: null,
   sourceUrl: null,
   sourceLabel: null,
+  sourceHp: null,
   sourceBlob: null,
   crop: null,
   detect: DEFAULT_DETECT_SETTINGS,
@@ -215,6 +218,7 @@ export const useStore = create<State>((set, get) => ({
       sourceImage: img,
       sourceUrl: url,
       sourceLabel: label,
+      sourceHp: knownHp && knownHp > 0 ? Math.round(knownHp) : null,
       sourceBlob: blob ?? null,
       crop,
       error: null,
@@ -231,7 +235,7 @@ export const useStore = create<State>((set, get) => ({
 
   clearSource: () =>
     set({
-      sourceImage: null, sourceUrl: null, sourceLabel: null, sourceBlob: null,
+      sourceImage: null, sourceUrl: null, sourceLabel: null, sourceHp: null, sourceBlob: null,
       crop: null, mmPerPx: null, droppedAsMarkings: 0,
     }),
 
@@ -476,6 +480,7 @@ export const useStore = create<State>((set, get) => ({
         detect: session.detect,
         mmPerPx: session.mmPerPx,
         sourceLabel: session.sourceLabel,
+        sourceHp: session.sourceHp ?? null,
         sourceBlob: session.sourceBlob,
         view: (['2d', '3d', 'rack'] as const).includes(session.view as ViewMode)
           ? (session.view as ViewMode) : '2d',
@@ -522,7 +527,7 @@ export const useStore = create<State>((set, get) => ({
     // not throw away the module address it was built from.
     const previous = library.find((i) => i.id === id)?.reference;
     const reference = isRefetchable(sourceUrl) && crop
-      ? { url: sourceUrl!, label: sourceLabel ?? 'Reference', crop }
+      ? { url: sourceUrl!, label: sourceLabel ?? 'Reference', crop, ...(get().sourceHp ? { hp: get().sourceHp! } : {}) }
       : previous;
     const entry: SavedDesign = {
       id,
@@ -554,6 +559,7 @@ export const useStore = create<State>((set, get) => ({
       sourceImage: null,
       sourceUrl: found.reference?.url ?? null,
       sourceLabel: found.reference?.label ?? null,
+      sourceHp: found.reference?.hp ?? null,
       sourceBlob: null,
       crop: found.reference?.crop ?? null,
       mmPerPx: null,
@@ -597,6 +603,7 @@ export const useStore = create<State>((set, get) => ({
       sourceImage: null,
       sourceUrl: null,
       sourceLabel: null,
+      sourceHp: null,
       sourceBlob: null,
       crop: null,
       mmPerPx: null,
@@ -774,6 +781,7 @@ export const useStore = create<State>((set, get) => ({
       sourceImage: null,
       sourceUrl: null,
       sourceLabel: null,
+      sourceHp: null,
       sourceBlob: null,
       crop: null,
       mmPerPx: null,
@@ -919,6 +927,7 @@ useStore.subscribe((state, prev) => {
     state.detect !== prev.detect ||
     state.sourceBlob !== prev.sourceBlob ||
     state.sourceLabel !== prev.sourceLabel ||
+    state.sourceHp !== prev.sourceHp ||
     state.view !== prev.view ||
     state.tab !== prev.tab ||
     state.gridMm !== prev.gridMm ||
@@ -938,6 +947,7 @@ useStore.subscribe((state, prev) => {
       detect: s.detect,
       mmPerPx: s.mmPerPx,
       sourceLabel: s.sourceLabel,
+      sourceHp: s.sourceHp,
       sourceBlob: s.sourceBlob,
       view: s.view,
       tab: s.tab,

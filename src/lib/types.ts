@@ -262,6 +262,8 @@ export interface Session {
   detect: DetectSettings;
   mmPerPx: number | null;
   sourceLabel: string | null;
+  /** Width the module's own page stated, if it came from one. */
+  sourceHp: number | null;
   sourceBlob: Blob | null;
   view: string;
   tab: string;

@@ -180,6 +180,7 @@ export function PanelTab() {
   const setGrid = useStore((s) => s.setGrid);
   const runDetection = useStore((s) => s.runDetection);
   const hasSource = useStore((s) => s.sourceImage !== null);
+  const sourceHp = useStore((s) => s.sourceHp);
 
   return (
     <>
@@ -205,6 +206,20 @@ export function PanelTab() {
             />
           </div>
         </Field>
+        {sourceHp !== null && (
+          <p className="-mt-1 flex items-center gap-2 text-[12.5px] text-ink-400">
+            <span className="label">The module is {sourceHp} HP</span>
+            {design.hp !== sourceHp && (
+              <button
+                type="button"
+                onClick={() => { setDesign({ hp: sourceHp }); if (hasSource) runDetection(); }}
+                className="text-accent underline-offset-2 hover:underline"
+              >
+                match it
+              </button>
+            )}
+          </p>
+        )}
         <p className="-mt-1 text-[12.5px] leading-relaxed text-ink-400">
           Width includes the standard 0.3 mm clearance so the module does not
           bind against its neighbours.

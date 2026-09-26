@@ -82,7 +82,7 @@ export function PanelIdentity() {
         <path d="M4.25 6v4M6.75 6v4" />
         <path d="M11 6v4M9 8h4" />
       </IconButton>
-      <IconButton onClick={newDesign} label="Start a new panel">
+      <IconButton onClick={newDesign} label="New blank panel">
         {/* A blank panel, and a plus. */}
         <rect x="1.5" y="1.5" width="6.5" height="13" rx="1.5" />
         <path d="M12 6v6M9 9h6" />
