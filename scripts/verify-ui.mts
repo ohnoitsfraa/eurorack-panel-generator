@@ -511,6 +511,21 @@ async function open(colorScheme: 'light' | 'dark' = 'dark') {
     fail(`search returned ${options.length} options`);
   }
 
+  // Twelve Distings that differ only in a version number are hard to tell
+  // apart by name, which is the reason for the pictures.
+  await page.waitForFunction(() => document.querySelectorAll('aside li img').length > 0, null,
+    { timeout: 40000 }).catch(() => {});
+  const shots = await page.evaluate(() => {
+    const imgs = [...document.querySelectorAll('aside li img')] as HTMLImageElement[];
+    return { shown: imgs.length, loaded: imgs.filter((i) => i.complete && i.naturalWidth > 0).length };
+  });
+  if (shots.shown > 0) pass(`each result carries a panel shot (${shots.shown})`);
+  else fail('no panel shots appeared beside the results');
+  if (shots.loaded === shots.shown) pass('and every one of them loaded');
+  else fail(`${shots.shown - shots.loaded} of ${shots.shown} panel shots failed to load`);
+  if (/\d+ HP/.test(await page.locator('aside ul').innerText())) pass('and its width, to tell the versions apart');
+  else fail('the results do not say how wide each module is');
+
   await page.locator('aside li button').first().click();
   await page.waitForTimeout(16000);
   const body = await page.locator('body').innerText();

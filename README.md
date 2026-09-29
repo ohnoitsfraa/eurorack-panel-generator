@@ -533,6 +533,28 @@ tidy up, not a finished layout.
 If you would rather not ship it, delete `src/lib/modulargrid.ts` and
 `src/app/api/modulargrid/`, and drop the third tab in `SourcePanel.tsx`.
 
+### Pictures beside the results
+
+The index the results come from is addresses and nothing else, so a panel shot
+costs a look at the module's own page — twelve of them for a full list. Three
+things make that bearable, and all three are needed. The pictures are a second
+request, so the names appear first and fill in afterwards rather than the list
+waiting on the slowest one. Next holds the pages for a week. And what comes
+back is kept for the life of the process, so a second search turning up the
+same modules asks ModularGrid for nothing at all; a module that cannot be
+resolved is remembered as a miss, or a panel with no shot would be looked up
+again every time it appeared.
+
+The thumbnail is a different cut of the image from the one detection loads:
+ModularGrid keeps a webp at plain width, 17 KB against 116 KB for the 2x JPEG,
+which across a list is the difference between a fifth of a megabyte and a
+megabyte and a half. It is loaded straight from ModularGrid rather than through
+the image proxy, because the proxy exists for images whose pixels have to be
+read and these are only looked at.
+
+Each result also shows the module's width, which is what actually separates
+twelve Distings.
+
 ## Layout
 
 ```

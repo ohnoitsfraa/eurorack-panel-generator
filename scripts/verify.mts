@@ -1447,6 +1447,36 @@ console.log('\nExport containers');
   else fail('3MF is missing 3D/3dmodel.model');
 }
 
+// ---------------------------------------------------- 6e. pictures for results
+console.log('\nPanel shots for search results');
+{
+  const { parseModulePage } = await import('../src/lib/modulargrid');
+
+  // The small cut, not the one detection uses: 17 KB against 116 KB, twelve
+  // times over in a list of results.
+  const page = '<html data-module-id="45583"><meta property="og:title" content="bluebox">'
+    + '<meta property="og:image" content="/img/og/45583.jpg"><body>30 HP</body></html>';
+  const m = parseModulePage(page, '1010-music-bluebox');
+  if (m.thumbUrl === 'https://modulargrid.net/img/modcache/45583.vw.webp') {
+    pass('a result gets the small webp, not the 2x jpeg');
+  } else {
+    fail(`thumb came out as ${m.thumbUrl}`);
+  }
+  if (m.imageUrl?.includes('@2x')) pass('and the panel itself still loads at 2x for detection');
+  else fail(`detection would have loaded ${m.imageUrl}`);
+
+  // A page with no module id still gives something to show.
+  const bare = parseModulePage('<html><meta property="og:image" content="/img/og/1.jpg"></html>', 'x-y');
+  if (bare.thumbUrl === 'https://modulargrid.net/img/og/1.jpg') pass('a page without an id falls back to its og: image');
+  else fail(`fallback came out as ${bare.thumbUrl}`);
+
+  if (parseModulePage('<html></html>', 'x-y').thumbUrl === undefined) {
+    pass('and a page with neither leaves the picture out rather than inventing one');
+  } else {
+    fail('a thumbnail was invented for a page that has none');
+  }
+}
+
 // ------------------------------------------------------- 7a. unsaved changes
 console.log('\nEvery edit leaves the panel unsaved');
 {

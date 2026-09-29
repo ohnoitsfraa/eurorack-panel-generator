@@ -27,6 +27,14 @@ export interface MGModule {
   name: string;
   hp?: number;
   imageUrl?: string;
+  /**
+   * A small version of the same shot, for the pick list.
+   *
+   * ModularGrid keeps several cuts of each panel; the webp at plain width is
+   * 17 KB against 116 KB for the 2x JPEG that detection wants. Twelve results
+   * is the difference between a fifth of a megabyte and a megabyte and a half.
+   */
+  thumbUrl?: string;
   pageUrl: string;
 }
 
@@ -43,6 +51,10 @@ const buckets = new Map<string, { tokens: number; last: number }>();
 const RATES = {
   fetch: { capacity: 10, refillPerSec: 0.2 },
   search: { capacity: 60, refillPerSec: 2 },
+  // One token per list of results, not per result. A list costs a page fetch
+  // for each slug it has not seen before, so this is deliberately the meanest
+  // of the three; what keeps it usable is that the answers are kept.
+  thumbs: { capacity: 6, refillPerSec: 0.1 },
 } as const;
 
 export function takeToken(ip: string, kind: keyof typeof RATES = 'fetch'): boolean {
@@ -297,6 +309,7 @@ export function parseModulePage(html: string, slug: string): MGModule {
   // The page itself displays a 2x asset; at roughly double the resolution it
   // gives detection a great deal more to work with than the og: image.
   const retina = moduleId ? `${MG_BASE}/img/modcache/${moduleId}.vw@2x.jpg` : undefined;
+  const thumb = moduleId ? `${MG_BASE}/img/modcache/${moduleId}.vw.webp` : undefined;
 
   const rawTitle = meta('title') ?? html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i)?.[1] ?? slugToName(slug);
   const name = decodeEntities(rawTitle.replace(/<[^>]+>/g, '').replace(/\s*-\s*Eurorack Module.*$/i, '').trim());
@@ -306,6 +319,7 @@ export function parseModulePage(html: string, slug: string): MGModule {
     name: name || slugToName(slug),
     hp: parseHp(html),
     imageUrl: retina ?? (ogImage ? absolutise(ogImage) : undefined),
+    thumbUrl: thumb ?? (ogImage ? absolutise(ogImage) : undefined),
     pageUrl: `${MG_BASE}/e/${slug}`,
   };
 }
@@ -332,4 +346,49 @@ function decodeEntities(s: string): string {
     .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
     .replace(/&quot;/g, '"').replace(/&#0?39;|&apos;/g, "'").replace(/&nbsp;/g, ' ')
     .replace(/&#(\d+);/g, (_, d) => String.fromCodePoint(Number(d)));
+}
+
+/**
+ * Picture and width for a list of search results.
+ *
+ * Neither is in the index the results come from — the sitemap is addresses and
+ * nothing else — so each one costs a look at the module's own page. Two things
+ * make that bearable: Next holds those pages for a week, and what comes back
+ * is kept here for the life of the process, so a second search that turns up
+ * the same modules asks ModularGrid for nothing at all.
+ *
+ * A slug that cannot be resolved is remembered as a miss rather than retried
+ * on every search — a module with no panel shot would otherwise be looked up
+ * again each time it appeared.
+ */
+const thumbCache = new Map<string, MGThumb>();
+
+export interface MGThumb {
+  slug: string;
+  thumbUrl?: string;
+  hp?: number;
+}
+
+/** How many pages to have in flight at once. */
+const THUMB_CONCURRENCY = 3;
+
+export async function thumbsFor(slugs: string[]): Promise<MGThumb[]> {
+  const wanted = slugs.filter((s) => !thumbCache.has(s));
+  const queue = [...wanted];
+
+  await Promise.all(
+    Array.from({ length: Math.min(THUMB_CONCURRENCY, queue.length) }, async () => {
+      for (let slug = queue.shift(); slug; slug = queue.shift()) {
+        try {
+          const m = await fetchModule(slug);
+          thumbCache.set(slug, { slug, thumbUrl: m.thumbUrl, hp: m.hp });
+        } catch {
+          // A module that will not load is not worth asking about again.
+          thumbCache.set(slug, { slug });
+        }
+      }
+    }),
+  );
+
+  return slugs.map((slug) => thumbCache.get(slug) ?? { slug });
 }

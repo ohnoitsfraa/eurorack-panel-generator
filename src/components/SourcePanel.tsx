@@ -5,7 +5,9 @@ import { useStore } from '@/lib/store';
 import { isRefetchable } from '@/lib/storage';
 import { imageDataFromBlob } from '@/lib/cv/image';
 import { Button, Field, NumberInput, Section, Select, Slider, Toggle } from './ui';
-import { looksLikeLink, slugFromInput, type MGMatch, type MGModule } from '@/lib/modulargrid';
+import {
+  looksLikeLink, slugFromInput, type MGMatch, type MGModule, type MGThumb,
+} from '@/lib/modulargrid';
 
 export function SourcePanel() {
   const sourceImage = useStore((s) => s.sourceImage);
@@ -248,7 +250,30 @@ function ModularGridLoader() {
   const [state, setState] = useState<'idle' | 'busy' | 'off'>('idle');
   const [message, setMessage] = useState<string | null>(null);
   const [results, setResults] = useState<MGMatch[] | null>(null);
+  const [thumbs, setThumbs] = useState<Record<string, MGThumb>>({});
   const [found, setFound] = useState<MGModule | null>(null);
+
+  /**
+   * Fill in the pictures once the names are already on screen.
+   *
+   * A second request rather than part of the search, because the search is
+   * free — it runs against an index in memory — and this is not: the index
+   * holds addresses only, so every module that has not been looked at before
+   * costs a page fetch. The list is useful without them, so nothing waits.
+   */
+  const loadThumbs = async (matches: MGMatch[]) => {
+    if (matches.length === 0) return;
+    try {
+      const res = await fetch(`/api/modulargrid/thumbs?slugs=${matches.map((m) => m.slug).join(',')}`);
+      const data: { thumbs?: MGThumb[] } = await res.json();
+      const next: Record<string, MGThumb> = {};
+      for (const t of data.thumbs ?? []) next[t.slug] = t;
+      setThumbs(next);
+    } catch {
+      // Names alone are a workable list; a picture that will not come is not
+      // worth telling anyone about.
+    }
+  };
 
   const isLink = looksLikeLink(input);
   const canGo = isLink || input.trim().length >= 3;
@@ -294,8 +319,11 @@ function ModularGridLoader() {
       }
       setState('idle');
       setResults(data.results ?? []);
+      setThumbs({});
       if ((data.results ?? []).length === 0) {
         setMessage('Nothing matched. Try the maker as well as the model.');
+      } else {
+        void loadThumbs(data.results ?? []);
       }
     } catch (e) {
       setState('idle');
@@ -324,21 +352,44 @@ function ModularGridLoader() {
           <p className="text-[12.5px] text-ink-400">
             {results.length} match{results.length === 1 ? '' : 'es'} — pick one:
           </p>
-          <ul className="max-h-64 space-y-0.5 overflow-y-auto">
-            {results.map((r) => (
-              <li key={r.slug}>
-                <button
-                  type="button"
-                  onClick={() => void open(r.slug, r.name)}
-                  disabled={state === 'busy'}
-                  className="w-full rounded-md border border-ink-700 bg-ink-900 px-2 py-1.5 text-left
-                             text-[12.5px] text-ink-100 hover:border-ink-400 disabled:opacity-50"
-                >
-                  {r.name}
-                  <span className="block truncate font-mono text-[11px] text-ink-400">{r.slug}</span>
-                </button>
-              </li>
-            ))}
+          <ul className="max-h-80 space-y-1 overflow-y-auto">
+            {results.map((r) => {
+              const thumb = thumbs[r.slug];
+              return (
+                <li key={r.slug}>
+                  <button
+                    type="button"
+                    onClick={() => void open(r.slug, r.name)}
+                    disabled={state === 'busy'}
+                    className="flex w-full items-center gap-2 rounded-md border border-ink-700 bg-ink-900 p-1.5
+                               text-left text-[12.5px] text-ink-100 hover:border-ink-400 disabled:opacity-50"
+                  >
+                    {/* The box keeps its size whether or not a picture turns
+                        up, so the list does not jump about as they arrive. */}
+                    <span className="grid h-11 w-11 shrink-0 place-items-center overflow-hidden rounded bg-ink-950">
+                      {thumb?.thumbUrl && (
+                        // Straight from ModularGrid: this one is only ever
+                        // looked at, and the proxy exists for the images whose
+                        // pixels have to be read.
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={thumb.thumbUrl}
+                          alt=""
+                          loading="lazy"
+                          className="h-full w-full object-contain"
+                        />
+                      )}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate">{r.name}</span>
+                      <span className="label block truncate text-[11px] text-ink-400">
+                        {thumb?.hp ? `${thumb.hp} HP` : r.slug}
+                      </span>
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
           </ul>
         </>
       )}
@@ -364,7 +415,9 @@ function ModularGridLoader() {
 
       <p className="text-[12.5px] leading-relaxed text-ink-400">
         Searches ModularGrid&apos;s own index of pages, refreshed twice a day and
-        held here in between, so typing costs their servers nothing.
+        held here in between, so typing costs their servers nothing. The panel
+        shots do cost them a look at each module, so they are fetched once and
+        kept.
       </p>
     </div>
   );
