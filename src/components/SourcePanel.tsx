@@ -251,7 +251,34 @@ function ModularGridLoader() {
   const [message, setMessage] = useState<string | null>(null);
   const [results, setResults] = useState<MGMatch[] | null>(null);
   const [thumbs, setThumbs] = useState<Record<string, MGThumb>>({});
+  const [preview, setPreview] = useState<Preview | null>(null);
+  const previewTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [found, setFound] = useState<MGModule | null>(null);
+
+  /**
+   * Show the panel shot at a size worth looking at.
+   *
+   * On a delay, so running the pointer down the list to read the names does
+   * not set off a dozen of them. The picture is the one already beside the
+   * result — ModularGrid's is 480px wide against the 44px it is shown at — so
+   * enlarging it costs nothing and is not a blur.
+   */
+  const showPreview = (el: HTMLElement, r: MGMatch, thumb: MGThumb | undefined) => {
+    if (previewTimer.current) clearTimeout(previewTimer.current);
+    if (!thumb?.thumbUrl) return;
+    const url = thumb.thumbUrl;
+    previewTimer.current = setTimeout(() => {
+      const box = el.getBoundingClientRect();
+      setPreview({ url, name: r.name, hp: thumb.hp, anchorY: box.top + box.height / 2, anchorX: box.right });
+    }, 180);
+  };
+
+  const hidePreview = () => {
+    if (previewTimer.current) clearTimeout(previewTimer.current);
+    setPreview(null);
+  };
+
+  useEffect(() => hidePreview, []);
 
   /**
    * Fill in the pictures once the names are already on screen.
@@ -280,6 +307,7 @@ function ModularGridLoader() {
 
   /** Load one module, by link or by the address from a search result. */
   const open = async (ref: string, label?: string) => {
+    hidePreview();
     setState('busy');
     setMessage(null);
     setFound(null);
@@ -352,7 +380,9 @@ function ModularGridLoader() {
           <p className="text-[12.5px] text-ink-400">
             {results.length} match{results.length === 1 ? '' : 'es'} — pick one:
           </p>
-          <ul className="max-h-80 space-y-1 overflow-y-auto">
+          {/* Scrolling would leave the preview pointing at the wrong row, and
+              re-anchoring it mid-scroll is more movement than it is worth. */}
+          <ul className="max-h-80 space-y-1 overflow-y-auto" onScroll={hidePreview}>
             {results.map((r) => {
               const thumb = thumbs[r.slug];
               return (
@@ -360,6 +390,10 @@ function ModularGridLoader() {
                   <button
                     type="button"
                     onClick={() => void open(r.slug, r.name)}
+                    onMouseEnter={(e) => showPreview(e.currentTarget, r, thumb)}
+                    onMouseLeave={hidePreview}
+                    onFocus={(e) => showPreview(e.currentTarget, r, thumb)}
+                    onBlur={hidePreview}
                     disabled={state === 'busy'}
                     className="flex w-full items-center gap-2 rounded-md border border-ink-700 bg-ink-900 p-1.5
                                text-left text-[12.5px] text-ink-100 hover:border-ink-400 disabled:opacity-50"
@@ -393,6 +427,8 @@ function ModularGridLoader() {
           </ul>
         </>
       )}
+
+      {preview && <ResultPreview {...preview} />}
 
       {found && (
         <p className="text-[12.5px] text-ink-400">
@@ -610,5 +646,57 @@ function DetectSection() {
       )}
 
     </Section>
+  );
+}
+
+interface Preview {
+  url: string;
+  name: string;
+  hp?: number;
+  /** Middle of the row it belongs to, and its right edge, in viewport pixels. */
+  anchorY: number;
+  anchorX: number;
+}
+
+/**
+ * The hovered result, big enough to tell one module from another.
+ *
+ * Deliberately incapable of getting in the way. It takes no pointer events, so
+ * it can be hovered straight through and never swallows a click meant for the
+ * canvas or the list. It sits beside the list rather than over it, so the row
+ * being pointed at stays visible and clickable. It is fixed to the viewport
+ * rather than placed in the sidebar, which would clip it, and it is clamped to
+ * stay on screen. And it goes the moment the pointer leaves, the list scrolls,
+ * or a module starts loading — nothing has to be dismissed.
+ */
+function ResultPreview({ url, name, hp, anchorY, anchorX }: Preview) {
+  const MAX_H = 420;
+  const WIDTH = 300;
+  const MARGIN = 12;
+  // Centred on its row, then pushed back inside the window if that would hang
+  // it off the top or bottom.
+  const view = typeof window === 'undefined'
+    ? { w: 1440, h: 900 }
+    : { w: window.innerWidth, h: window.innerHeight };
+  const top = Math.max(MARGIN, Math.min(anchorY - MAX_H / 2, view.h - MAX_H - MARGIN));
+  // Clamped horizontally too: on a narrow window there is not room for the
+  // sidebar and this beside it, and half a preview is worse than none.
+  const left = Math.max(MARGIN, Math.min(anchorX + 10, view.w - WIDTH - MARGIN));
+
+  return (
+    <div
+      role="presentation"
+      className="pointer-events-none fixed z-30 rounded-lg border border-ink-600 bg-ink-850 p-2 shadow-2xl"
+      style={{ left, top, width: WIDTH }}
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={url}
+        alt=""
+        className="max-h-[380px] w-full rounded bg-ink-950 object-contain"
+      />
+      <p className="mt-1.5 truncate text-[12.5px] text-ink-100">{name}</p>
+      {hp ? <p className="label text-[11px] text-ink-400">{hp} HP</p> : null}
+    </div>
   );
 }

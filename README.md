@@ -555,6 +555,17 @@ read and these are only looked at.
 Each result also shows the module's width, which is what actually separates
 twelve Distings.
 
+Hovering one enlarges the shot. It reuses the picture already beside the
+result — ModularGrid's is 480px wide against the 44px it is shown at — so
+there is nothing more to fetch and nothing to blur. It is built so it cannot
+get in the way: it takes no pointer events, so it can be hovered through and
+never swallows a click meant for the canvas; it sits beside the list rather
+than over it, leaving the row you are pointing at visible and clickable; it is
+fixed to the viewport, which the sidebar would otherwise clip, and clamped to
+stay on screen; and it goes the moment the pointer leaves, the list scrolls,
+or a module starts loading. There is a short delay before it appears, so
+running down the list to read the names does not set off a dozen of them.
+
 ## Layout
 
 ```

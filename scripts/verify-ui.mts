@@ -526,6 +526,36 @@ async function open(colorScheme: 'light' | 'dark' = 'dark') {
   if (/\d+ HP/.test(await page.locator('aside ul').innerText())) pass('and its width, to tell the versions apart');
   else fail('the results do not say how wide each module is');
 
+  // Hovering enlarges the shot, and the enlargement must not be able to get
+  // in the way of anything: not the row it belongs to, not the canvas.
+  await page.locator('aside li button').nth(1).hover();
+  await page.waitForTimeout(700);
+  const shot = await page.evaluate(() => {
+    const pv = document.querySelector('[role="presentation"]');
+    if (!pv) return null;
+    const r = pv.getBoundingClientRect();
+    const list = document.querySelector('aside ul')!.getBoundingClientRect();
+    return {
+      transparent: getComputedStyle(pv).pointerEvents === 'none',
+      clearOfList: r.left >= list.right,
+      onScreen: r.top >= 0 && r.bottom <= window.innerHeight,
+      // Whatever is under its middle should be the page, not the preview.
+      underneath: document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)?.tagName ?? '',
+      bigger: r.width > 200,
+    };
+  });
+  if (shot) pass('hovering a result enlarges its panel shot');
+  else fail('no preview appeared on hover');
+  if (shot?.bigger && shot.clearOfList && shot.onScreen) pass('beside the list, in full, on screen');
+  else fail(`preview sat wrong: ${JSON.stringify(shot)}`);
+  if (shot?.transparent && shot.underneath !== '') pass('and the pointer goes straight through it');
+  else fail('the preview intercepts the pointer');
+
+  await page.locator('header').hover();
+  await page.waitForTimeout(500);
+  if ((await page.locator('[role="presentation"]').count()) === 0) pass('and it goes as soon as you look away');
+  else fail('the preview stayed after the pointer left');
+
   await page.locator('aside li button').first().click();
   await page.waitForTimeout(16000);
   const body = await page.locator('body').innerText();
