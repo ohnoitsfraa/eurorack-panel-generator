@@ -31,6 +31,19 @@ export interface Guide {
   to: number;
   /** A panel centre line reads differently from lining up with another cutout. */
   source: 'item' | 'panel';
+  /**
+   * How far the dragged thing has ended up from its nearest neighbour on this
+   * line, and where the two of them sit along it.
+   *
+   * Lining two things up is only half of placing them; the other half is how
+   * far apart they are, and that is a number panels are actually built to —
+   * jacks at 15 mm centres, a row of knobs evenly spread. Measured centre to
+   * centre, which is how hardware spacing is quoted.
+   *
+   * Absent when the line is the panel's own centre with nothing else on it:
+   * there is no neighbour to be any distance from.
+   */
+  gap?: { from: number; to: number; mm: number };
 }
 
 export interface AlignResult {
@@ -97,6 +110,7 @@ export function alignTo(
       from: vx.source === 'panel' && vx.matches.length === 0 ? 0 : Math.min(...ys),
       to: vx.source === 'panel' && vx.matches.length === 0 ? panel.h : Math.max(...ys),
       source: vx.source,
+      gap: gapTo(y, vx.matches.map((t) => t.y)),
     });
   }
   if (vy) {
@@ -107,10 +121,29 @@ export function alignTo(
       from: vy.source === 'panel' && vy.matches.length === 0 ? 0 : Math.min(...xs),
       to: vy.source === 'panel' && vy.matches.length === 0 ? panel.w : Math.max(...xs),
       source: vy.source,
+      gap: gapTo(x, vy.matches.map((t) => t.x)),
     });
   }
 
   return { x, y, guides };
+}
+
+/**
+ * Distance from the dragged centre to the nearest neighbour on the same line.
+ *
+ * The nearest rather than all of them: a column of eight jacks would otherwise
+ * carry eight numbers, and the one being placed is being placed against the
+ * thing next to it. Two centres in the same place is nothing worth measuring —
+ * that is a cutout dropped on top of another, which has its own complaint.
+ */
+function gapTo(value: number, others: number[]): { from: number; to: number; mm: number } | undefined {
+  let nearest: number | null = null;
+  let best = Infinity;
+  for (const o of others) {
+    const d = Math.abs(o - value);
+    if (d > 0.05 && d < best) { best = d; nearest = o; }
+  }
+  return nearest === null ? undefined : { from: value, to: nearest, mm: best };
 }
 
 /** Round to a grid, for when nothing is close enough to align with. */

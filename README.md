@@ -205,6 +205,25 @@ that blocks on the network is worse than one missing a label for a moment, but
 an export settles every outstanding font first and rebuilds from fresh state.
 The file is the thing being made.
 
+### Guides, and how far apart things are
+
+While something is dragged its centre is compared against everything else on
+the panel, and when it comes close to sharing an axis it snaps on and a line
+is drawn showing what it lined up with.
+
+The line also carries the distance to the nearest thing on it, measured centre
+to centre, because lining two things up is only half of placing them — a
+column of jacks at 15 mm centres is the figure on the drawing, not the gap
+between the holes. The nearest rather than all of them, or a column of eight
+would carry eight numbers. The figure keeps up to two decimals and drops
+trailing zeros: a round 20 mm should not read "20.00", and 5.08 — one HP,
+which the grid offers as a snapping step — must not round to "5.1" for anyone
+checking pitch.
+
+The label is drawn from the glyphs with a halo rather than on a box behind
+them, since a box has to be sized from a guess at the text width, and the
+guess clipped "25 mm" the first time it was tried.
+
 ### Branding
 
 The look comes from the kit in `panelmate-brand/`, and that folder is the

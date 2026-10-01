@@ -271,6 +271,15 @@ async function open(colorScheme: 'light' | 'dark' = 'dark') {
   if (/Aligned/i.test(status)) pass('the status line says it is aligned');
   else fail('nothing said the cutout had aligned');
 
+  // Lining two things up is half of placing them; how far apart they are is
+  // the other half, and it is a figure panels are built to.
+  // SVG text has no innerText, so read the content.
+  const dim = await page.locator('[data-panel-canvas] text').allTextContents();
+  if (dim.some((d) => /^80 mm$/.test((d ?? '').trim()))) pass('and the guide is labelled with the distance');
+  else fail(`the guide showed ${JSON.stringify(dim)}, expected the 80 mm between them`);
+  if (/80 mm/.test(status)) pass('which the status line repeats');
+  else fail('the status line does not give the distance');
+
   await page.mouse.up();
   await page.waitForTimeout(300);
 
@@ -283,6 +292,8 @@ async function open(colorScheme: 'light' | 'dark' = 'dark') {
   }
   if ((await page.locator('[data-panel-canvas] line').count()) === 0) pass('guides disappear once the drag ends');
   else fail('guides were left on screen after the drag');
+  if ((await page.locator('[data-panel-canvas] text').count()) === 0) pass('and so does the distance');
+  else fail('the distance was left on screen after the drag');
 
   if (problems.length === 0) pass('no uncaught errors while aligning');
   else fail(`while aligning: ${[...new Set(problems)].join(' | ')}`);

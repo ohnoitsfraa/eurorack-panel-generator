@@ -1107,6 +1107,45 @@ console.log('\nAlignment guides');
   } else {
     fail('grid snapping changed behaviour');
   }
+
+  // How far apart they ended up, which is the other half of placing a cutout.
+  {
+    const gap = col.guides.find((gg) => gg.axis === 'x')!.gap;
+    if (gap && Math.abs(gap.mm - 70) < 1e-6) pass('the guide carries the distance to what it lined up with');
+    else fail(`distance came out ${gap?.mm}`);
+    if (gap && gap.from === 90 && gap.to === 20) pass('and where the two of them sit, so it can be drawn between them');
+    else fail(`gap spans ${gap?.from}–${gap?.to}`);
+  }
+
+  // The nearest neighbour, not all of them: a column of eight would otherwise
+  // carry eight numbers.
+  {
+    const stack = alignTo(30.1, 44, [t('a', 30, 10), t('b', 30, 50), t('c', 30, 90)], panel, 1);
+    const gap = stack.guides.find((gg) => gg.axis === 'x')!.gap;
+    if (gap && Math.abs(gap.mm - 6) < 1e-6) pass('and measures to the nearest of them');
+    else fail(`measured ${gap?.mm} rather than the 6 mm to the nearest`);
+  }
+
+  // A line through the panel's centre with nothing on it has no neighbour.
+  if (centre.guides[0]?.gap === undefined) pass('an empty panel centre line has no distance to give');
+  else fail('a distance was invented for a line with nothing on it');
+
+  // Two centres in the same place is a cutout dropped on another, which has
+  // its own complaint; a 0 mm dimension would only be noise.
+  {
+    const stacked = alignTo(30, 50.02, [t('a', 30, 50)], panel, 1);
+    if (stacked.guides.every((gg) => gg.gap === undefined)) pass('and neither does one thing on top of another');
+    else fail('a zero-length dimension was drawn');
+  }
+
+  // 1 HP is 5.08 mm and the grid offers it as a step, so the figure has to
+  // survive to two decimals rather than rounding to 5.1.
+  {
+    const hp = alignTo(30.1, 55.08, [t('a', 30, 50)], panel, 1);
+    const gap = hp.guides.find((gg) => gg.axis === 'x')!.gap;
+    if (gap && Math.abs(gap.mm - 5.08) < 1e-9) pass('a one-HP step is reported as 5.08, not rounded away');
+    else fail(`a 5.08 mm step came out as ${gap?.mm}`);
+  }
 }
 
 // ------------------------------------------------------------ 6c2. hole colour

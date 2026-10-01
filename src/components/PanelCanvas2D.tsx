@@ -464,6 +464,7 @@ export function PanelCanvas2D() {
                   strokeWidth={handleMm * 0.1}
                 />
               ))}
+              {g.gap && <GuideGap guide={g} gap={g.gap} handleMm={handleMm} />}
             </g>
           );
         })}
@@ -530,7 +531,8 @@ export function PanelCanvas2D() {
           {duplicating
             ? 'Duplicating — release to drop the copy'
             : guides.length
-            ? `Aligned${guides.some((g) => g.source === 'panel') ? ' to the panel centre' : ''} · ⌘/Ctrl to ignore`
+            ? `Aligned${guides.some((g) => g.source === 'panel') ? ' to the panel centre' : ''}`
+              + `${gapSummary(guides)} · ⌘/Ctrl to ignore`
             : tool
             ? `Click to place a ${(CUTOUT_PRESETS.find((p) => p.id === tool)?.label ?? 'cutout').toLowerCase()} · Shift-click to keep placing · Esc to stop`
             : 'Alt drag to duplicate · ⌘/Ctrl drag to ignore grid · ⌘/Ctrl scroll to zoom'}
@@ -947,4 +949,81 @@ function fmt(v: number): string {
 }
 function round2(v: number): number {
   return Math.round(v * 100) / 100;
+}
+
+/**
+ * The distance between the dragged thing and what it lined up with.
+ *
+ * Drawn as a dimension on the guide itself — ticks at the two centres, the
+ * figure between them — rather than following the pointer, so it reads as a
+ * measurement of the panel and not as a tooltip. The label is set across the
+ * line on the vertical guides, where there is room, and alongside it on the
+ * horizontal ones, where there is not.
+ *
+ * Centre to centre, because that is how component spacing is specified: a
+ * column of jacks at 15 mm centres is the figure on the drawing, not the gap
+ * between the holes.
+ */
+function GuideGap({
+  guide, gap, handleMm,
+}: { guide: Guide; gap: NonNullable<Guide['gap']>; handleMm: number }) {
+  const vertical = guide.axis === 'x';
+  const mid = (gap.from + gap.to) / 2;
+  const tick = handleMm * 0.45;
+  const font = handleMm * 1.25;
+  // As many decimals as the figure actually has, up to two. A round 20 mm
+  // should not read "20.00", and 5.08 — one HP, which the grid offers as a
+  // step — must not round to "5.1" for anyone checking pitch.
+  const text = `${trim(gap.mm)} mm`;
+
+  // Clear of the line either way: beside it when the line is vertical, above
+  // it when the line runs across.
+  const x = vertical ? guide.at + font * 0.6 : mid;
+  const y = vertical ? mid : guide.at - font * 0.85;
+
+  return (
+    <g pointerEvents="none">
+      {[gap.from, gap.to].map((end, i) => (
+        <line
+          key={i}
+          x1={vertical ? guide.at - tick : end}
+          y1={vertical ? end : guide.at - tick}
+          x2={vertical ? guide.at + tick : end}
+          y2={vertical ? end : guide.at + tick}
+          stroke="var(--color-accent)"
+          strokeWidth={handleMm * 0.14}
+        />
+      ))}
+      {/* A halo drawn from the glyphs themselves rather than a box behind
+          them: a box has to be sized from a guess at the text width, and the
+          guess clipped "25 mm" the first time it was tried. */}
+      <text
+        x={x}
+        y={y}
+        fontSize={font}
+        textAnchor={vertical ? 'start' : 'middle'}
+        dominantBaseline="central"
+        fill="var(--color-accent)"
+        stroke="var(--color-ink-950)"
+        strokeWidth={font * 0.3}
+        strokeLinejoin="round"
+        style={{ fontWeight: 600, paintOrder: 'stroke' }}
+      >
+        {text}
+      </text>
+    </g>
+  );
+}
+
+/** The same figures for the readout at the foot of the canvas. */
+function gapSummary(guides: Guide[]): string {
+  const parts = guides
+    .filter((g) => g.gap)
+    .map((g) => `${g.axis === 'x' ? '↕' : '↔'} ${trim(g.gap!.mm)} mm`);
+  return parts.length ? ` · ${parts.join(' · ')}` : '';
+}
+
+/** Two decimals at most, and none that are only zeros. */
+function trim(mm: number): string {
+  return String(Math.round(mm * 100) / 100);
 }
