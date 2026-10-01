@@ -70,7 +70,16 @@ export function PanelCanvas2D() {
   const svgRef = useRef<SVGSVGElement>(null);
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
-  const [marquee, setMarquee] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
+  const [marquee, setMarquee] =
+    useState<{ x0: number; y0: number; x1: number; y1: number; add: boolean } | null>(null);
+  /**
+   * An already-selected thing that was clicked with a modifier held.
+   *
+   * Taken out of the selection on release, and only if nothing moved. Toggling
+   * on the way down would mean that modifier-dragging a selection dropped one
+   * of its members the moment the drag began.
+   */
+  const toggleOff = useRef<string | null>(null);
   /** Set while an Alt-drag is carrying a fresh copy, so the canvas can say so. */
   const [duplicating, setDuplicating] = useState<{ from: Array<{ x: number; y: number }> } | null>(null);
 
@@ -171,10 +180,15 @@ export function PanelCanvas2D() {
     e.stopPropagation();
     (e.target as Element).setPointerCapture?.(e.pointerId);
 
-    const additive = e.shiftKey;
+    // Shift or Cmd, the two things people reach for. Cmd also loosens the
+    // grid while dragging, which sits alongside this rather than against it:
+    // one decides what moves, the other how freely.
+    const additive = e.shiftKey || e.metaKey || e.ctrlKey;
+    const already = selectedIds.includes(id);
+    toggleOff.current = additive && already ? id : null;
     const base = additive
-      ? selectedIds.includes(id) ? selectedIds.filter((i) => i !== id) : [...selectedIds, id]
-      : selectedIds.includes(id) ? selectedIds : [id];
+      ? already ? selectedIds : [...selectedIds, id]
+      : already ? selectedIds : [id];
 
     if (e.altKey && base.length) {
       const featureIds = base.filter((i) => features.some((f) => f.id === i));
@@ -262,15 +276,24 @@ export function PanelCanvas2D() {
         const hitFeatures = features
           .filter((f) => f.x >= x0 && f.x <= x1 && f.y >= y0 && f.y <= y1)
           .map((f) => f.id);
+        // Artwork has an origin now, so it can be swept up like anything else.
         const hitDecor = decor
-          .filter((d) => d.type !== 'art' && d.x >= x0 && d.x <= x1 && d.y >= y0 && d.y <= y1)
+          .filter((d) => d.x >= x0 && d.x <= x1 && d.y >= y0 && d.y <= y1)
           .map((d) => d.id);
-        select([...hitFeatures, ...hitDecor]);
-      } else {
+        const hit = [...hitFeatures, ...hitDecor];
+        select(marquee.add ? [...new Set([...selectedIds, ...hit])] : hit);
+      } else if (!marquee.add) {
         select([]);
       }
       setMarquee(null);
     }
+    // A modifier-click on something already selected takes it back out, but
+    // only if it was a click rather than the start of a drag.
+    if (toggleOff.current && drag.current && !drag.current.moved) {
+      const id = toggleOff.current;
+      select(selectedIds.filter((i) => i !== id));
+    }
+    toggleOff.current = null;
     drag.current = null;
     setDuplicating(null);
     setGuides([]);
@@ -285,7 +308,9 @@ export function PanelCanvas2D() {
       if (!e.shiftKey) setTool(null);
       return;
     }
-    setMarquee({ x0: p.x, y0: p.y, x1: p.x, y1: p.y });
+    // Holding a modifier adds to the selection rather than replacing it, so a
+    // second sweep can pick up another row.
+    setMarquee({ x0: p.x, y0: p.y, x1: p.x, y1: p.y, add: e.shiftKey || e.metaKey || e.ctrlKey });
   };
 
   // --- keyboard ---

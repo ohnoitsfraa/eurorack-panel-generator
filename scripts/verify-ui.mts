@@ -414,6 +414,94 @@ async function open(colorScheme: 'light' | 'dark' = 'dark') {
   await page.close();
 }
 
+// --- selecting several things and moving them together ---
+{
+  const { page, problems } = await open();
+  await page.getByRole('button', { name: 'Cutouts', exact: true }).click();
+  const toScreen = (mx: number, my: number) =>
+    page.evaluate(([x, y]) => {
+      const el = document.querySelector('[data-panel-canvas]') as SVGSVGElement;
+      const p = new DOMPoint(x, y).matrixTransform(el.getScreenCTM()!);
+      return { x: p.x, y: p.y };
+    }, [mx, my] as [number, number]);
+  const place = async (mx: number, my: number) => {
+    await page.getByRole('button', { name: 'Circle', exact: true }).click();
+    const at = await toScreen(mx, my);
+    await page.mouse.click(at.x, at.y);
+    await page.waitForTimeout(200);
+  };
+  /** Which rows the inspector shows as selected, as a string of 1s and 0s. */
+  const chosen = () => page.evaluate(() =>
+    [...document.querySelectorAll('aside:last-of-type li button')]
+      .map((r) => (r.className.includes('bg-accent') ? '1' : '0')).join(''));
+  const columns = () => page.locator('[data-panel-canvas] circle').evaluateAll((els) =>
+    els.map((e) => Number(e.getAttribute('cx'))).filter((v) => v > 5 && v < 60));
+  // Playwright's click modifiers do not reach pointerdown, so the key is held
+  // the long way round.
+  const clickWith = async (key: 'Shift' | 'Meta', mx: number, my: number) => {
+    const at = await toScreen(mx, my);
+    await page.keyboard.down(key);
+    await page.mouse.click(at.x, at.y);
+    await page.keyboard.up(key);
+    await page.waitForTimeout(250);
+  };
+
+  await place(12, 25);
+  await place(12, 45);
+  await place(12, 65);
+
+  const first = await toScreen(12, 25);
+  await page.mouse.click(first.x, first.y);
+  await page.waitForTimeout(250);
+  if ((await chosen()) === '100') pass('a plain click selects one thing');
+  else fail(`a plain click gave ${await chosen()}`);
+
+  await clickWith('Shift', 12, 45);
+  if ((await chosen()) === '110') pass('Shift adds to the selection');
+  else fail(`after Shift-click the selection was ${await chosen()}`);
+
+  await clickWith('Meta', 12, 65);
+  if ((await chosen()) === '111') pass('and so does Cmd');
+  else fail(`after Cmd-click the selection was ${await chosen()}`);
+
+  // The point of selecting several: moving them as one.
+  const from = await toScreen(12, 45);
+  const to = await toScreen(24, 45);
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  await page.mouse.move(to.x, to.y, { steps: 14 });
+  await page.mouse.up();
+  await page.waitForTimeout(400);
+  const cols = await columns();
+  if (cols.length === 3 && cols.every((c) => Math.abs(c - 24) < 0.01)) {
+    pass('dragging one of them moves all of them');
+  } else {
+    fail(`columns after the group drag: ${cols.map((c) => c.toFixed(1)).join(', ')}`);
+  }
+
+  // A modifier-click on something already selected takes it back out — but
+  // only on a click, or a modifier-drag would drop a member as it started.
+  await clickWith('Meta', 24, 25);
+  if ((await chosen()) === '011') pass('and a modifier-click takes one back out');
+  else fail(`after deselecting one the selection was ${await chosen()}`);
+
+  await page.keyboard.down('Shift');
+  const grab = await toScreen(24, 45);
+  const dest = await toScreen(24, 80);
+  await page.mouse.move(grab.x, grab.y);
+  await page.mouse.down();
+  await page.mouse.move(dest.x, dest.y, { steps: 12 });
+  await page.mouse.up();
+  await page.keyboard.up('Shift');
+  await page.waitForTimeout(400);
+  if ((await chosen()) === '011') pass('while a modifier-drag keeps the selection whole');
+  else fail(`a Shift-drag changed the selection to ${await chosen()}`);
+
+  if (problems.length === 0) pass('no uncaught errors selecting several things');
+  else fail(`multi-select: ${[...new Set(problems)].join(' | ')}`);
+  await page.close();
+}
+
 // --- tracing part of an image ---
 {
   const { page, problems } = await open();
