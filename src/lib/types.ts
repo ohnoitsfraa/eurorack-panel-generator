@@ -288,6 +288,11 @@ export interface Mesh {
   /** Flat xyz triples, one normal per vertex. */
   normals: Float32Array;
   color: string;
+  /**
+   * The printed object this mesh is a part of. Meshes that share it are one
+   * object to a slicer; when none is given, the whole export is one object.
+   */
+  object?: string;
 }
 
 export interface DetectionResult {

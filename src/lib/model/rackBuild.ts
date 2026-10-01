@@ -40,6 +40,9 @@ export function buildRack(
   const totalH = rowHeights.reduce((a, b) => a + b, 0);
   const totalW = Math.max(0, ...rack.rows.map((r) => r.widthHp * HP_MM));
 
+  // Each placed panel is a printed object of its own; two copies of the same
+  // design must still be two objects.
+  const objectNames = new Set<string>();
   let panels = 0;
   let topOffset = 0;
 
@@ -67,9 +70,13 @@ export function buildRack(
         pending.push(...built.pending);
       }
 
+      let object = saved.name;
+      for (let n = 2; objectNames.has(object); n++) object = `${saved.name} (${n})`;
+      objectNames.add(object);
+
       const dx = p.hp * HP_MM;
       for (const m of built.meshes) {
-        meshes.push({ ...translateMesh(m, dx, yBase), name: `${saved.name} / ${m.name}` });
+        meshes.push({ ...translateMesh(m, dx, yBase), name: `${object} / ${m.name}`, object });
       }
       panels++;
     }

@@ -10,12 +10,24 @@ import type { Mesh } from '../types';
  * materials. Colours ride in the core <basematerials> element rather than an
  * extension, because that is what PrusaSlicer, OrcaSlicer, Bambu Studio and
  * Cura all agree on.
+ *
+ * A panel is written as one object whose parts are the panel and each piece
+ * of lettering, not as a row of separate objects. Separate objects are what a
+ * slicer expects of unrelated prints: OrcaSlicer drops each one to the bed,
+ * asks whether objects at "multiple heights" are really one, and takes any
+ * object under 8 mm³ — a short flush label easily — for a model drawn in
+ * inches, offering to scale it up 25.4 times.
+ *
+ * Which filament prints which part is not something the core format can say
+ * per part, so it also goes in Metadata/model_settings.config, the file
+ * OrcaSlicer and Bambu Studio read for exactly that. Other slicers ignore it.
  */
 
 const CONTENT_TYPES = `<?xml version="1.0" encoding="UTF-8"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
   <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
   <Default Extension="model" ContentType="application/vnd.ms-package.3dmanufacturing-3dmodel+xml"/>
+  <Default Extension="config" ContentType="application/xml"/>
 </Types>`;
 
 const RELS = `<?xml version="1.0" encoding="UTF-8"?>
@@ -45,11 +57,16 @@ export function meshesTo3MF(meshes: Mesh[], opts: ThreeMFOptions = {}): Uint8Arr
     .join('\n');
 
   const objects: string[] = [];
-  const items: string[] = [];
+  // Meshes grouped into printed objects, in the order the objects first appear.
+  const groups = new Map<string, Array<{ id: number; mesh: Mesh }>>();
 
-  used.forEach((mesh, i) => {
-    const objId = i + 2; // id 1 is the basematerials group
+  let nextId = 2; // id 1 is the basematerials group
+  for (const mesh of used) {
     const { vertices, triangles } = weld(mesh, weldTolerance);
+    // OrcaSlicer refuses the whole file over one part with no triangles, which
+    // is what welding leaves of a sliver too thin to print anyway.
+    if (triangles.length === 0) continue;
+    const objId = nextId++;
 
     const vXml = vertices
       .map((v) => `<vertex x="${fmt(v[0])}" y="${fmt(v[1])}" z="${fmt(v[2])}"/>`)
@@ -64,8 +81,41 @@ export function meshesTo3MF(meshes: Mesh[], opts: ThreeMFOptions = {}): Uint8Arr
       `      <mesh><vertices>${vXml}</vertices><triangles>${tXml}</triangles></mesh>\n` +
       `    </object>`,
     );
+
+    const key = mesh.object ?? title;
+    const parts = groups.get(key) ?? [];
+    parts.push({ id: objId, mesh });
+    groups.set(key, parts);
+  }
+
+  // Filament numbers follow the colours, so the panel's own colour is filament 1.
+  const filament = (m: Mesh) => colors.indexOf(normaliseColor(m.color)) + 1;
+
+  const items: string[] = [];
+  const settings: string[] = [];
+  for (const [name, parts] of groups) {
+    const objId = nextId++;
+    const components = parts.map((p) => `<component objectid="${p.id}"/>`).join('');
+    objects.push(
+      `    <object id="${objId}" type="model" name="${escapeXml(name)}">\n` +
+      `      <components>${components}</components>\n` +
+      `    </object>`,
+    );
     items.push(`    <item objectid="${objId}"/>`);
-  });
+
+    settings.push(
+      `  <object id="${objId}">\n` +
+      `    <metadata key="name" value="${escapeXml(name)}"/>\n` +
+      `    <metadata key="extruder" value="${filament(parts[0].mesh)}"/>\n` +
+      parts.map((p) =>
+        `    <part id="${p.id}" subtype="normal_part">\n` +
+        `      <metadata key="name" value="${escapeXml(p.mesh.name)}"/>\n` +
+        `      <metadata key="extruder" value="${filament(p.mesh)}"/>\n` +
+        `    </part>\n`,
+      ).join('') +
+      `  </object>`,
+    );
+  }
 
   const model = `<?xml version="1.0" encoding="UTF-8"?>
 <model unit="millimeter" xml:lang="en-US" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">
@@ -87,6 +137,9 @@ ${items.join('\n')}
       '[Content_Types].xml': strToU8(CONTENT_TYPES),
       '_rels/.rels': strToU8(RELS),
       '3D/3dmodel.model': strToU8(model),
+      'Metadata/model_settings.config': strToU8(
+        `<?xml version="1.0" encoding="UTF-8"?>\n<config>\n${settings.join('\n')}\n</config>\n`,
+      ),
     },
     { level: 6 },
   );

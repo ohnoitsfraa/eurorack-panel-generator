@@ -1613,6 +1613,50 @@ console.log('\nExport containers');
   // The colour count drives material assignment in the slicer.
   if (xml.includes('3dmodel.model')) pass('3MF contains the model part');
   else fail('3MF is missing 3D/3dmodel.model');
+
+  // A panel with flush lettering, as OrcaSlicer sees it. Separate objects at
+  // different heights make it ask whether they are one object, and any object
+  // under 8 mm³ makes it ask whether the file is in inches and scale that
+  // piece up 25.4 times. Both go away when the panel is one object with parts.
+  const flushPanel = buildPanel({
+    ...BASE,
+    decor: [0, 1, 2].map((i) => ({
+      id: `f${i}`, type: 'shape' as const, shape: 'rect' as const, x: 20, y: 20 + i * 10, w: 3, h: 2,
+      radius: 0, rotation: 0, color: i === 1 ? '#00aaff' : '#ffffff', mode: 'flush' as const, reliefMm: 0.6,
+    })),
+  }, { fonts: noFonts }).meshes;
+  const top = (m: Mesh) => { let z = -Infinity; for (let i = 2; i < m.positions.length; i += 3) z = Math.max(z, m.positions[i]); return z; };
+  if (flushPanel.length > 1 && flushPanel.every((m) => Math.abs(top(m) - BASE.thicknessMm) < 1e-6)) {
+    pass('flush pieces finish level with the panel face');
+  } else {
+    fail(`flush tops: ${flushPanel.map((m) => `${m.name} ${top(m).toFixed(3)}`).join(', ')}`);
+  }
+
+  const { unzipSync, strFromU8 } = await import('fflate');
+  const files = unzipSync(meshesTo3MF(flushPanel, { title: 'flush' }));
+  const model = strFromU8(files['3D/3dmodel.model']);
+  const settings = files['Metadata/model_settings.config'] ? strFromU8(files['Metadata/model_settings.config']) : '';
+  const items = model.match(/<item /g)?.length ?? 0;
+  const components = model.match(/<component /g)?.length ?? 0;
+  if (items === 1 && components === flushPanel.length) {
+    pass(`a panel is one object of ${components} parts in the 3MF`);
+  } else {
+    fail(`3MF has ${items} build items and ${components} components for ${flushPanel.length} meshes`);
+  }
+  const extruders = [...settings.matchAll(/<part [^>]*>\s*<metadata key="name"[^>]*\/>\s*<metadata key="extruder" value="(\d+)"/g)].map((m) => m[1]);
+  if (extruders.length === flushPanel.length && new Set(extruders).size === 3 && extruders[0] === '1') {
+    pass('each part is given the filament of its colour, the panel first');
+  } else {
+    fail(`part filaments in model_settings.config: ${JSON.stringify(extruders)}`);
+  }
+
+  // A rack keeps one object per placed panel, copies included.
+  const rackMf = unzipSync(meshesTo3MF(
+    [...flushPanel.map((m) => ({ ...m, object: 'A' })), ...flushPanel.map((m) => ({ ...m, object: 'A (2)' }))],
+  ));
+  const rackItems = strFromU8(rackMf['3D/3dmodel.model']).match(/<item /g)?.length ?? 0;
+  if (rackItems === 2) pass('a rack exports one object per panel');
+  else fail(`a rack of two panels exported ${rackItems} objects`);
 }
 
 // ---------------------------------------------------- 6e. pictures for results
