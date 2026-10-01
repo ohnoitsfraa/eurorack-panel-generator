@@ -16,7 +16,7 @@ import { autoCrop, detectFeatures } from './cv/detect';
 import {
   clearSession, deleteDesign as dbDeleteDesign, loadDesigns, loadRack as dbLoadRack,
   loadSession, migrateFromLocalStorage, putDesign, putDesigns, saveRack as dbSaveRack,
-  isRefetchable, saveSession, type SavedDesign, type SourceReference,
+  isRefetchable, loadFontFiles, putFontFile, saveSession, type SavedDesign, type SourceReference,
 } from './storage';
 import {
   backupFilename, buildLibraryBackup, buildPanelBackup, buildRackBackup, mergeBackup,
@@ -31,7 +31,8 @@ import {
   applyTheme, readChoice, writeChoice, type ResolvedTheme, type ThemeChoice,
 } from './theme';
 import { fetchImage, imageDataFromBlob } from './cv/image';
-import { fontsUsedBy, loadFont } from './model/text';
+import { fontsUsedBy, loadFont, registerFont } from './model/text';
+import { FONT_FAMILIES } from './fonts';
 
 export type ViewMode = '2d' | '3d' | 'rack';
 export type InspectorTab = 'panel' | 'features' | 'decor' | 'export' | 'library';
@@ -78,6 +79,8 @@ interface State {
   sourceOpacity: number;
   fonts: Map<string, Font>;
   fontVersion: number;
+  /** Families the user uploaded, offered in the font list after the built-in ones. */
+  customFonts: string[];
   error: string | null;
 
   /** Saved designs, and which one the editor is currently working on. */
@@ -167,6 +170,8 @@ interface State {
   setSourceOpacity: (v: number) => void;
   setError: (e: string | null) => void;
   ensureFont: (family: string, weight: number) => void;
+  /** Read, register and keep a font file. Resolves to its family, or null if it is not a font. */
+  addCustomFont: (file: File) => Promise<string | null>;
 }
 
 /** A panel as it stood, for stepping back to. */
@@ -226,6 +231,7 @@ export const useStore = create<State>((set, get) => ({
   sourceOpacity: 0.55,
   fonts: new Map(),
   fontVersion: 0,
+  customFonts: [],
   error: null,
   library: [],
   activeDesignId: null,
@@ -518,6 +524,22 @@ export const useStore = create<State>((set, get) => ({
   loadLibraryFromStorage: async () => {
     // Anything left by the localStorage era moves across once, then stays put.
     await migrateFromLocalStorage();
+
+    // Uploaded fonts first: the moment a design arrives, its lettering is
+    // asked for, and a family not registered by then is looked for on Google
+    // Fonts instead, where it does not exist.
+    const customFonts: string[] = [];
+    for (const f of await loadFontFiles()) {
+      try {
+        registerFont(f.family, f.data);
+        customFonts.push(f.family);
+      } catch {
+        // A file that no longer parses is left out of the list rather than
+        // stopping the app from loading.
+      }
+    }
+    set({ customFonts: customFonts.sort((a, b) => a.localeCompare(b)) });
+
     const [library, rack, session] = await Promise.all([loadDesigns(), dbLoadRack(), loadSession()]);
     set({ library, rack: rack ?? defaultRack() });
 
@@ -953,6 +975,33 @@ export const useStore = create<State>((set, get) => ({
         });
       })
       .catch((e) => set({ error: e instanceof Error ? e.message : `Could not load ${family}` }));
+  },
+
+  addCustomFont: async (file) => {
+    const data = await file.arrayBuffer();
+    const base = file.name.replace(/\.(ttf|otf)$/i, '').trim() || 'My font';
+    // A file called Inter.ttf must not quietly stand in for the Inter
+    // everyone else's copy of a panel will fetch.
+    const family = (FONT_FAMILIES as readonly string[]).includes(base) ? `${base} (uploaded)` : base;
+    try {
+      registerFont(family, data.slice(0));
+    } catch {
+      set({ error: `"${file.name}" could not be read as a font. Use a TrueType (.ttf) or OpenType (.otf) file.` });
+      return null;
+    }
+    set((s) => ({
+      // Uploading a new file under a name already in use replaces it, so the
+      // lettering is rebuilt from the new one rather than the copy in hand.
+      fonts: new Map([...s.fonts].filter(([k]) => !k.startsWith(`${family}@`))),
+      fontVersion: s.fontVersion + 1,
+      customFonts: s.customFonts.includes(family)
+        ? s.customFonts
+        : [...s.customFonts, family].sort((a, b) => a.localeCompare(b)),
+    }));
+    void putFontFile({ family, data }).catch(() => {
+      set({ error: `"${family}" works for now, but could not be stored and will be gone after a reload.` });
+    });
+    return family;
   },
 }));
 

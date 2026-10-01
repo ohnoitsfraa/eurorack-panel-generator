@@ -4,7 +4,6 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { panelHeightMm, panelWidthMm } from '@/lib/eurorack';
 import { uid, type ArtElement, type ReliefMode, type ShapeElement, type TextElement } from '@/lib/types';
 import { useStore } from '@/lib/store';
-import { registerFont } from '@/lib/model/text';
 import { traceArtwork } from '@/lib/model/trace';
 import { FONT_FAMILIES, FONT_WEIGHTS } from '@/lib/fonts';
 import { Button, ColorInput, Field, NumberInput, Section, Select, Slider } from './ui';
@@ -84,6 +83,7 @@ function DecorEditor({ id }: { id: string }) {
   const update = useStore((s) => s.updateDecor);
   const design = useStore((s) => s.design);
   const ensureFont = useStore((s) => s.ensureFont);
+  const customFonts = useStore((s) => s.customFonts);
   if (!el) return null;
 
   const W = panelWidthMm(design.hp);
@@ -107,7 +107,7 @@ function DecorEditor({ id }: { id: string }) {
               <Select
                 value={el.fontFamily}
                 onChange={(fontFamily) => { update(id, { fontFamily }); ensureFont(fontFamily, el.fontWeight); }}
-                options={FONT_FAMILIES.map((f) => ({ value: f, label: f }))}
+                options={fontOptions(customFonts, el.type === 'text' ? el.fontFamily : '')}
               />
             </Field>
             <Field label="Weight">
@@ -119,7 +119,13 @@ function DecorEditor({ id }: { id: string }) {
             </Field>
           </div>
 
-          <FontUpload />
+          <FontUpload
+            onLoaded={(fontFamily) => {
+              // Uploading from a label's own panel means "set this in it".
+              update(id, { fontFamily });
+              ensureFont(fontFamily, el.fontWeight);
+            }}
+          />
 
           <div className="grid grid-cols-2 gap-2">
             <Field label="Cap height" hint="mm">
@@ -235,9 +241,27 @@ function DecorEditor({ id }: { id: string }) {
   );
 }
 
-function FontUpload() {
-  const [name, setName] = useState<string | null>(null);
-  const bump = useStore((s) => s.ensureFont);
+/**
+ * The built-in families, then the user's own.
+ *
+ * A label can name a family that is in neither — one set in an uploaded font
+ * on another machine and arrived in a backup — and the list must still show
+ * what it is set in rather than silently displaying the first entry.
+ */
+function fontOptions(custom: string[], current: string): Array<{ value: string; label: string }> {
+  const builtIn = FONT_FAMILIES as readonly string[];
+  const options = [
+    ...builtIn.map((f) => ({ value: f, label: f })),
+    ...custom.map((f) => ({ value: f, label: `${f} (uploaded)` })),
+  ];
+  if (current && !builtIn.includes(current) && !custom.includes(current)) {
+    options.push({ value: current, label: `${current} (missing)` });
+  }
+  return options;
+}
+
+function FontUpload({ onLoaded }: { onLoaded: (family: string) => void }) {
+  const addCustomFont = useStore((s) => s.addCustomFont);
 
   return (
     <Field label="Or use your own font">
@@ -245,24 +269,16 @@ function FontUpload() {
         type="file"
         accept=".ttf,.otf,font/ttf,font/otf"
         onChange={async (e) => {
-          const f = e.target.files?.[0];
+          const input = e.target;
+          const f = input.files?.[0];
+          input.value = '';
           if (!f) return;
-          const buf = await f.arrayBuffer();
-          const family = f.name.replace(/\.(ttf|otf)$/i, '');
-          try {
-            // Registered under every weight, since a single file has just one.
-            for (const w of FONT_WEIGHTS) registerFont(family, w, buf.slice(0));
-            setName(family);
-            bump(family, 700);
-          } catch {
-            setName(null);
-          }
-          e.target.value = '';
+          const family = await addCustomFont(f);
+          if (family) onLoaded(family);
         }}
         className="w-full text-[12.5px] text-ink-400 file:mr-2 file:rounded file:border-0
                    file:bg-ink-700 file:px-2 file:py-1 file:text-[12.5px] file:text-ink-100"
       />
-      {name && <p className="mt-1 text-[12.5px] text-ink-400">Loaded “{name}” — pick it from the Font list.</p>}
     </Field>
   );
 }

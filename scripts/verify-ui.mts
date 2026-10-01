@@ -14,7 +14,7 @@
  * failed when the service is unreachable, so a flaky connection does not read
  * as a broken app.
  */
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { chromium, type Browser } from 'playwright-core';
 
 const BASE = process.env.BASE_URL ?? 'http://localhost:3000';
@@ -61,6 +61,51 @@ async function open(colorScheme: 'light' | 'dark' = 'dark') {
   });
   await page.goto(BASE, { waitUntil: 'networkidle' });
   return { page, problems };
+}
+
+// --- an uploaded font joins the font list and survives a reload ---
+{
+  const fontFile = 'node_modules/.cache/panel-verify/Inter-700.ttf';
+  if (!existsSync(fontFile)) {
+    console.log('  skip  no font file cached (run npm run verify once to fetch one)');
+  } else {
+    const { page, problems } = await open();
+    await page.getByRole('button', { name: 'Text & art', exact: true }).click();
+    await page.getByRole('button', { name: 'Text label', exact: true }).click();
+    await page.waitForTimeout(300);
+
+    // Named so it cannot be mistaken for a built-in family.
+    await page.locator('input[type="file"][accept*=".ttf"]').setInputFiles({
+      name: 'Panel Grotesk.ttf', mimeType: 'font/ttf', buffer: readFileSync(fontFile),
+    });
+    await page.waitForTimeout(500);
+
+    const fontSelect = page.getByRole('combobox').filter({ has: page.locator('option[value="Panel Grotesk"]') }).first();
+    if (await fontSelect.count()) pass('an uploaded font appears in the font list');
+    else fail('the uploaded font is not in the font list');
+    if ((await fontSelect.inputValue().catch(() => '')) === 'Panel Grotesk') pass('and the label is set in it');
+    else fail('the label was not switched to the uploaded font');
+
+    // The file has to outlive the page, or every label set in it is looked
+    // for on Google Fonts after a reload, and is not there.
+    await page.waitForTimeout(400);
+    await page.reload({ waitUntil: 'networkidle' });
+    await page.waitForTimeout(1200);
+    await page.getByRole('button', { name: 'Text & art', exact: true }).click();
+    await page.getByRole('button', { name: 'Text label', exact: true }).click();
+    await page.waitForTimeout(300);
+    if (await page.locator('option[value="Panel Grotesk"]').count()) pass('and is still offered after a reload');
+    else fail('the uploaded font was gone after a reload');
+
+    const body = await page.locator('body').innerText();
+    if (problems.length === 0 && !/Could not load font/i.test(body)) {
+      pass('lettering in an uploaded font loads without asking Google for it');
+    } else {
+      fail(`uploaded font: ${[...new Set(problems)].join(' | ') || 'a font error is showing'}`);
+    }
+
+    await page.close();
+  }
 }
 
 // --- the app renders and runs ---

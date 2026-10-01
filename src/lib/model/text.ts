@@ -1,6 +1,7 @@
 import { parse, type Font, type Path } from 'opentype.js';
 import type { DecorElement, Pt, TextElement } from '../types';
 import type { Ring } from '../geom/poly';
+import { FONT_WEIGHTS } from '../fonts';
 
 /**
  * Text -> outline rings.
@@ -42,9 +43,16 @@ export function loadFont(family: string, weight: number): Promise<Font> {
   return p;
 }
 
-/** Register a user-uploaded font file so it can be used like a built-in one. */
-export function registerFont(family: string, weight: number, buf: ArrayBuffer): void {
-  fontCache.set(fontKey(family, weight), Promise.resolve(parse(buf)));
+/**
+ * Register a user-uploaded font file so it can be used like a built-in one.
+ *
+ * A file holds a single weight, so it answers for every weight: lettering set
+ * in it at 700 should not go looking for a bold that does not exist. Throws if
+ * the file is not a font opentype.js can read.
+ */
+export function registerFont(family: string, buf: ArrayBuffer): void {
+  const font = Promise.resolve(parse(buf));
+  for (const w of FONT_WEIGHTS) fontCache.set(fontKey(family, w), font);
 }
 
 export function isFontLoaded(family: string, weight: number): boolean {

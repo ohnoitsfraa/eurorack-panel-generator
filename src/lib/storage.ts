@@ -29,6 +29,7 @@ const DESIGNS = 'designs';
 const META = 'meta';
 const RACK_KEY = 'rack';
 const SESSION_KEY = 'session';
+const FONTS_KEY = 'fonts';
 
 const LEGACY_LIBRARY = 'eurorack-panel-generator/library/v1';
 const LEGACY_RACK = 'eurorack-panel-generator/rack/v1';
@@ -142,6 +143,28 @@ export async function loadRack(): Promise<Rack | null> {
 
 export async function saveRack(rack: Rack): Promise<void> {
   await tx(META, 'readwrite', (s) => s.put(rack, RACK_KEY));
+}
+
+/** A font file the user uploaded, kept so lettering set in it survives a reload. */
+export interface StoredFont {
+  family: string;
+  data: ArrayBuffer;
+}
+
+export async function loadFontFiles(): Promise<StoredFont[]> {
+  try {
+    const all = await tx<StoredFont[] | undefined>(META, 'readonly', (s) =>
+      s.get(FONTS_KEY) as IDBRequest<StoredFont[] | undefined>);
+    return Array.isArray(all) ? all.filter((f) => typeof f?.family === 'string' && f.data instanceof ArrayBuffer) : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Add a font, or replace the one already stored under its family name. */
+export async function putFontFile(font: StoredFont): Promise<void> {
+  const rest = (await loadFontFiles()).filter((f) => f.family !== font.family);
+  await tx(META, 'readwrite', (s) => s.put([...rest, font], FONTS_KEY));
 }
 
 /**
