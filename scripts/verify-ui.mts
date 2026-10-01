@@ -717,6 +717,53 @@ async function open(colorScheme: 'light' | 'dark' = 'dark') {
   await page.close();
 }
 
+// --- dragging a big icon over flush labels keeps up with the pointer ---
+{
+  const { page, problems } = await open();
+  await page.getByRole('button', { name: 'Text & art', exact: true }).click();
+  for (let i = 0; i < 6; i++) {
+    await page.getByRole('button', { name: 'Text label', exact: true }).click();
+    await page.waitForTimeout(100);
+  }
+  await page.locator('[data-icon-picker] [data-icon="mdi:skull"]').click();
+  await page.waitForTimeout(1500);
+  const art = page.locator('[data-decor="art"] path').first();
+  if (await art.count() === 0) {
+    skip('icon drag: Iconify is unreachable right now');
+  } else {
+    // Three times the size, so it lies across the labels it is flush with.
+    await page.locator('input[type="range"]').first().evaluate((el: HTMLInputElement) => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(el, '300');
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await page.waitForTimeout(600);
+    const triangles = async () => (await page.getByText(/[\d,]+ triangles$/).first().innerText()).trim();
+    const box = (await art.boundingBox())!;
+    const cx = box.x + box.width / 2, cy = box.y + box.height / 2;
+    const before = await triangles();
+    await page.mouse.move(cx, cy);
+    await page.mouse.down();
+    const seen = new Set<string>();
+    for (let i = 1; i <= 25; i++) {
+      await page.mouse.move(cx + i * 3, cy + i * 6);
+      seen.add(await triangles());
+    }
+    // The pointer holds still: the model catches up with where it is.
+    await page.waitForTimeout(600);
+    const after = await triangles();
+    await page.mouse.up();
+    // Rebuilding the whole panel on every pointer move is what made this
+    // drag crawl; the model waits for the pointer to stop instead.
+    if (seen.size === 1 && seen.has(before)) pass('the 3D model waits while an icon is dragged over flush labels');
+    else fail(`the model rebuilt during the drag: ${[...seen].join(', ')}`);
+    if (after !== before) pass(`and catches up when the pointer stops (${before} → ${after})`);
+    else fail(`the model did not follow the drag (${before} before and after)`);
+  }
+  if (problems.length === 0) pass('no uncaught errors dragging an icon');
+  else fail(`dragging an icon: ${[...new Set(problems)].join(' | ')}`);
+  await page.close();
+}
+
 // --- an icon picked from the list lands on the panel ---
 {
   const { page, problems } = await open();
