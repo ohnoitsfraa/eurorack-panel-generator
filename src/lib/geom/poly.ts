@@ -250,7 +250,7 @@ export function nestRings(rings: Ring[]): Region[] {
  * Sampled over several vertices and decided by majority, so a single vertex
  * that happens to land on the other ring's edge cannot flip the answer.
  */
-function ringInsideRing(inner: Ring, outer: Ring): boolean {
+export function ringInsideRing(inner: Ring, outer: Ring): boolean {
   const samples = Math.min(5, inner.length);
   let hits = 0;
   for (let k = 0; k < samples; k++) {

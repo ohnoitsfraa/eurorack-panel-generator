@@ -717,6 +717,51 @@ async function open(colorScheme: 'light' | 'dark' = 'dark') {
   await page.close();
 }
 
+// --- an icon picked from the list lands on the panel ---
+{
+  const { page, problems } = await open();
+  const iconify: string[] = [];
+  page.on('request', (r) => { if (r.url().includes('api.iconify.design')) iconify.push(r.url()); });
+  await page.getByRole('button', { name: 'Text & art', exact: true }).click();
+  const picker = page.locator('[data-icon-picker]');
+  const quick = await picker.locator('[data-icon]').count();
+  if (quick >= 20) pass(`the icon picker offers ${quick} common icons before anything is typed`);
+  else fail(`the icon picker shows ${quick} icons with nothing typed`);
+
+  await picker.locator('[data-icon="mdi:sine-wave"]').click();
+  await page.waitForTimeout(3000);
+  const body = await page.locator('body').innerText();
+  if (/Icon: Sine wave/.test(body)) {
+    pass('picking an icon adds it to the panel');
+    // It is outlines on the canvas, like traced artwork, not a picture.
+    const drawn = await page.locator('[data-panel-canvas] path').count();
+    if (drawn > 0) pass('and it is drawn as outlines');
+    else fail('the icon was added but nothing was drawn');
+
+    await picker.locator('input').fill('power');
+    await page.waitForTimeout(2500);
+    const found = await picker.locator('[data-icon]').count();
+    const shown = await picker.locator('[data-icon]').evaluateAll((els) => els.map((e) => e.getAttribute('data-icon')));
+    if (found > 0 && shown.every((id) => !/-(thin|light|duotone)$/.test(id ?? ''))) {
+      pass(`searching finds icons (${found} for "power"), none too thin or shaded to print`);
+    } else {
+      fail(`search for "power" gave ${found} icons: ${shown.slice(0, 5).join(', ')}`);
+    }
+    // Iconify turns away a visitor who calls too often, so the picker asks
+    // for a set's icons at once rather than one preview at a time.
+    if (iconify.length <= 8) pass(`the quick icons, one pick and a search took ${iconify.length} requests to Iconify`);
+    else fail(`the icon picker made ${iconify.length} requests to Iconify`);
+  } else if (/Could not load the icon|Failed to fetch|Icon search failed/i.test(body)) {
+    skip('icons: Iconify is unreachable right now');
+  } else {
+    fail('picking an icon did not add it');
+  }
+
+  if (problems.length === 0) pass('no uncaught errors picking icons');
+  else fail(`picking icons: ${[...new Set(problems)].join(' | ')}`);
+  await page.close();
+}
+
 // --- several labels edited at once ---
 {
   const { page, problems } = await open();

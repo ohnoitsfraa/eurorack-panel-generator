@@ -222,6 +222,8 @@ export interface ArtElement {
   reliefMm: number;
   /** Kept so the UI can re-trace at a different threshold without a re-upload. */
   source?: { imageId: string; threshold: number };
+  /** The Iconify icon it was made from, e.g. "mdi:sine-wave", when it is one. */
+  icon?: string;
 }
 
 /** Traced outlines where they actually sit on the panel. */

@@ -7,6 +7,8 @@ import { useStore } from '@/lib/store';
 import { traceArtwork } from '@/lib/model/trace';
 import { FONT_FAMILIES, FONT_WEIGHTS } from '@/lib/fonts';
 import { Button, ColorInput, Field, NumberInput, Section, Select, Slider, shared } from './ui';
+import { IconPicker } from './IconPicker';
+import { iconLabel } from '@/lib/icons';
 
 const RELIEF_OPTIONS: Array<{ value: ReliefMode; label: string }> = [
   { value: 'raised', label: 'Raised — sits on the surface' },
@@ -44,6 +46,7 @@ export function DecorTab() {
           <Button onClick={addTextLabel}>Text label</Button>
           <Button onClick={addShapeElement}>Line / shape</Button>
         </div>
+        <IconPicker />
         <ArtworkTracer />
       </Section>
 
@@ -68,7 +71,9 @@ export function DecorTab() {
                     style={{ background: d.color }}
                   />
                   <span className="truncate">
-                    {d.type === 'text' ? d.text || '(empty)' : d.type === 'art' ? 'Traced artwork' : d.shape}
+                    {d.type === 'text' ? d.text || '(empty)'
+                      : d.type === 'art' ? (d.icon ? `Icon: ${iconLabel(d.icon)}` : 'Traced artwork')
+                      : d.shape}
                   </span>
                   <span className="ml-auto shrink-0 text-ink-400">
                     {d.mode === 'raised' ? '↑' : d.mode === 'flush' ? '≡' : '↓'}{d.reliefMm.toFixed(1)}
@@ -198,8 +203,10 @@ function DecorEditor({ id }: { id: string }) {
       {el.type === 'art' && (
         <>
           <p className="text-[12.5px] leading-relaxed text-ink-400">
-            Traced artwork: {el.rings.length} outline{el.rings.length === 1 ? '' : 's'}. Re-trace
-            from the Add section to change the threshold.
+            {el.icon
+              ? <>Icon: {iconLabel(el.icon)}, from {el.icon.split(':')[0]} via Iconify.</>
+              : <>Traced artwork: {el.rings.length} outline{el.rings.length === 1 ? '' : 's'}. Re-trace
+                from the Add section to change the threshold.</>}
           </p>
           <Field label="Size" hint={`${Math.round(el.scale * 100)}%`}>
             <Slider min={5} max={400} step={1} value={Math.round(el.scale * 100)}

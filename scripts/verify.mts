@@ -752,6 +752,133 @@ console.log('\nText outlines');
   }
 }
 
+// ------------------------------------------------------------------ 4b. icons
+console.log('\nIcons');
+{
+  const { svgPathToRings } = await import('../src/lib/geom/svgPath');
+  const { bodyToShapes, iconFromSet, iconToRings, nonzeroRings } = await import('../src/lib/icons');
+  const { signedArea } = await import('../src/lib/geom/poly');
+  const area = (r: { x: number; y: number }[]) => Math.abs(signedArea(r));
+
+  // Every command, relative and absolute, as icon sets write them.
+  const square = svgPathToRings('M2 2h10v10H2z', 0.01);
+  if (square.length === 1 && Math.abs(area(square[0]) - 100) < 1e-9) pass('lines and H/V draw a square');
+  else fail(`square: ${JSON.stringify(square)}`);
+
+  // Numbers run together with no separator but a sign or a second point.
+  const tight = svgPathToRings('M0 0L10 0L10.5.5L0-1z', 0.01);
+  if (tight.length === 1 && tight[0].length === 4 && tight[0][2].x === 10.5 && tight[0][2].y === 0.5
+    && tight[0][3].y === -1) pass('numbers written back to back are read apart');
+  else fail(`tight numbers: ${JSON.stringify(tight)}`);
+
+  // Two half-circle arcs make a circle; its area says the arcs are right.
+  const circle = svgPathToRings('M2 12a10 10 0 1 1 20 0a10 10 0 1 1-20 0z', 0.005);
+  const circleArea = circle.length === 1 ? area(circle[0]) : 0;
+  if (Math.abs(circleArea - Math.PI * 100) / (Math.PI * 100) < 0.01) pass(`arcs trace a circle (${circleArea.toFixed(1)} of ${(Math.PI * 100).toFixed(1)})`);
+  else fail(`arc circle area ${circleArea.toFixed(2)}`);
+
+  // Arc flags packed against the next number, as minifiers write them.
+  const packed = svgPathToRings('M2 12a10 10 0 1114.44 6.88z', 0.01);
+  const unpacked = svgPathToRings('M2 12a10 10 0 1 1 14.44 6.88z', 0.01);
+  if (packed.length === 1 && JSON.stringify(packed) === JSON.stringify(unpacked)) pass('packed arc flags read the same as spaced ones');
+  else fail('packed arc flags were misread');
+
+  // The shorthand curves continue smoothly from the one before.
+  const s1 = svgPathToRings('M0 0C0 10 10 10 10 0S20-10 20 0z', 0.01);
+  const s2 = svgPathToRings('M0 0C0 10 10 10 10 0C10-10 20-10 20 0z', 0.01);
+  const t1 = svgPathToRings('M0 0Q5 10 10 0T20 0z', 0.01);
+  const t2 = svgPathToRings('M0 0Q5 10 10 0Q15-10 20 0z', 0.01);
+  if (JSON.stringify(s1) === JSON.stringify(s2) && JSON.stringify(t1) === JSON.stringify(t2)) pass('S and T mirror the previous control point');
+  else fail('shorthand curves did not mirror their control points');
+
+  // Nonzero fill: a hole is wound the other way; the same way is more fill.
+  const outer = [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }];
+  const inner = [{ x: 3, y: 3 }, { x: 7, y: 3 }, { x: 7, y: 7 }, { x: 3, y: 7 }];
+  const holed = nonzeroRings([outer, [...inner].reverse()]);
+  const solid = nonzeroRings([outer, inner]);
+  if (holed.length === 2 && solid.length === 1) pass('a reversed inner ring is a hole, a same-way one is not');
+  else fail(`nonzero: reversed kept ${holed.length}, same-way kept ${solid.length}`);
+
+  try {
+    bodyToShapes('<path fill="none" stroke="currentColor" stroke-width="2" d="M4 4h16"/>', 0.01);
+    fail('a line-drawn icon was accepted');
+  } catch {
+    pass('icons drawn with lines are refused');
+  }
+
+  // A die, as Material Design Icons draws it: a rounded square with five
+  // holes wound against it. Taken from the set's own response shape.
+  const set = {
+    width: 24, height: 24,
+    icons: { 'dice-5': { body: '<path fill="currentColor" d="M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2m2 2a2 2 0 0 0-2 2a2 2 0 0 0 2 2a2 2 0 0 0 2-2a2 2 0 0 0-2-2m10 10a2 2 0 0 0-2 2a2 2 0 0 0 2 2a2 2 0 0 0 2-2a2 2 0 0 0-2-2m0-10a2 2 0 0 0-2 2a2 2 0 0 0 2 2a2 2 0 0 0 2-2a2 2 0 0 0-2-2m-5 5a2 2 0 0 0-2 2a2 2 0 0 0 2 2a2 2 0 0 0 2-2a2 2 0 0 0-2-2m-5 5a2 2 0 0 0-2 2a2 2 0 0 0 2 2a2 2 0 0 0 2-2a2 2 0 0 0-2-2z"/>' } },
+    aliases: { die: { parent: 'dice-5' } },
+  };
+  const rings = iconToRings(iconFromSet(set, 'die'), 6);
+  const pts = rings.flat();
+  const w = Math.max(...pts.map((p) => p.x)) - Math.min(...pts.map((p) => p.x));
+  const cxIcon = (Math.max(...pts.map((p) => p.x)) + Math.min(...pts.map((p) => p.x))) / 2;
+  if (rings.length === 6 && Math.abs(w - 4.5) < 0.05 && Math.abs(cxIcon) < 1e-9) {
+    pass('an icon becomes its outline and holes, sized to its drawing area and centred');
+  } else {
+    fail(`icon rings ${rings.length}, ink width ${w.toFixed(2)} mm, centre ${cxIcon.toFixed(3)}`);
+  }
+
+  // And it builds like any other artwork, in every relief mode.
+  for (const mode of ['raised', 'engraved', 'flush'] as const) {
+    const art = {
+      id: 'icon', type: 'art' as const, rings, x: 20, y: 30, scale: 1.5, rotation: 15,
+      color: mode === 'raised' ? '#ffffff' : '#ff8800', mode, reliefMm: 0.6, icon: 'mdi:dice-5',
+    };
+    for (const m of buildPanel({ ...BASE, decor: [art] }, { fonts: noFonts }).meshes) {
+      checkSolid(m, `${mode} icon / ${m.name}`);
+    }
+  }
+
+  // Iconify limits how often it may be called, so icons come a set at a
+  // time, and nothing already fetched or searched is asked for again.
+  {
+    const { fetchIcons, searchIcons } = await import('../src/lib/icons');
+    const realFetch = globalThis.fetch;
+    const calls: string[] = [];
+    let status = 200;
+    globalThis.fetch = (async (url: string) => {
+      calls.push(String(url));
+      const u = new URL(String(url));
+      const names = (u.searchParams.get('icons') ?? '').split(',');
+      const json = u.pathname === '/search'
+        ? { icons: ['mdi:power', 'ph:power-thin', 'ph:power-fill'] }
+        : { width: 24, height: 24, icons: Object.fromEntries(names.map((n) => [n, { body: '<path d="M0 0h1v1H0z"/>' }])) };
+      return new Response(JSON.stringify(json), { status });
+    }) as typeof fetch;
+    try {
+      const ids = ['mdi:t-a', 'mdi:t-b', 'mdi:t-c', 'ph:t-d', 'ph:t-e'];
+      const got = await Promise.all([...fetchIcons(ids).values()]);
+      if (calls.length === 2 && got.every((g) => g.width === 24)) pass('five icons from two sets take two requests');
+      else fail(`five icons took ${calls.length} requests: ${calls.join(' ')}`);
+      await Promise.all([...fetchIcons(['mdi:t-a', 'ph:t-e']).values()]);
+      if (calls.length === 2) pass('icons already fetched are not asked for again');
+      else fail(`fetched icons were asked for again: ${calls.slice(2).join(' ')}`);
+
+      const first = await searchIcons('Power');
+      await searchIcons(' power ');
+      const searched = calls.filter((c) => c.includes('/search'));
+      if (searched.length === 1 && first.join() === 'mdi:power,ph:power-fill') pass('a search typed again is answered from memory');
+      else fail(`searches: ${searched.length} requests, ${first.join()}`);
+
+      status = 429;
+      const busy = await searchIcons('busy').then(() => '', (e: Error) => e.message);
+      if (/busy, try again/.test(busy)) pass('a refused search says Iconify is busy');
+      else fail(`429 gave "${busy}"`);
+      status = 200;
+      const again = await searchIcons('busy').then((r) => r.length, () => -1);
+      if (again === 2) pass('a refused search is asked again next time');
+      else fail(`retrying a refused search gave ${again}`);
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  }
+}
+
 // ------------------------------------------------------------------- 5. rack
 console.log('\nRack layout and export');
 {
