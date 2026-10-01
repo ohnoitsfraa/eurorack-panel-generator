@@ -122,6 +122,8 @@ interface State {
   /** A plain rule across the panel, the starting point for drawn decor. */
   addShapeElement: () => string;
   updateDecor: (id: string, patch: Partial<DecorElement>) => void;
+  /** The same change to several elements, as one step for undo. */
+  updateDecorMany: (ids: string[], patch: Partial<DecorElement>) => void;
   removeDecor: (id: string) => void;
   duplicateDecor: (ids: string[], offsetMm?: number) => string[];
   /** Move a decor element to an absolute position; art translates its rings. */
@@ -488,6 +490,17 @@ export const useStore = create<State>((set, get) => ({
         decor: s.design.decor.map((d) => (d.id === id ? ({ ...d, ...patch } as DecorElement) : d)),
       },
     })),
+
+  updateDecorMany: (ids, patch) =>
+    set((s) => {
+      const which = new Set(ids);
+      return {
+        design: {
+          ...s.design,
+          decor: s.design.decor.map((d) => (which.has(d.id) ? ({ ...d, ...patch } as DecorElement) : d)),
+        },
+      };
+    }),
 
   removeDecor: (id) =>
     set((s) => ({

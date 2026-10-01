@@ -717,6 +717,51 @@ async function open(colorScheme: 'light' | 'dark' = 'dark') {
   await page.close();
 }
 
+// --- several labels edited at once ---
+{
+  const { page, problems } = await open();
+  await page.getByRole('button', { name: 'Text & art', exact: true }).click();
+  for (let i = 0; i < 3; i++) {
+    await page.getByRole('button', { name: 'Text label', exact: true }).click();
+    await page.waitForTimeout(150);
+  }
+  await page.getByRole('button', { name: 'Select all text' }).click();
+  await page.waitForTimeout(200);
+  const editor = page.locator('[data-batch-editor]');
+  if (await editor.count()) pass('selecting several labels shows the batch editor');
+  else fail('no batch editor with several labels selected');
+
+  const capHeight = page.locator('label', { hasText: 'Cap height' }).locator('input');
+  await capHeight.fill('6');
+  await capHeight.press('Enter');
+  await page.getByRole('combobox').filter({ has: page.locator('option[value="Space Mono"]') }).first().selectOption('Space Mono');
+  await page.waitForTimeout(800);
+
+  // Open each one and read it back from its own editor.
+  const rows = page.locator('ul li button', { hasText: 'LABEL' });
+  const seen: string[] = [];
+  for (let i = 0; i < 3; i++) {
+    await rows.nth(i).click();
+    await page.waitForTimeout(150);
+    const size = await page.locator('label', { hasText: 'Cap height' }).locator('input').inputValue();
+    const font = await page.getByRole('combobox').filter({ has: page.locator('option[value="Space Mono"]') }).first().inputValue();
+    seen.push(`${size}/${font}`);
+  }
+  if (seen.every((v) => v === '6/Space Mono')) pass('cap height and font were set on every label');
+  else fail(`labels after the batch edit: ${seen.join(', ')}`);
+
+  // Shift-click in the list builds a selection too.
+  await rows.nth(0).click();
+  await rows.nth(1).click({ modifiers: ['Shift'] });
+  await page.waitForTimeout(150);
+  if ((await editor.innerText()).startsWith('2 labels')) pass('Shift-clicking in the list picks several');
+  else fail(`after a Shift-click the editor says ${JSON.stringify(await editor.innerText().catch(() => ''))}`);
+
+  if (problems.length === 0) pass('no uncaught errors editing labels together');
+  else fail(`batch editing: ${[...new Set(problems)].join(' | ')}`);
+  await page.close();
+}
+
 // --- moving around a zoomed-in panel ---
 {
   const { page, problems } = await open();

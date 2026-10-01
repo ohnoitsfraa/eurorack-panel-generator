@@ -28,6 +28,14 @@ export function DecorTab() {
   const H = panelHeightMm(design.format);
 
   const selected = decor.find((d) => selectedIds.includes(d.id));
+  const selectedDecor = decor.filter((d) => selectedIds.includes(d.id));
+  const textIds = decor.filter((d) => d.type === 'text').map((d) => d.id);
+
+  /** Shift or Cmd adds to the selection or takes back out, as on the canvas. */
+  const pick = (e: React.MouseEvent, id: string) => {
+    if (!(e.shiftKey || e.metaKey || e.ctrlKey)) { select([id]); return; }
+    select(selectedIds.includes(id) ? selectedIds.filter((i) => i !== id) : [...selectedIds, id]);
+  };
 
   return (
     <>
@@ -51,7 +59,7 @@ export function DecorTab() {
               <li key={d.id} className="flex items-center gap-1">
                 <button
                   type="button"
-                  onClick={() => select([d.id])}
+                  onClick={(e) => pick(e, d.id)}
                   className={`flex min-w-0 flex-1 items-center gap-2 rounded px-2 py-1 text-left text-[12.5px]
                     ${selectedIds.includes(d.id) ? 'bg-accent/15 text-accent' : 'text-ink-300 hover:bg-ink-800'}`}
                 >
@@ -71,9 +79,17 @@ export function DecorTab() {
             ))}
           </ul>
         )}
+        {textIds.length > 1 && (
+          <div className="mt-2 flex items-center justify-between gap-2">
+            <span className="text-[12px] text-ink-400">Shift- or ⌘-click to pick several</span>
+            <Button variant="ghost" onClick={() => select(textIds)}>Select all text</Button>
+          </div>
+        )}
       </Section>
 
-      {selected && <DecorEditor id={selected.id} />}
+      {selectedDecor.length > 1
+        ? <BatchDecorEditor ids={selectedDecor.map((d) => d.id)} />
+        : selected && <DecorEditor id={selected.id} />}
     </>
   );
 }
@@ -236,6 +252,149 @@ function DecorEditor({ id }: { id: string }) {
 
       <Field label="Colour">
         <ColorInput value={el.color} onChange={(color) => update(id, { color })} />
+      </Field>
+    </Section>
+  );
+}
+
+/** The value every one of these has, or undefined if they differ. */
+function shared<T>(values: T[]): T | undefined {
+  return values.length > 0 && values.every((v) => v === values[0]) ? values[0] : undefined;
+}
+
+/**
+ * Edit several elements at once.
+ *
+ * A field shows the value they share; where they differ it says so, shows
+ * the first one's value, and setting it sets it on all of them. Text settings
+ * apply to the labels in the selection and leave any shapes or artwork alone.
+ * Each change is one step for undo, however many elements it touches.
+ */
+function BatchDecorEditor({ ids }: { ids: string[] }) {
+  const decor = useStore((s) => s.design.decor);
+  const updateMany = useStore((s) => s.updateDecorMany);
+  const ensureFont = useStore((s) => s.ensureFont);
+  const customFonts = useStore((s) => s.customFonts);
+  const thicknessMm = useStore((s) => s.design.thicknessMm);
+
+  const els = decor.filter((d) => ids.includes(d.id));
+  const texts = els.filter((d): d is TextElement => d.type === 'text');
+  const textIds = texts.map((t) => t.id);
+  const others = els.length - texts.length;
+
+  const family = shared(texts.map((t) => t.fontFamily));
+  const weight = shared(texts.map((t) => t.fontWeight));
+  const size = shared(texts.map((t) => t.sizeMm));
+  const spacing = shared(texts.map((t) => t.letterSpacing));
+  const align = shared(texts.map((t) => t.align));
+  const mode = shared(els.map((d) => d.mode));
+  const depth = shared(els.map((d) => d.reliefMm));
+  const color = shared(els.map((d) => d.color.toLowerCase()));
+
+  const mixedHint = (v: unknown, unit = '') => (v === undefined ? 'mixed' : unit);
+  /** A select that can say "mixed" until something is picked. */
+  const withMixed = <T extends string>(value: T | undefined, options: Array<{ value: T; label: string }>) =>
+    value === undefined ? [{ value: '' as T, label: 'Mixed' }, ...options] : options;
+
+  const setFamily = (fontFamily: string) => {
+    if (!fontFamily) return;
+    updateMany(textIds, { fontFamily });
+    for (const w of new Set(texts.map((t) => t.fontWeight))) ensureFont(fontFamily, w);
+  };
+  const setWeight = (fontWeight: number) => {
+    updateMany(textIds, { fontWeight });
+    for (const f of new Set(texts.map((t) => t.fontFamily))) ensureFont(f, fontWeight);
+  };
+
+  const parts = [
+    texts.length ? `${texts.length} label${texts.length === 1 ? '' : 's'}` : '',
+    others ? `${others} other${others === 1 ? '' : 's'}` : '',
+  ].filter(Boolean).join(', ');
+
+  return (
+    <Section title={`${els.length} selected`}>
+      <p className="text-[12.5px] leading-relaxed text-ink-400" data-batch-editor="">
+        {parts}. Changes here apply to all of them
+        {texts.length && others ? '; text settings only to the labels' : ''}.
+      </p>
+
+      {texts.length > 0 && (
+        <>
+          <div className="grid grid-cols-2 gap-2">
+            <Field label="Font" hint={mixedHint(family)}>
+              <Select
+                value={family ?? ''}
+                onChange={setFamily}
+                options={withMixed(family, fontOptions(customFonts, family ?? ''))}
+              />
+            </Field>
+            <Field label="Weight" hint={mixedHint(weight)}>
+              <Select
+                value={weight === undefined ? '' : String(weight)}
+                onChange={(w) => { if (w) setWeight(Number(w)); }}
+                options={withMixed(weight === undefined ? undefined : String(weight),
+                  FONT_WEIGHTS.map((w) => ({ value: String(w), label: String(w) })))}
+              />
+            </Field>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <Field label="Cap height" hint={mixedHint(size, 'mm')}>
+              <NumberInput
+                value={size ?? texts[0].sizeMm}
+                onChange={(sizeMm) => updateMany(textIds, { sizeMm })}
+                min={0.8} max={60} step={0.1}
+              />
+            </Field>
+            <Field label="Spacing" hint={mixedHint(spacing, 'mm')}>
+              <NumberInput
+                value={spacing ?? texts[0].letterSpacing}
+                onChange={(letterSpacing) => updateMany(textIds, { letterSpacing })}
+                min={-2} max={10} step={0.05}
+              />
+            </Field>
+          </div>
+
+          <Field label="Alignment" hint={mixedHint(align)}>
+            <Select
+              value={align ?? ''}
+              onChange={(a) => { if (a) updateMany(textIds, { align: a as TextElement['align'] }); }}
+              options={withMixed<string>(align, [
+                { value: 'left', label: 'Left' },
+                { value: 'center', label: 'Centre' },
+                { value: 'right', label: 'Right' },
+              ])}
+            />
+          </Field>
+        </>
+      )}
+
+      <Field label="Relief" hint={mixedHint(mode)}>
+        <Select
+          value={mode ?? ''}
+          onChange={(m) => { if (m) updateMany(ids, { mode: m as ReliefMode }); }}
+          options={withMixed<string>(mode, RELIEF_OPTIONS)}
+        />
+      </Field>
+
+      <Field
+        label={mode === 'raised' ? 'Height above surface'
+          : mode === 'flush' ? 'Depth of the colour' : mode === 'engraved' ? 'Depth into surface' : 'Height or depth'}
+        hint={depth === undefined ? 'mixed' : `${depth.toFixed(2)} mm`}
+      >
+        <Slider
+          // As for one element, except that a mix of raised and sunk takes
+          // the tighter limit, since nothing may go through the panel.
+          min={0.1}
+          max={mode === 'raised' ? 3 : Math.max(0.2, thicknessMm - 0.4)}
+          step={0.05}
+          value={depth ?? els[0].reliefMm}
+          onChange={(reliefMm) => updateMany(ids, { reliefMm })}
+        />
+      </Field>
+
+      <Field label="Colour" hint={mixedHint(color)}>
+        <ColorInput value={color ?? els[0].color} onChange={(c) => updateMany(ids, { color: c })} />
       </Field>
     </Section>
   );

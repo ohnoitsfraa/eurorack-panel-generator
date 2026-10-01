@@ -1890,6 +1890,37 @@ console.log('\nEvery edit leaves the panel unsaved');
 }
 
 // ------------------------------------------------------------- 7a2. undo/redo
+console.log('\nEditing several labels at once');
+{
+  const { useStore } = await import('../src/lib/store');
+  const st = () => useStore.getState();
+  const pause = () => new Promise((r) => setTimeout(r, 500));
+
+  st().newDesign();
+  const a = st().addTextLabel();
+  const b = st().addTextLabel();
+  const line = st().addShapeElement();
+  await pause();
+  const label = (id: string) => st().design.decor.find((d) => d.id === id)!;
+
+  if (label(a).mode === 'flush' && st().design.decor.find((d) => d.id === line)!.mode === 'raised') {
+    pass('a new label is flush, a new line still raised');
+  } else {
+    fail(`new label is ${label(a).mode}, new line ${label(line).mode}`);
+  }
+
+  st().updateDecorMany([a, b], { sizeMm: 5, letterSpacing: 0.4 });
+  const both = [label(a), label(b)].every((d) => d.type === 'text' && d.sizeMm === 5 && d.letterSpacing === 0.4);
+  if (both && !('sizeMm' in label(line))) pass('one change sets every selected label');
+  else fail('a batch edit missed a label or touched something it should not');
+
+  await pause();
+  st().undo();
+  const back = [label(a), label(b)].every((d) => d.type === 'text' && d.sizeMm === 3.2);
+  if (back) pass('and a single undo takes it back from all of them');
+  else fail('undo after a batch edit left some labels changed');
+}
+
 console.log('\nStepping back and forward');
 {
   const { useStore } = await import('../src/lib/store');
