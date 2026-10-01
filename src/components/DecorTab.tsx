@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { panelHeightMm, panelWidthMm } from '@/lib/eurorack';
 import { uid, type ArtElement, type ReliefMode, type ShapeElement, type TextElement } from '@/lib/types';
 import { useStore } from '@/lib/store';
@@ -285,7 +285,13 @@ function ArtworkTracer() {
   const [invert, setInvert] = useState(false);
   const [detail, setDetail] = useState(0.6);
   const [file, setFile] = useState<File | null>(null);
+  const [crop, setCrop] = useState<Box | null>(null);
   const [busy, setBusy] = useState(false);
+
+  // Revoked when the file changes or the tracer goes away, or every pick
+  // leaks a blob for the life of the page.
+  const preview = useMemo(() => (file ? URL.createObjectURL(file) : null), [file]);
+  useEffect(() => () => { if (preview) URL.revokeObjectURL(preview); }, [preview]);
 
   const run = async () => {
     if (!file) return;
@@ -294,6 +300,7 @@ function ArtworkTracer() {
       const rings = await traceArtwork(file, {
         threshold,
         invert,
+        crop: crop ?? undefined,
         simplifyPx: detail,
         targetWidthMm: panelWidthMm(design.hp) * 0.8,
         panelWidthMm: panelWidthMm(design.hp),
@@ -331,14 +338,15 @@ function ArtworkTracer() {
         <input
           type="file"
           accept="image/*"
-          onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+          onChange={(e) => { setFile(e.target.files?.[0] ?? null); setCrop(null); }}
           className="w-full text-[12.5px] text-ink-400 file:mr-2 file:rounded file:border-0
                      file:bg-ink-700 file:px-2 file:py-1 file:text-[12.5px] file:text-ink-100"
         />
       </Field>
 
-      {file && (
+      {file && preview && (
         <>
+          <CropPicker src={preview} crop={crop} onChange={setCrop} />
           <Field label="Threshold" hint={String(threshold)}>
             <Slider min={8} max={248} step={1} value={threshold} onChange={setThreshold} />
           </Field>
@@ -358,6 +366,127 @@ function ArtworkTracer() {
           </p>
         </>
       )}
+    </div>
+  );
+}
+
+/** A box over the picture, as fractions of its width and height. */
+interface Box { x: number; y: number; w: number; h: number }
+
+/**
+ * Pick the part of a picture to trace.
+ *
+ * Drag across the preview to draw a box; drag again to draw another. Edge
+ * handles would be the fuller interaction, but redrawing is a single gesture
+ * and this is a step people pass through once per image rather than live in.
+ *
+ * Held as fractions, because the preview is a couple of hundred pixels wide
+ * and the file behind it may be four thousand.
+ */
+function CropPicker({
+  src, crop, onChange,
+}: { src: string; crop: Box | null; onChange: (b: Box | null) => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const from = useRef<{ x: number; y: number } | null>(null);
+
+  const place = (e: React.PointerEvent) => {
+    const box = ref.current?.getBoundingClientRect();
+    if (!box) return null;
+    return {
+      x: Math.max(0, Math.min(1, (e.clientX - box.left) / box.width)),
+      y: Math.max(0, Math.min(1, (e.clientY - box.top) / box.height)),
+    };
+  };
+
+  const onDown = (e: React.PointerEvent) => {
+    const p = place(e);
+    if (!p) return;
+    e.preventDefault();
+    (e.currentTarget as Element).setPointerCapture?.(e.pointerId);
+    from.current = p;
+    onChange(null);
+  };
+
+  const onMove = (e: React.PointerEvent) => {
+    const a = from.current;
+    const p = a && place(e);
+    if (!a || !p) return;
+    onChange({
+      x: Math.min(a.x, p.x),
+      y: Math.min(a.y, p.y),
+      w: Math.abs(p.x - a.x),
+      h: Math.abs(p.y - a.y),
+    });
+  };
+
+  const onUp = () => {
+    from.current = null;
+    // A tap rather than a drag means the whole picture, not a sliver of it.
+    if (crop && (crop.w < 0.02 || crop.h < 0.02)) onChange(null);
+  };
+
+  const pct = (v: number) => `${v * 100}%`;
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="label text-[12px] text-ink-400">Crop</span>
+        {crop && (
+          <button
+            type="button"
+            onClick={() => onChange(null)}
+            className="text-[12.5px] text-ink-400 hover:text-ink-100"
+          >
+            Use the whole image
+          </button>
+        )}
+      </div>
+      <div
+        ref={ref}
+        onPointerDown={onDown}
+        onPointerMove={onMove}
+        onPointerUp={onUp}
+        onPointerCancel={onUp}
+        className="relative select-none overflow-hidden rounded-md border border-ink-700 bg-ink-950"
+        style={{ cursor: 'crosshair', touchAction: 'none' }}
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={src} alt="" draggable={false} className="block max-h-48 w-full object-contain" />
+        {crop && (
+          <>
+            {/* The part that will not be traced, dimmed rather than hidden, so
+                the box can be judged against what is around it. */}
+            <div className="pointer-events-none absolute inset-0 bg-ink-950/60" />
+            <div
+              className="pointer-events-none absolute overflow-hidden"
+              style={{ left: pct(crop.x), top: pct(crop.y), width: pct(crop.w), height: pct(crop.h) }}
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={src}
+                alt=""
+                draggable={false}
+                className="absolute max-w-none"
+                style={{
+                  width: pct(1 / Math.max(crop.w, 1e-6)),
+                  height: pct(1 / Math.max(crop.h, 1e-6)),
+                  left: pct(-crop.x / Math.max(crop.w, 1e-6)),
+                  top: pct(-crop.y / Math.max(crop.h, 1e-6)),
+                }}
+              />
+            </div>
+            <div
+              className="pointer-events-none absolute border border-accent"
+              style={{ left: pct(crop.x), top: pct(crop.y), width: pct(crop.w), height: pct(crop.h) }}
+            />
+          </>
+        )}
+      </div>
+      <p className="text-[12.5px] leading-relaxed text-ink-400">
+        {crop
+          ? 'Only the boxed part is traced. Drag again to draw a different box.'
+          : 'Drag across the picture to trace only part of it.'}
+      </p>
     </div>
   );
 }

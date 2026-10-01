@@ -221,6 +221,18 @@ a recess got filled should not depend on a colour picked for the drawing, so
 it is a choice now. Designs saved before this have their coloured engravings
 read as flush, which is what they were already being built as.
 
+### Cropping what gets traced
+
+A picture can be cropped before it is traced, by dragging a box across the
+preview; drag again for a different one. The box is held as fractions of the
+picture's width and height, because the preview is a couple of hundred pixels
+wide and the file behind it may be four thousand, and the crop is applied
+before the resolution cap so the part being traced gets the whole budget
+rather than a share of a picture mostly thrown away.
+
+Edge handles would be the fuller interaction. Redrawing is one gesture, and
+this is a step passed through once per image rather than lived in.
+
 ### Moving, scaling and turning traced artwork
 
 Traced outlines are kept in a frame of their own, centred on the element's

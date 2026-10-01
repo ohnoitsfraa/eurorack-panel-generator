@@ -414,6 +414,72 @@ async function open(colorScheme: 'light' | 'dark' = 'dark') {
   await page.close();
 }
 
+// --- tracing part of an image ---
+{
+  const { page, problems } = await open();
+  await page.getByRole('button', { name: 'Text & art', exact: true }).click();
+  await page.waitForTimeout(300);
+
+  // A picture with two separate shapes in it, made here rather than kept as a
+  // fixture: cropping to one half should trace one of them, not both.
+  const input = page.locator('aside').last().locator('input[type="file"]').first();
+  await input.evaluate(async (el: HTMLInputElement) => {
+    const c = document.createElement('canvas');
+    c.width = 400;
+    c.height = 200;
+    const x = c.getContext('2d')!;
+    x.fillStyle = '#fff';
+    x.fillRect(0, 0, 400, 200);
+    x.fillStyle = '#000';
+    x.beginPath();
+    x.arc(100, 100, 70, 0, Math.PI * 2);
+    x.fill();
+    x.fillRect(240, 60, 120, 80);
+    const blob: Blob = await new Promise((r) => c.toBlob((b) => r(b!), 'image/png'));
+    const dt = new DataTransfer();
+    dt.items.add(new File([blob], 'two-shapes.png', { type: 'image/png' }));
+    el.files = dt.files;
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  await page.waitForTimeout(600);
+
+  const outlines = async () =>
+    Number((await page.locator('aside').last().innerText()).match(/Traced artwork: (\d+) outline/)?.[1] ?? 0);
+
+  await page.getByRole('button', { name: 'Trace to relief' }).click();
+  await page.waitForTimeout(3000);
+  if ((await outlines()) === 2) pass('tracing the whole picture finds both shapes');
+  else fail(`the whole picture traced to ${await outlines()} outlines, expected 2`);
+
+  // Draw a box over the left half and trace again.
+  await page.keyboard.press('Backspace');
+  await page.waitForTimeout(400);
+  const area = await page.evaluate(() => {
+    const imgs = [...document.querySelectorAll('aside img')];
+    const b = imgs[imgs.length - 1].getBoundingClientRect();
+    return { x: b.x, y: b.y, w: b.width, h: b.height };
+  });
+  await page.mouse.move(area.x + area.w * 0.03, area.y + area.h * 0.05);
+  await page.mouse.down();
+  await page.mouse.move(area.x + area.w * 0.48, area.y + area.h * 0.95, { steps: 12 });
+  await page.mouse.up();
+  await page.waitForTimeout(400);
+  if ((await page.locator('aside').last().innerText()).includes('Only the boxed part')) {
+    pass('dragging across the preview draws a crop');
+  } else {
+    fail('no crop was drawn by dragging across the preview');
+  }
+
+  await page.getByRole('button', { name: 'Trace to relief' }).click();
+  await page.waitForTimeout(3000);
+  if ((await outlines()) === 1) pass('and only what is boxed gets traced');
+  else fail(`the cropped half traced to ${await outlines()} outlines, expected 1`);
+
+  if (problems.length === 0) pass('no uncaught errors while tracing');
+  else fail(`while tracing: ${[...new Set(problems)].join(' | ')}`);
+  await page.close();
+}
+
 // --- alignment guides ---
 {
   const { page, problems } = await open();

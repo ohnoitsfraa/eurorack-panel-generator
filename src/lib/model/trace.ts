@@ -1,4 +1,4 @@
-import { fitWithin, imageDataFromSource } from '../cv/image';
+import { cropImage, fitWithin, imageDataFromSource } from '../cv/image';
 import { maskFromImage, traceContours } from '../geom/contours';
 import { bbox, type Ring } from '../geom/poly';
 import type { Pt } from '../types';
@@ -12,6 +12,13 @@ export interface TraceOptions {
   targetWidthMm: number;
   panelWidthMm: number;
   panelHeightMm: number;
+  /**
+   * The part of the picture to trace, as fractions of its width and height.
+   *
+   * Fractions rather than pixels because the box is drawn on a preview whose
+   * size has nothing to do with the file's. Omitted means all of it.
+   */
+  crop?: { x: number; y: number; w: number; h: number };
 }
 
 /** Cap on the working resolution: tracing cost grows with pixel count. */
@@ -28,7 +35,10 @@ export async function traceArtwork(file: File, opts: TraceOptions): Promise<Ring
   const url = URL.createObjectURL(file);
   try {
     const full = await imageDataFromSource(url);
-    const img = fitWithin(full, TRACE_MAX_DIM);
+    // Cropped before the resolution cap, so the part being traced gets the
+    // whole budget rather than a share of a picture mostly thrown away.
+    const picked = opts.crop ? cropToFraction(full, opts.crop) : full;
+    const img = fitWithin(picked, TRACE_MAX_DIM);
 
     const mask = maskFromImage(img, opts.threshold, opts.invert);
     const rings = traceContours(mask, img.width, img.height, opts.simplifyPx);
@@ -53,4 +63,16 @@ export async function traceArtwork(file: File, opts: TraceOptions): Promise<Ring
   } finally {
     URL.revokeObjectURL(url);
   }
+}
+
+/** The fractional box as whole pixels, kept inside the image and non-empty. */
+function cropToFraction(
+  img: ImageData,
+  c: { x: number; y: number; w: number; h: number },
+): ImageData {
+  const x = Math.max(0, Math.min(img.width - 1, Math.round(c.x * img.width)));
+  const y = Math.max(0, Math.min(img.height - 1, Math.round(c.y * img.height)));
+  const w = Math.max(1, Math.min(img.width - x, Math.round(c.w * img.width)));
+  const h = Math.max(1, Math.min(img.height - y, Math.round(c.h * img.height)));
+  return cropImage(img, x, y, w, h);
 }
