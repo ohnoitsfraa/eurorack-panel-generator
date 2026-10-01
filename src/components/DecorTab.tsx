@@ -12,12 +12,15 @@ import { Button, ColorInput, Field, NumberInput, Section, Select, Slider } from 
 const RELIEF_OPTIONS: Array<{ value: ReliefMode; label: string }> = [
   { value: 'raised', label: 'Raised — sits on the surface' },
   { value: 'engraved', label: 'Engraved — cut into the surface' },
+  { value: 'flush', label: 'Flush — level, in another colour' },
 ];
 
 export function DecorTab() {
   const design = useStore((s) => s.design);
   const decor = design.decor;
   const addDecor = useStore((s) => s.addDecor);
+  const addTextLabel = useStore((s) => s.addTextLabel);
+  const addShapeElement = useStore((s) => s.addShapeElement);
   const removeDecor = useStore((s) => s.removeDecor);
   const selectedIds = useStore((s) => s.selectedIds);
   const select = useStore((s) => s.select);
@@ -25,35 +28,14 @@ export function DecorTab() {
   const W = panelWidthMm(design.hp);
   const H = panelHeightMm(design.format);
 
-  const addText = () => {
-    const el: TextElement = {
-      id: uid('t'), type: 'text', text: 'LABEL',
-      x: W / 2, y: 12, sizeMm: 3.2,
-      fontFamily: 'Inter', fontWeight: 700,
-      letterSpacing: 0.2, align: 'center', rotation: 0,
-      color: '#f2f2f0', mode: 'raised', reliefMm: 0.6,
-    };
-    addDecor(el);
-  };
-
-  const addShape = () => {
-    const el: ShapeElement = {
-      id: uid('s'), type: 'shape', shape: 'line',
-      x: W / 2, y: H / 2, w: W * 0.6, h: 0.8,
-      radius: 0.4, rotation: 0,
-      color: '#f2f2f0', mode: 'raised', reliefMm: 0.6,
-    };
-    addDecor(el);
-  };
-
   const selected = decor.find((d) => selectedIds.includes(d.id));
 
   return (
     <>
       <Section title="Add">
         <div className="grid grid-cols-2 gap-1">
-          <Button onClick={addText}>Text label</Button>
-          <Button onClick={addShape}>Line / shape</Button>
+          <Button onClick={addTextLabel}>Text label</Button>
+          <Button onClick={addShapeElement}>Line / shape</Button>
         </div>
         <ArtworkTracer />
       </Section>
@@ -82,7 +64,7 @@ export function DecorTab() {
                     {d.type === 'text' ? d.text || '(empty)' : d.type === 'art' ? 'Traced artwork' : d.shape}
                   </span>
                   <span className="ml-auto shrink-0 text-ink-400">
-                    {d.mode === 'raised' ? '↑' : '↓'}{d.reliefMm.toFixed(1)}
+                    {d.mode === 'raised' ? '↑' : d.mode === 'flush' ? '≡' : '↓'}{d.reliefMm.toFixed(1)}
                   </span>
                 </button>
                 <Button variant="ghost" onClick={() => removeDecor(d.id)} title="Remove">×</Button>
@@ -143,7 +125,7 @@ function DecorEditor({ id }: { id: string }) {
             <Field label="Cap height" hint="mm">
               <NumberInput value={el.sizeMm} onChange={(sizeMm) => update(id, { sizeMm })} min={0.8} max={60} step={0.1} />
             </Field>
-            <Field label="Letter spacing" hint="mm">
+            <Field label="Spacing" hint="mm">
               <NumberInput value={el.letterSpacing} onChange={(letterSpacing) => update(id, { letterSpacing })} min={-2} max={10} step={0.05} />
             </Field>
           </div>
@@ -192,28 +174,30 @@ function DecorEditor({ id }: { id: string }) {
       )}
 
       {el.type === 'art' && (
-        <p className="text-[12.5px] leading-relaxed text-ink-400">
-          Traced artwork: {el.rings.length} outline{el.rings.length === 1 ? '' : 's'}. Re-trace
-          from the Add section to change the threshold.
-        </p>
+        <>
+          <p className="text-[12.5px] leading-relaxed text-ink-400">
+            Traced artwork: {el.rings.length} outline{el.rings.length === 1 ? '' : 's'}. Re-trace
+            from the Add section to change the threshold.
+          </p>
+          <Field label="Size" hint={`${Math.round(el.scale * 100)}%`}>
+            <Slider min={5} max={400} step={1} value={Math.round(el.scale * 100)}
+                    onChange={(pct) => update(id, { scale: pct / 100 })} />
+          </Field>
+        </>
       )}
 
-      {el.type !== 'art' && (
-        <div className="grid grid-cols-2 gap-2">
-          <Field label="X" hint="mm">
-            <NumberInput value={el.x} onChange={(x) => update(id, { x })} min={-50} max={W + 50} step={0.1} />
-          </Field>
-          <Field label="Y" hint="mm">
-            <NumberInput value={el.y} onChange={(y) => update(id, { y })} min={-50} max={H + 50} step={0.1} />
-          </Field>
-        </div>
-      )}
-
-      {el.type !== 'art' && (
-        <Field label="Rotation" hint={`${el.rotation.toFixed(0)}°`}>
-          <Slider min={-180} max={180} step={1} value={el.rotation} onChange={(rotation) => update(id, { rotation })} />
+      <div className="grid grid-cols-2 gap-2">
+        <Field label="X" hint="mm">
+          <NumberInput value={el.x} onChange={(x) => update(id, { x })} min={-50} max={W + 50} step={0.1} />
         </Field>
-      )}
+        <Field label="Y" hint="mm">
+          <NumberInput value={el.y} onChange={(y) => update(id, { y })} min={-50} max={H + 50} step={0.1} />
+        </Field>
+      </div>
+
+      <Field label="Rotation" hint={`${el.rotation.toFixed(0)}°`}>
+        <Slider min={-180} max={180} step={1} value={el.rotation} onChange={(rotation) => update(id, { rotation })} />
+      </Field>
 
       <div className="border-t border-ink-800 pt-3">
         <Field label="Relief">
@@ -222,12 +206,13 @@ function DecorEditor({ id }: { id: string }) {
       </div>
 
       <Field
-        label={el.mode === 'raised' ? 'Height above surface' : 'Depth into surface'}
+        label={el.mode === 'raised' ? 'Height above surface'
+          : el.mode === 'flush' ? 'Depth of the colour' : 'Depth into surface'}
         hint={`${el.reliefMm.toFixed(2)} mm`}
       >
         <Slider
           min={0.1}
-          max={el.mode === 'engraved' ? Math.max(0.2, design.thicknessMm - 0.4) : 3}
+          max={el.mode === 'raised' ? 3 : Math.max(0.2, design.thicknessMm - 0.4)}
           step={0.05}
           value={el.reliefMm}
           onChange={(reliefMm) => update(id, { reliefMm })}
@@ -236,7 +221,11 @@ function DecorEditor({ id }: { id: string }) {
       <p className="-mt-1 text-[12.5px] leading-relaxed text-ink-400">
         {el.mode === 'raised'
           ? 'Two or three layer heights is plenty — 0.4 to 0.6 mm reads clearly and prints fast.'
-          : 'An engraving stays part of the panel. Give it a different colour to also get a matching inlay piece for a second material.'}
+          : el.mode === 'flush'
+          ? 'The face stays level and only the colour changes. Exported as a shallow pocket with a '
+            + 'matching piece to fill it, which is what a two-material printer needs; how deep it '
+            + 'goes is how many layers print in the second colour.'
+          : 'A recess, left open. For a level face in a second colour, use flush instead.'}
       </p>
 
       <Field label="Colour">
@@ -289,6 +278,8 @@ function FontUpload() {
 function ArtworkTracer() {
   const design = useStore((s) => s.design);
   const addDecor = useStore((s) => s.addDecor);
+  const addTextLabel = useStore((s) => s.addTextLabel);
+  const addShapeElement = useStore((s) => s.addShapeElement);
   const setError = useStore((s) => s.setError);
   const [threshold, setThreshold] = useState(128);
   const [invert, setInvert] = useState(false);
@@ -312,8 +303,18 @@ function ArtworkTracer() {
         setError('Nothing traced — try moving the threshold or inverting.');
         return;
       }
+      const pts = rings.flat();
+      const xs = pts.map((p) => p.x);
+      const ys = pts.map((p) => p.y);
+      const cx = (Math.min(...xs) + Math.max(...xs)) / 2;
+      const cy = (Math.min(...ys) + Math.max(...ys)) / 2;
       const el: ArtElement = {
-        id: uid('a'), type: 'art', rings,
+        id: uid('a'),
+        type: 'art',
+        // Stored about its own centre, so scaling and turning it do not have
+        // to rewrite thousands of traced points.
+        rings: rings.map((ring) => ring.map((p) => ({ x: p.x - cx, y: p.y - cy }))),
+        x: cx, y: cy, scale: 1, rotation: 0,
         color: '#f2f2f0', mode: 'raised', reliefMm: 0.6,
       };
       addDecor(el);

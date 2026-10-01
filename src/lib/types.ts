@@ -116,10 +116,57 @@ export function migrateDesign(design: PanelDesign): PanelDesign {
     features: (design.features ?? [])
       .map((f) => migrateFeature(f))
       .filter((f): f is Feature => f !== null),
+    decor: (design.decor ?? []).map((d) => migrateDecor(d, design.backgroundColor)),
   };
 }
 
-export type ReliefMode = 'raised' | 'engraved';
+/**
+ * Bring a decor element up to date.
+ *
+ * Traced artwork used to keep its outlines in panel coordinates with no
+ * transform of its own; its origin is recovered from the middle of what was
+ * drawn and the outlines are re-centred on it, which leaves the artwork
+ * exactly where it was and gives it something to be scaled and turned about.
+ *
+ * An engraving in a colour other than the panel's used to be filled with that
+ * colour automatically — the same thing `flush` now says out loud. Saying it
+ * out loud is the point: an engraving should be a recess, and whether one was
+ * filled should not depend on a colour chosen for the drawing.
+ */
+export function migrateDecor(raw: DecorElement, panelColor: string): DecorElement {
+  let d = raw;
+
+  if (d.type === 'art' && typeof (d as Partial<ArtElement>).x !== 'number') {
+    const pts = d.rings.flat();
+    const xs = pts.map((p) => p.x);
+    const ys = pts.map((p) => p.y);
+    const cx = pts.length ? (Math.min(...xs) + Math.max(...xs)) / 2 : 0;
+    const cy = pts.length ? (Math.min(...ys) + Math.max(...ys)) / 2 : 0;
+    d = {
+      ...d,
+      x: cx,
+      y: cy,
+      scale: 1,
+      rotation: 0,
+      rings: d.rings.map((ring) => ring.map((p): Pt => ({ x: p.x - cx, y: p.y - cy }))),
+    };
+  }
+
+  if (d.mode === 'engraved' && d.color.toLowerCase() !== (panelColor ?? '').toLowerCase()) {
+    d = { ...d, mode: 'flush' };
+  }
+  return d;
+}
+
+/**
+ * How a piece of decor meets the panel face.
+ *
+ * `flush` is the slicer's idea rather than the modeller's: the face stays
+ * level and only the colour changes, which on a two-material printer is a
+ * shallow pocket with a plug of the other filament in it. Geometrically it is
+ * an engraving that comes with its own filling, and that is how it is built.
+ */
+export type ReliefMode = 'raised' | 'engraved' | 'flush';
 
 export interface TextElement {
   id: string;
@@ -143,13 +190,51 @@ export interface TextElement {
 export interface ArtElement {
   id: string;
   type: 'art';
-  /** Even-odd polygon rings in mm, panel space, already positioned. */
+  /**
+   * Even-odd polygon rings in mm, in the element's own frame, centred on its
+   * origin.
+   *
+   * Local rather than panel space so the thing can be moved, scaled and turned
+   * without rewriting its outlines: a trace of a logo runs to thousands of
+   * points, and rewriting them on every drag would both cost and accumulate
+   * rounding. `artRings` applies the transform when the geometry is needed.
+   */
   rings: Pt[][];
+  x: number;
+  y: number;
+  /** Multiplier on the traced size. */
+  scale: number;
+  rotation: number;
   color: string;
   mode: ReliefMode;
   reliefMm: number;
   /** Kept so the UI can re-trace at a different threshold without a re-upload. */
   source?: { imageId: string; threshold: number };
+}
+
+/** Traced outlines where they actually sit on the panel. */
+export function artRings(el: ArtElement): Pt[][] {
+  const a = (el.rotation * Math.PI) / 180;
+  const cos = Math.cos(a);
+  const sin = Math.sin(a);
+  const k = el.scale;
+  return el.rings.map((ring) => ring.map(({ x, y }): Pt => ({
+    x: el.x + (x * cos - y * sin) * k,
+    y: el.y + (x * sin + y * cos) * k,
+  })));
+}
+
+/** Half-width and half-height of a traced element as placed. */
+export function artExtent(el: ArtElement): { rx: number; ry: number } {
+  let rx = 0;
+  let ry = 0;
+  for (const ring of artRings(el)) {
+    for (const p of ring) {
+      rx = Math.max(rx, Math.abs(p.x - el.x));
+      ry = Math.max(ry, Math.abs(p.y - el.y));
+    }
+  }
+  return { rx, ry };
 }
 
 export interface ShapeElement {

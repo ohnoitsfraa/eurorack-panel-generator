@@ -2,7 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { CUTOUT_PRESETS, MOUNT_SLOT, mountSlotPositions, panelHeightMm, panelWidthMm } from '@/lib/eurorack';
-import type { DecorElement, Feature } from '@/lib/types';
+import { artExtent, artRings, type DecorElement, type Feature } from '@/lib/types';
 import { useStore } from '@/lib/store';
 import { textToRings } from '@/lib/model/text';
 import { bbox, type Ring } from '@/lib/geom/poly';
@@ -40,7 +40,7 @@ const CanvasFrame = createContext<React.RefObject<SVGSVGElement | null> | null>(
 type DragItem =
   | { kind: 'feature'; id: string; ox: number; oy: number }
   | { kind: 'decor'; id: string; ox: number; oy: number }
-  | { kind: 'art'; id: string; rings: Ring[] };
+
 
 export function PanelCanvas2D() {
   const design = useStore((s) => s.design);
@@ -132,6 +132,8 @@ export function PanelCanvas2D() {
   } | null>(null);
 
   const [guides, setGuides] = useState<Guide[]>([]);
+  /** The text label being typed into on the canvas, and what it said before. */
+  const [editing, setEditing] = useState<string | null>(null);
 
   /**
    * Snapshot what a drag will move.
@@ -150,8 +152,7 @@ export function PanelCanvas2D() {
       if (f) { out.push({ kind: 'feature', id, ox: f.x, oy: f.y }); continue; }
       const d = nowDecor.find((x) => x.id === id);
       if (!d) continue;
-      if (d.type === 'art') out.push({ kind: 'art', id, rings: d.rings });
-      else out.push({ kind: 'decor', id, ox: d.x, oy: d.y });
+      out.push({ kind: 'decor', id, ox: d.x, oy: d.y });
     }
     return out;
   }, []);
@@ -234,9 +235,7 @@ export function PanelCanvas2D() {
       }
 
       for (const item of d.items) {
-        if (item.kind === 'art') {
-          placeDecor(item.id, round2(dx), round2(dy), item.rings);
-        } else if (item.kind === 'decor') {
+        if (item.kind === 'decor') {
           placeDecor(item.id, round2(item.ox + dx), round2(item.oy + dy));
         } else {
           updateFeature(item.id, { x: round2(item.ox + dx), y: round2(item.oy + dy) });
@@ -318,7 +317,14 @@ export function PanelCanvas2D() {
         const step = e.shiftKey ? (gridMm || 1) * 5 : gridMm || 0.1;
         for (const id of selectedIds) {
           const f = features.find((x) => x.id === id);
-          if (f) updateFeature(id, { x: round2(f.x + dir[0] * step), y: round2(f.y + dir[1] * step) });
+          if (f) {
+            updateFeature(id, { x: round2(f.x + dir[0] * step), y: round2(f.y + dir[1] * step) });
+            continue;
+          }
+          // Labels and traced artwork nudge the same way. They have an origin
+          // of their own now, so there is nothing special to do for either.
+          const d = decor.find((x) => x.id === id);
+          if (d) placeDecor(id, round2(d.x + dir[0] * step), round2(d.y + dir[1] * step));
         }
       }
     };
@@ -332,6 +338,17 @@ export function PanelCanvas2D() {
     e.preventDefault();
     setZoom((z) => Math.min(8, Math.max(0.4, z * (e.deltaY < 0 ? 1.12 : 0.89))));
   };
+
+  /**
+   * Type into a label where it sits.
+   *
+   * Selecting it as well, so the inspector follows along and the usual
+   * controls are to hand once the typing is done.
+   */
+  const onEditText = useCallback((id: string) => {
+    select([id]);
+    setEditing(id);
+  }, [select]);
 
   const mountSlots = design.includeMountSlots ? mountSlotPositions(W, H) : [];
   const handleMm = HANDLE_PX * mmPerPx;
@@ -401,7 +418,7 @@ export function PanelCanvas2D() {
 
           <rect x={0} y={0} width={W} height={H} fill="url(#hpGrid)" />
 
-          <DecorLayer onGrab={beginDrag} handleMm={handleMm} />
+          <DecorLayer onGrab={beginDrag} handleMm={handleMm} onEditText={onEditText} />
         </g>
 
         {/* Panel edge */}
@@ -523,6 +540,10 @@ export function PanelCanvas2D() {
         )}
       </svg>
 
+      {editing && (
+        <TextEditor id={editing} svgRef={svgRef} onClose={() => setEditing(null)} />
+      )}
+
       <div className="pointer-events-none absolute bottom-3 left-3 flex flex-col gap-1 text-[12.5px] text-ink-400">
         <span className="tabular-nums">
           {design.hp} HP · {W.toFixed(1)} × {H.toFixed(1)} mm · {features.length} cutouts
@@ -553,7 +574,6 @@ export function PanelCanvas2D() {
 function anchorOf(items: DragItem[], preferredId: string): { ox: number; oy: number } | null {
   const chosen = items.find((i) => i.id === preferredId) ?? items[0];
   if (!chosen) return null;
-  if (chosen.kind === 'art') return { ox: 0, oy: 0 };
   return { ox: chosen.ox, oy: chosen.oy };
 }
 
@@ -571,8 +591,11 @@ function alignTargets(
     out.push({ id: f.id, x: f.x, y: f.y, rx, ry });
   }
   for (const d of decor) {
-    if (moving.has(d.id) || d.type === 'art') continue;
-    out.push({ id: d.id, x: d.x, y: d.y, rx: 2, ry: 2 });
+    if (moving.has(d.id)) continue;
+    // Artwork can be lined up against now that it has an origin, and its own
+    // extent is worth having so the guide spans the whole of it.
+    const e = d.type === 'art' ? artExtent(d) : { rx: 2, ry: 2 };
+    out.push({ id: d.id, x: d.x, y: d.y, rx: e.rx, ry: e.ry });
   }
   return out;
 }
@@ -795,10 +818,11 @@ function FeatureHandles({ f, handleMm }: { f: Feature; handleMm: number }) {
 
 /** Decor drawn from the same rings the mesh builder uses. */
 function DecorLayer({
-  onGrab, handleMm,
+  onGrab, handleMm, onEditText,
 }: {
   onGrab: (e: React.PointerEvent, id: string, isDecor: boolean) => void;
   handleMm: number;
+  onEditText: (id: string) => void;
 }) {
   const decor = useStore((s) => s.design.decor);
   const fonts = useStore((s) => s.fonts);
@@ -816,6 +840,7 @@ function DecorLayer({
           selected={selectedIds.includes(d.id)}
           handleMm={handleMm}
           onPointerDown={(e) => onGrab(e, d.id, true)}
+          onEdit={d.type === 'text' ? () => onEditText(d.id) : undefined}
         />
       ))}
     </g>
@@ -823,7 +848,7 @@ function DecorLayer({
 }
 
 function DecorShape({
-  el, fonts, selected, handleMm, onPointerDown,
+  el, fonts, selected, handleMm, onPointerDown, onEdit,
 }: {
   el: DecorElement;
   fonts: Map<string, OpentypeFont>;
@@ -831,13 +856,15 @@ function DecorShape({
   selected: boolean;
   handleMm: number;
   onPointerDown: (e: React.PointerEvent) => void;
+  /** Present on a text label: a double click types into it where it sits. */
+  onEdit?: () => void;
 }) {
   const rings = useMemo<Ring[]>(() => {
     if (el.type === 'text') {
       const font = fonts.get(`${el.fontFamily}@${el.fontWeight}`);
       return font ? textToRings(el, font) : [];
     }
-    if (el.type === 'art') return el.rings;
+    if (el.type === 'art') return artRings(el);
     return shapeRingsForPreview(el);
   }, [el, fonts]);
 
@@ -845,6 +872,7 @@ function DecorShape({
     // Font still in flight: show the string so the layout is not a mystery.
     return (
       <text
+        data-decor={el.type}
         x={el.x} y={el.y + el.sizeMm * 0.36}
         fontSize={el.sizeMm * 1.35}
         fill={el.color}
@@ -852,6 +880,7 @@ function DecorShape({
         textAnchor={el.align === 'center' ? 'middle' : el.align === 'right' ? 'end' : 'start'}
         transform={`rotate(${el.rotation} ${el.x} ${el.y})`}
         onPointerDown={onPointerDown}
+        onDoubleClick={onEdit}
         style={{ cursor: 'move' }}
       >
         {el.text}
@@ -864,7 +893,7 @@ function DecorShape({
   const box = bbox(rings);
 
   return (
-    <g>
+    <g data-decor={el.type}>
       <path
         d={d}
         fill={el.color}
@@ -872,6 +901,7 @@ function DecorShape({
         // Engraved decor is a recess, so it reads darker than the surface.
         opacity={el.mode === 'engraved' ? 0.75 : 1}
         onPointerDown={onPointerDown}
+        onDoubleClick={onEdit}
         style={{ cursor: 'move' }}
       />
       {/*
@@ -885,6 +915,7 @@ function DecorShape({
         height={Math.max(0.01, box.y1 - box.y0)}
         fill="transparent"
         onPointerDown={onPointerDown}
+        onDoubleClick={onEdit}
         style={{ cursor: 'move' }}
       />
       {selected && (
@@ -1026,4 +1057,104 @@ function gapSummary(guides: Guide[]): string {
 /** Two decimals at most, and none that are only zeros. */
 function trim(mm: number): string {
   return String(Math.round(mm * 100) / 100);
+}
+
+/**
+ * An input sitting over a text label on the canvas.
+ *
+ * Plain HTML positioned over the drawing rather than a foreignObject inside
+ * it: an input inside the SVG inherits the panel's transform, and a caret in a
+ * rotated, scaled coordinate system is its own argument with the browser.
+ * Here it only has to be put in the right place, which the SVG's own matrix
+ * gives exactly.
+ *
+ * Every keystroke goes straight to the label, so the panel shows what is being
+ * written. Enter, Escape and clicking away all end it and keep what was typed;
+ * an emptied label is removed rather than left as an invisible thing to trip
+ * over later.
+ */
+function TextEditor({
+  id, svgRef, onClose,
+}: {
+  id: string;
+  svgRef: React.RefObject<SVGSVGElement | null>;
+  onClose: () => void;
+}) {
+  const el = useStore((s) => s.design.decor.find((d) => d.id === id));
+  const updateDecor = useStore((s) => s.updateDecor);
+  const removeDecor = useStore((s) => s.removeDecor);
+  const ref = useRef<HTMLInputElement>(null);
+  const [box, setBox] = useState<{ left: number; top: number; height: number } | null>(null);
+
+  const text = el?.type === 'text' ? el.text : '';
+  const sizeMm = el?.type === 'text' ? el.sizeMm : 3;
+  const x = el?.type === 'text' ? el.x : 0;
+  const y = el?.type === 'text' ? el.y : 0;
+
+  useEffect(() => {
+    const svg = svgRef.current;
+    if (!svg) return;
+    const m = svg.getScreenCTM();
+    const frame = svg.getBoundingClientRect();
+    if (!m) return;
+    const at = new DOMPoint(x, y).matrixTransform(m);
+    // The panel's millimetre scale, in screen pixels, so the box matches the
+    // label it is standing in for.
+    const pxPerMm = new DOMPoint(1, 0).matrixTransform(m).x - new DOMPoint(0, 0).matrixTransform(m).x;
+    const height = Math.max(22, sizeMm * pxPerMm * 1.6);
+    setBox({ left: at.x - frame.left, top: at.y - frame.top - height / 2, height });
+  }, [svgRef, x, y, sizeMm]);
+
+  // A pointerdown anywhere else ends it. Blur alone does not cover it: the
+  // canvas takes the pointer for dragging and for the marquee, and can do that
+  // without focus ever moving — which left the box open and typing into a
+  // label nobody was looking at any more.
+  useEffect(() => {
+    const away = (e: PointerEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) ref.current.blur();
+    };
+    window.addEventListener('pointerdown', away, true);
+    return () => window.removeEventListener('pointerdown', away, true);
+  }, []);
+
+  const finish = () => {
+    if (!ref.current?.value.trim()) removeDecor(id);
+    onClose();
+  };
+
+  if (!el || el.type !== 'text' || !box) return null;
+
+  return (
+    <input
+      // Focused from the node itself rather than from an effect. The box is
+      // measured in an effect of its own, so on the first render there is no
+      // input yet to focus, and an effect that ran then found nothing — which
+      // left the caret elsewhere and every keystroke, Escape included, going
+      // to the canvas instead.
+      ref={(node) => {
+        ref.current = node;
+        if (node && document.activeElement !== node) { node.focus(); node.select(); }
+      }}
+      value={text}
+      aria-label="Label text"
+      onChange={(e) => updateDecor(id, { text: e.target.value })}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === 'Escape') { e.preventDefault(); finish(); }
+        // The canvas reads these for nudging and deleting, and it should not
+        // while a caret is in a box.
+        e.stopPropagation();
+      }}
+      onBlur={finish}
+      className="absolute z-20 min-w-32 rounded border border-accent bg-ink-950 px-1.5 text-ink-100
+                 outline-none"
+      style={{
+        left: box.left,
+        top: box.top,
+        height: box.height,
+        fontSize: Math.min(28, Math.max(12, box.height * 0.6)),
+        // Centred on the label's own anchor, which is where the eye already is.
+        transform: 'translateX(-50%)',
+      }}
+    />
+  );
 }

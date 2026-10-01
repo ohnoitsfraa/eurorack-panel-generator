@@ -43,6 +43,79 @@ export default function Page() {
   // read after mount rather than as part of the store's initial state.
   useEffect(() => { void loadLibraryFromStorage(); }, [loadLibraryFromStorage]);
 
+  /**
+   * The three shortcuts that work wherever you are in the app.
+   *
+   * Here rather than on the canvas because they should hold in the 3D preview
+   * and in the rack too — somebody who has just typed a name and reaches for
+   * Cmd-S should not have to think about which view is up.
+   *
+   * Skipped while a caret is in a box: the browser's own undo inside a text
+   * field is the better one, and Cmd-S there still means save.
+   */
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey)) return;
+      const el = document.activeElement;
+      const typing = !!el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA');
+      const k = e.key.toLowerCase();
+
+      if (k === 's') {
+        e.preventDefault();
+        useStore.getState().saveCurrentDesign();
+        return;
+      }
+      if (k === 'z' && !typing) {
+        e.preventDefault();
+        if (e.shiftKey) useStore.getState().redo();
+        else useStore.getState().undo();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  /**
+   * One key each for the things you reach for most while laying a panel out.
+   *
+   * Letters chosen from the names rather than from a row on the keyboard, so
+   * they can be guessed: C for circle, R for rectangle, S for slot, T for a
+   * text label. The two that have no initial left take the next best thing —
+   * U for a roUnded rectangle, L for a line.
+   *
+   * A shape key arms the tool and the next click on the panel places it, which
+   * is how the buttons already work. A label is placed outright, because there
+   * is nowhere sensible for it to wait.
+   */
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      const el = document.activeElement;
+      if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT')) return;
+
+      const s = useStore.getState();
+      const tool = { c: 'circle', r: 'rect', u: 'roundrect', s: 'slot' } as const;
+      const k = e.key.toLowerCase();
+
+      if (k in tool) {
+        e.preventDefault();
+        s.setView('2d');
+        s.setTab('features');
+        s.setTool(tool[k as keyof typeof tool]);
+        return;
+      }
+      if (k === 't' || k === 'l') {
+        e.preventDefault();
+        s.setView('2d');
+        s.setTab('decor');
+        if (k === 't') s.addTextLabel();
+        else s.addShapeElement();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
   // Errors are transient notices, not state to manage; clear them after a beat.
   useEffect(() => {
     if (!error) return;

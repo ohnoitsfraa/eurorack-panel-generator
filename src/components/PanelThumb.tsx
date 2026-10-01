@@ -3,7 +3,7 @@
 import { useMemo } from 'react';
 import type { Font } from 'opentype.js';
 import { MOUNT_SLOT, mountSlotPositions, panelHeightMm, panelWidthMm } from '@/lib/eurorack';
-import type { DecorElement, PanelDesign } from '@/lib/types';
+import { artRings, type DecorElement, type PanelDesign } from '@/lib/types';
 import { bbox, type Ring } from '@/lib/geom/poly';
 import { cutoutFill } from '@/lib/color';
 import { textToRings } from '@/lib/model/text';
@@ -101,7 +101,7 @@ function decorRings(d: DecorElement, fonts: Map<string, Font>): Ring[] {
     const font = fonts.get(`${d.fontFamily}@${d.fontWeight}`);
     return font ? textToRings(d, font) : [];
   }
-  if (d.type === 'art') return d.rings;
+  if (d.type === 'art') return artRings(d);
   return shapeRingsForPreview(d);
 }
 

@@ -51,6 +51,9 @@ interface State {
    * this file.
    */
   savedDesign: PanelDesign;
+  /** Previous states of the panel, oldest first, and the ones undone. */
+  past: Snapshot[];
+  future: Snapshot[];
   /** Original upload, kept at full resolution for re-detection after a re-crop. */
   sourceImage: ImageData | null;
   sourceUrl: string | null;
@@ -111,11 +114,15 @@ interface State {
   alignFeatures: (ids: string[], edge: 'left' | 'right' | 'top' | 'bottom' | 'cx' | 'cy') => void;
 
   addDecor: (el: DecorElement) => void;
+  /** A label at the top of the panel, ready to be typed into. */
+  addTextLabel: () => string;
+  /** A plain rule across the panel, the starting point for drawn decor. */
+  addShapeElement: () => string;
   updateDecor: (id: string, patch: Partial<DecorElement>) => void;
   removeDecor: (id: string) => void;
   duplicateDecor: (ids: string[], offsetMm?: number) => string[];
   /** Move a decor element to an absolute position; art translates its rings. */
-  placeDecor: (id: string, x: number, y: number, originRings?: Ring[]) => void;
+  placeDecor: (id: string, x: number, y: number) => void;
 
   loadLibraryFromStorage: () => Promise<void>;
   discardRestored: () => void;
@@ -124,6 +131,8 @@ interface State {
   syncTheme: () => void;
   saveCurrentDesign: (name?: string) => void;
   openDesign: (id: string) => void;
+  undo: () => void;
+  redo: () => void;
   restoreReference: (designId: string, ref: SourceReference) => Promise<void>;
   newDesign: () => void;
   deleteDesign: (id: string) => void;
@@ -160,6 +169,27 @@ interface State {
   ensureFont: (family: string, weight: number) => void;
 }
 
+/** A panel as it stood, for stepping back to. */
+export interface Snapshot {
+  design: PanelDesign;
+  designName: string;
+}
+
+/** Set while undo or redo is applying, so the step is not itself recorded. */
+let restoring = false;
+
+/**
+ * Edits closer together than this are one step.
+ *
+ * A drag writes a new position on every pointer move, and typing into a label
+ * writes a new string on every key; without this, undo would walk back through
+ * a drag one pixel at a time. The first write in a burst is the one kept,
+ * which is the state before the gesture started — what "undo that" means.
+ */
+const COALESCE_MS = 450;
+const HISTORY_LIMIT = 100;
+let lastPushAt = 0;
+
 export const DEFAULT_DESIGN: PanelDesign = {
   hp: 8,
   format: '3U',
@@ -177,6 +207,8 @@ export const DEFAULT_DESIGN: PanelDesign = {
 export const useStore = create<State>((set, get) => ({
   design: DEFAULT_DESIGN,
   savedDesign: DEFAULT_DESIGN,
+  past: [],
+  future: [],
   sourceImage: null,
   sourceUrl: null,
   sourceLabel: null,
@@ -417,6 +449,32 @@ export const useStore = create<State>((set, get) => ({
   addDecor: (el) =>
     set((s) => ({ design: { ...s.design, decor: [...s.design.decor, el] }, selectedIds: [el.id] })),
 
+  addTextLabel: () => {
+    const { design } = get();
+    const el: DecorElement = {
+      id: uid('t'), type: 'text', text: 'LABEL',
+      x: panelWidthMm(design.hp) / 2, y: 12, sizeMm: 3.2,
+      fontFamily: 'Inter', fontWeight: 700,
+      letterSpacing: 0.2, align: 'center', rotation: 0,
+      color: '#f2f2f0', mode: 'raised', reliefMm: 0.6,
+    };
+    get().addDecor(el);
+    return el.id;
+  },
+
+  addShapeElement: () => {
+    const { design } = get();
+    const W = panelWidthMm(design.hp);
+    const el: DecorElement = {
+      id: uid('s'), type: 'shape', shape: 'line',
+      x: W / 2, y: panelHeightMm(design.format) / 2, w: W * 0.6, h: 0.8,
+      radius: 0.4, rotation: 0,
+      color: '#f2f2f0', mode: 'raised', reliefMm: 0.6,
+    };
+    get().addDecor(el);
+    return el.id;
+  },
+
   updateDecor: (id, patch) =>
     set((s) => ({
       design: {
@@ -436,14 +494,6 @@ export const useStore = create<State>((set, get) => ({
       .filter((d) => ids.includes(d.id))
       .map((d) => {
         const base = { ...d, id: uid(d.type[0]) } as DecorElement;
-        if (base.type === 'art') {
-          // Art carries absolute rings rather than an anchor, so a copy has to
-          // be translated point by point.
-          return {
-            ...base,
-            rings: base.rings.map((r) => r.map((p) => ({ x: p.x + offsetMm, y: p.y + offsetMm }))),
-          } as DecorElement;
-        }
         return { ...base, x: base.x + offsetMm, y: base.y + offsetMm } as DecorElement;
       });
     if (copies.length === 0) return [];
@@ -454,18 +504,14 @@ export const useStore = create<State>((set, get) => ({
     return copies.map((c) => c.id);
   },
 
-  placeDecor: (id, x, y, originRings) =>
+  // Traced artwork used to be the exception here, carrying absolute outlines
+  // that had to be translated point by point from where the drag began. It has
+  // an origin of its own now, so everything moves the same way.
+  placeDecor: (id, x, y) =>
     set((s) => ({
       design: {
         ...s.design,
-        decor: s.design.decor.map((d) => {
-          if (d.id !== id) return d;
-          if (d.type !== 'art') return { ...d, x, y } as DecorElement;
-          // For art, x and y are a delta rather than an anchor: the rings are
-          // translated from the positions they had when the drag began.
-          const src = originRings ?? d.rings;
-          return { ...d, rings: src.map((r) => r.map((p) => ({ x: p.x + x, y: p.y + y }))) };
-        }),
+        decor: s.design.decor.map((d) => (d.id === id ? { ...d, x, y } as DecorElement : d)),
       },
     })),
 
@@ -481,6 +527,8 @@ export const useStore = create<State>((set, get) => ({
       set({
         design: session.design,
         savedDesign: session.design,
+        past: [],
+        future: [],
         designName: session.designName,
         activeDesignId: session.activeDesignId,
         dirty: session.dirty,
@@ -559,6 +607,8 @@ export const useStore = create<State>((set, get) => ({
     set({
       design: found.design,
       savedDesign: found.design,
+      past: [],
+      future: [],
       activeDesignId: id,
       designName: found.name,
       dirty: false,
@@ -601,12 +651,56 @@ export const useStore = create<State>((set, get) => ({
     }
   },
 
+  /**
+   * Step back, and forward again.
+   *
+   * The panel is the unit: its cutouts, its decor, its settings and its name.
+   * Not the library or the rack, which are filing rather than drawing, and
+   * where an undo would be a surprise rather than a convenience.
+   *
+   * Nothing is recorded while one of these is running, or the step back would
+   * itself become something to step back from.
+   */
+  undo: () => {
+    const { past, design, designName, savedDesign } = get();
+    const prev = past[past.length - 1];
+    if (!prev) return;
+    restoring = true;
+    set({
+      past: past.slice(0, -1),
+      future: [...get().future, { design, designName }],
+      design: prev.design,
+      designName: prev.designName,
+      selectedIds: [],
+      dirty: prev.design !== savedDesign,
+    });
+    restoring = false;
+  },
+
+  redo: () => {
+    const { future, design, designName, savedDesign } = get();
+    const next = future[future.length - 1];
+    if (!next) return;
+    restoring = true;
+    set({
+      future: future.slice(0, -1),
+      past: [...get().past, { design, designName }],
+      design: next.design,
+      designName: next.designName,
+      selectedIds: [],
+      dirty: next.design !== savedDesign,
+    });
+    restoring = false;
+  },
+
   newDesign: () => {
     void clearSession();
     set({
       design: DEFAULT_DESIGN,
       savedDesign: DEFAULT_DESIGN,
       activeDesignId: null,
+      past: [],
+      future: [],
       designName: 'Untitled panel',
       dirty: false,
       selectedIds: [],
@@ -788,6 +882,8 @@ export const useStore = create<State>((set, get) => ({
       design: DEFAULT_DESIGN,
       savedDesign: DEFAULT_DESIGN,
       dirty: false,
+      past: [],
+      future: [],
       selectedIds: [],
       sourceImage: null,
       sourceUrl: null,
@@ -1031,4 +1127,35 @@ useStore.subscribe((state, prev) => {
   if (state.design === prev.design || state.dirty) return;
   if (state.design === state.savedDesign) return;
   useStore.setState({ dirty: true });
+});
+
+/**
+ * Keep the panel's previous states, so an edit can be taken back.
+ *
+ * Recorded here for the same reason dirty is: every edit replaces the design
+ * object, so one rule catches all of them including the ones not written yet.
+ * A load replaces it too, which is why those clear the history themselves
+ * rather than being recorded as a step.
+ */
+useStore.subscribe((state, prev) => {
+  if (restoring) return;
+  if (state.design === prev.design && state.designName === prev.designName) return;
+  if (state.design === state.savedDesign && state.past.length === 0) return;
+
+  const now = Date.now();
+  const burst = now - lastPushAt < COALESCE_MS && state.past.length > 0;
+  lastPushAt = now;
+  if (burst) {
+    // Already holding the state before this gesture began; a later frame of
+    // the same gesture is not a step of its own.
+    if (state.future.length > 0) useStore.setState({ future: [] });
+    return;
+  }
+
+  const past = [...state.past, { design: prev.design, designName: prev.designName }];
+  useStore.setState({
+    past: past.length > HISTORY_LIMIT ? past.slice(past.length - HISTORY_LIMIT) : past,
+    // A fresh edit is a new branch, so there is nothing left to redo.
+    future: [],
+  });
 });

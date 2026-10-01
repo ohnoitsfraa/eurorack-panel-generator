@@ -1,6 +1,6 @@
 import type { Font } from 'opentype.js';
 import { COMPONENT_SPECS, mountSlotPositions, panelHeightMm, panelWidthMm, MOUNT_SLOT } from '../eurorack';
-import type { DecorElement, Feature, Mesh, PanelDesign } from '../types';
+import { artRings, type DecorElement, type Feature, type Mesh, type PanelDesign, type ReliefMode } from '../types';
 import {
   circleRing, ensureWinding, nestRings, pointInRing, ringsOverlap,
   roundedRectRing, signedArea, slotRing, type Region, type Ring,
@@ -121,7 +121,7 @@ export function buildPanel(design: PanelDesign, opts: BuildOptions): BuildResult
   );
 
   const decor = resolveDecor(design, opts, warnings, pending);
-  const engravedGroups: Array<{ regions: Region[]; depth: number; color: string }> = [];
+  const engravedGroups: Array<{ regions: Region[]; depth: number; color: string; fill: boolean }> = [];
   const raisedMeshes: Mesh[] = [];
   // Engraved areas already claimed, so two overlapping engravings at different
   // depths cannot both cut the same material.
@@ -136,7 +136,7 @@ export function buildPanel(design: PanelDesign, opts: BuildOptions): BuildResult
     const regions = cleanRegions(nestRings(ringsUp));
     if (regions.length === 0) continue;
 
-    if (d.mode !== 'engraved') {
+    if (d.mode === 'raised') {
       const mb = new MeshBuilder();
       addPrism(mb, regions, t - EMBED_MM, t + d.reliefMm);
       if (mb.triangleCount > 0) raisedMeshes.push(mb.build(d.label, d.color));
@@ -161,7 +161,7 @@ export function buildPanel(design: PanelDesign, opts: BuildOptions): BuildResult
       warnings.push(`"${d.label}" crosses a cutout or the panel edge and was trimmed to fit.`);
     }
 
-    engravedGroups.push({ regions: clipped, depth, color: d.color });
+    engravedGroups.push({ regions: clipped, depth, color: d.color, fill: d.mode === 'flush' });
     claimed = claimed.length ? cleanRegions([...claimed, ...clipped]) : clipped;
   }
 
@@ -200,10 +200,11 @@ export function buildPanel(design: PanelDesign, opts: BuildOptions): BuildResult
 
   const meshes: Mesh[] = [panel.build('panel', design.backgroundColor)];
 
-  // A pocket in a differently coloured decor element gets a matching inlay
-  // solid, which is how a two-material printer fills an engraving. When the
-  // colours match there is nothing to fill and the pocket stays open.
+  // A flush element is the pocket plus the plug that fills it, which is how a
+  // two-material printer gives a level face two colours. An engraving is left
+  // open: that is what makes it an engraving.
   for (const g of engravedGroups) {
+    if (!g.fill) continue;
     if (g.color.toLowerCase() === design.backgroundColor.toLowerCase()) continue;
     const mb = new MeshBuilder();
     addPrism(mb, g.regions, t - g.depth, t);
@@ -262,7 +263,7 @@ export function featureRing(f: Feature, margin = 0): Ring | null {
 interface ResolvedDecor {
   label: string;
   rings: Ring[];
-  mode: 'raised' | 'engraved';
+  mode: ReliefMode;
   reliefMm: number;
   color: string;
 }
@@ -283,7 +284,7 @@ function resolveDecor(
       }
       out.push({ ...common, label: `text: ${el.text.slice(0, 24)}`, rings: textToRings(el, font) });
     } else if (el.type === 'art') {
-      out.push({ ...common, label: 'artwork', rings: el.rings });
+      out.push({ ...common, label: 'artwork', rings: artRings(el) });
     } else {
       out.push({ ...common, label: `shape: ${el.shape}`, rings: shapeRings(el) });
     }

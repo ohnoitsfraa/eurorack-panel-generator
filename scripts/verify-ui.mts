@@ -141,6 +141,120 @@ async function open(colorScheme: 'light' | 'dark' = 'dark') {
   await page.close();
 }
 
+// --- keyboard: shapes, labels, undo, save ---
+{
+  const { page, problems } = await open();
+  const cutouts = () => page.evaluate(() =>
+    +(document.body.innerText.match(/· (\d+) cutouts/)?.[1] ?? -1));
+  const decor = () => page.locator('[data-decor]').count();
+  const place = async (key: string, mx: number, my: number) => {
+    await page.keyboard.press(key);
+    await page.waitForTimeout(150);
+    const at = await page.evaluate(([x, y]) => {
+      const el = document.querySelector('[data-panel-canvas]') as SVGSVGElement;
+      const q = new DOMPoint(x, y).matrixTransform(el.getScreenCTM()!);
+      return { x: q.x, y: q.y };
+    }, [mx, my] as [number, number]);
+    await page.mouse.click(at.x, at.y);
+    await page.waitForTimeout(250);
+  };
+
+  // A letter from each shape's own name, so they can be guessed.
+  await place('c', 12, 20);
+  await place('r', 12, 45);
+  await place('u', 12, 70);
+  await place('s', 12, 95);
+  if ((await cutouts()) === 4) pass('c, r, u and s each arm their own shape');
+  else fail(`the four shape keys produced ${await cutouts()} cutouts`);
+
+  await page.keyboard.press('t');
+  if ((await decor()) === 1) pass('t drops in a text label');
+  else fail(`t produced ${await decor()} pieces of decor`);
+
+  // Typing into a label where it sits, rather than going to the sidebar. The
+  // outlines only exist once the font has arrived, so wait for them rather
+  // than for a guess at how long that takes.
+  const hit = page.locator('[data-decor="text"] rect[fill="transparent"]').first();
+  await hit.waitFor({ timeout: 30000 });
+  if ((await hit.evaluate((e) => getComputedStyle(e).cursor)) === 'move') {
+    pass('and hovering it offers to move it, not to type');
+  } else {
+    fail('a label advertises a text cursor when a single drag moves it');
+  }
+  await hit.dblclick();
+  await page.waitForTimeout(400);
+  const editor = page.locator('input[aria-label="Label text"]');
+  if ((await editor.count()) === 1) pass('double-clicking it opens an editor over the label');
+  else fail('double-clicking a label did not open an editor');
+  if ((await page.evaluate(() => document.activeElement?.getAttribute('aria-label'))) === 'Label text') {
+    pass('with the caret already in it');
+  } else {
+    fail('the editor opened without the caret, so nothing typed would reach it');
+  }
+
+  await page.keyboard.type('CV IN');
+  await page.waitForTimeout(300);
+  const named = async () => (await page.locator('aside').last().locator('li').first().innerText()).split('\n')[0];
+  if ((await named()) === 'CV IN') pass('and what is typed goes straight onto the panel');
+  else fail(`the label says ${JSON.stringify(await named())} after typing`);
+
+  // Both ways out keep the typing, and both actually leave.
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(300);
+  if ((await editor.count()) === 0 && (await named()) === 'CV IN') pass('Escape leaves, keeping it');
+  else fail('Escape did not close the editor');
+  await hit.dblclick();
+  await page.waitForTimeout(300);
+  await page.mouse.click(1100, 700);
+  await page.waitForTimeout(300);
+  if ((await editor.count()) === 0) pass('and so does clicking away');
+  else fail('the editor stayed open after a click elsewhere');
+
+  // Arrow keys moved cutouts but not decor, which is the same operation on
+  // the same kind of thing.
+  await page.locator('[data-decor="text"] rect[fill="transparent"]').first().click();
+  await page.waitForTimeout(250);
+  const boxBefore = await page.locator('[data-decor="text"]').first().boundingBox();
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('ArrowRight');
+  await page.waitForTimeout(300);
+  const boxAfter = await page.locator('[data-decor="text"]').first().boundingBox();
+  if (boxBefore && boxAfter && boxAfter.x > boxBefore.x + 0.5) pass('arrow keys nudge a label too');
+  else fail(`the label did not move: ${boxBefore?.x} -> ${boxAfter?.x}`);
+
+  // Undo, redo, save. A cutout of its own to step back over, placed after a
+  // pause: edits close together are deliberately one step, so without the wait
+  // this would be undoing the label edits above and the count would not move.
+  await page.waitForTimeout(600);
+  await place('c', 30, 110);
+  const had = await cutouts();
+  await page.waitForTimeout(600);
+  await page.keyboard.press('Meta+z');
+  await page.waitForTimeout(400);
+  const undone = await cutouts();
+  await page.keyboard.press('Meta+Shift+z');
+  await page.waitForTimeout(400);
+  if (undone === had - 1 && (await cutouts()) === had) pass('Cmd-Z steps back and Cmd-Shift-Z forward');
+  else fail(`undo went ${had} -> ${undone} -> ${await cutouts()}`);
+
+  await page.getByLabel('Panel name').fill('Keyboard panel');
+  await page.keyboard.press('Meta+s');
+  await page.waitForTimeout(700);
+  const save = (await page.getByRole('button', { name: /^Save/ }).first().innerText()).trim();
+  if (save === 'Saved') pass('and Cmd-S saves from wherever you are');
+  else fail(`the save button reads "${save}" after Cmd-S`);
+
+  if (problems.length === 0) pass('no uncaught errors from the keyboard');
+  else fail(`keyboard: ${[...new Set(problems)].join(' | ')}`);
+
+  await page.getByRole('button', { name: /^Clear/ }).first().click().catch(() => {});
+  await page.waitForTimeout(200);
+  const gone = page.getByRole('button', { name: /clear everything/i }).first();
+  if (await gone.count()) await gone.click();
+  await page.waitForTimeout(500);
+  await page.close();
+}
+
 // --- Alt-drag duplicates, and does so visibly ---
 {
   const { page, problems } = await open();

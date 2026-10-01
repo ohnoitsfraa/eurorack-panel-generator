@@ -205,6 +205,69 @@ that blocks on the network is worse than one missing a label for a moment, but
 an export settles every outstanding font first and rebuilds from fresh state.
 The file is the thing being made.
 
+### Relief, and the flush mode
+
+A piece of decor meets the panel face in one of three ways. `raised` stands
+proud of it. `engraved` is cut into it and left open. `flush` keeps the face
+level and changes only the colour — the slicer's idea rather than the
+modeller's, and what Orca calls a modifier. It is built as a shallow pocket
+with a plug of the second colour filling it exactly, which is what a
+two-material printer needs and what any slicer can read; how deep it goes is
+how many layers print in that colour.
+
+Flush used to happen by accident: an engraving in a colour other than the
+panel's was filled automatically, and one in the same colour was not. Whether
+a recess got filled should not depend on a colour picked for the drawing, so
+it is a choice now. Designs saved before this have their coloured engravings
+read as flush, which is what they were already being built as.
+
+### Moving, scaling and turning traced artwork
+
+Traced outlines are kept in a frame of their own, centred on the element's
+origin, with position, scale and rotation alongside. They used to be stored in
+panel coordinates with no transform, which meant a drag rewrote every point —
+a traced logo runs to thousands of them — and there was no way to scale or
+turn one at all. `artRings` applies the transform wherever the geometry is
+needed, and artwork now moves, nudges, duplicates and lines up exactly like
+everything else.
+
+### Typing into a label
+
+Double-clicking a label on the canvas opens a box over it. Plain HTML
+positioned from the SVG's own matrix rather than a foreignObject inside it: an
+input within the SVG inherits the panel's transform, and a caret in a rotated,
+scaled coordinate system is an argument with the browser. Every keystroke goes
+straight to the label, so the panel shows what is being written. Enter, Escape
+and clicking away all end it and keep what was typed.
+
+The box focuses itself from the node rather than from an effect, because the
+box it sits in is measured in an effect of its own: on the first render there
+is no input to focus yet, and an effect that ran then found nothing — which
+left every keystroke, Escape included, going to the canvas instead. Clicking
+away is caught on a capturing pointerdown as well as on blur, since the canvas
+takes the pointer for dragging and the marquee without focus necessarily
+moving.
+
+### Keyboard
+
+| | |
+| --- | --- |
+| `C` `R` `U` `S` | arm a circle, rectangle, roUnded rectangle or slot |
+| `T` `L` | drop in a text label, or a line |
+| arrows | nudge the selection by the grid pitch, Shift for five |
+| `⌘Z` `⌘⇧Z` | step back and forward |
+| `⌘S` | save to the library |
+| `⌘D` | duplicate |
+| Backspace | delete |
+| Escape | drop the tool and the selection |
+
+Undo covers the panel — its cutouts, decor, settings and name — and not the
+library or the rack, which are filing rather than drawing. Edits closer
+together than 450 ms are one step: a drag writes a position on every pointer
+move and typing writes a string on every key, and walking back through a drag
+a pixel at a time is not what "undo that" means. Opening another panel clears
+the history rather than letting an undo reach into someone else's work.
+
 ### Guides, and how far apart things are
 
 While something is dragged its centre is compared against everything else on

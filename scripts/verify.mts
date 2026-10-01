@@ -69,6 +69,18 @@ const pass = (msg: string) => console.log(`  ok    ${msg}`);
  * same way across a shared edge. Positive enclosed volume then confirms the
  * normals point out rather than in.
  */
+/** Enclosed volume of a mesh, by the divergence theorem. */
+function signedVolume(mesh: Mesh): number {
+  const p = mesh.positions;
+  let v = 0;
+  for (let i = 0; i < p.length; i += 9) {
+    v += (p[i] * (p[i + 4] * p[i + 8] - p[i + 5] * p[i + 7])
+      - p[i + 1] * (p[i + 3] * p[i + 8] - p[i + 5] * p[i + 6])
+      + p[i + 2] * (p[i + 3] * p[i + 7] - p[i + 4] * p[i + 6])) / 6;
+  }
+  return v;
+}
+
 function checkSolid(mesh: Mesh, label: string): void {
   const p = mesh.positions;
   const q = 1e5;
@@ -150,17 +162,52 @@ console.log('\nPanel geometry');
     checkSolid(m, `raised decor / ${m.name}`);
   }
 
+  // An engraving is a recess and is left open; a flush element is the same
+  // pocket with the piece that fills it, which is what gives a level face two
+  // colours on a two-material printer.
   const engraved = buildPanel(
     { ...BASE, features, decor: [{ ...shape, mode: 'engraved', color: '#ff8800' }] },
     { fonts: noFonts },
   );
   for (const m of engraved.meshes) checkSolid(m, `engraved decor / ${m.name}`);
+  if (engraved.meshes.length === 1) pass('an engraving is left open, with nothing filling it');
+  else fail(`engraved decor emitted ${engraved.meshes.length} objects, expected just the panel`);
 
-  // The pocket must actually remove material, and the inlay must replace it.
-  const plainVol = 40.34 * 128.5 * 2;
-  if (engraved.meshes.length === 2) pass('engraved decor emits a matching inlay object');
-  else fail(`engraved decor should emit panel + inlay, got ${engraved.meshes.length} object(s)`);
-  void plainVol;
+  const flush = buildPanel(
+    { ...BASE, features, decor: [{ ...shape, mode: 'flush', color: '#ff8800' }] },
+    { fonts: noFonts },
+  );
+  for (const m of flush.meshes) checkSolid(m, `flush decor / ${m.name}`);
+
+  if (flush.meshes.length === 2) pass('a flush element emits the panel and a piece to fill it');
+  else fail(`flush decor should emit panel + fill, got ${flush.meshes.length} object(s)`);
+
+  // Filling it in the panel's own colour would be two objects that print as
+  // one, so there is nothing to add.
+  const sameColour = buildPanel(
+    { ...BASE, features, decor: [{ ...shape, mode: 'flush', color: BASE.backgroundColor }] },
+    { fonts: noFonts },
+  );
+  if (sameColour.meshes.length === 1) pass('and none when the colour is the panel\'s own');
+  else fail(`a flush element in the panel colour emitted ${sameColour.meshes.length} objects`);
+
+  // The pocket has to take material out, and the piece has to be the size of
+  // the hole it fills — otherwise two colours meet at a gap or an overlap.
+  {
+    const pocket = 30 * 5 * 0.6; // the shape, at its relief depth
+    // Against the same panel without the decor, rather than against a bare
+    // rectangle: these cutouts take material out as well.
+    const plainVol = signedVolume(buildPanel({ ...BASE, features }, { fonts: noFonts }).meshes[0]);
+    const panelVol = signedVolume(flush.meshes[0]);
+    const fillVol = signedVolume(flush.meshes[1]);
+    if (Math.abs(panelVol - (plainVol - pocket)) < pocket * 0.08) {
+      pass('the pocket removes what it should from the panel');
+    } else {
+      fail(`panel came to ${panelVol.toFixed(1)} mm³, expected about ${(plainVol - pocket).toFixed(1)}`);
+    }
+    if (Math.abs(fillVol - pocket) < pocket * 0.08) pass('and the filling piece is the size of the hole');
+    else fail(`the fill came to ${fillVol.toFixed(1)} mm³, expected about ${pocket.toFixed(1)}`);
+  }
 }
 
 // ------------------------------------------------------------- 2. refusals
@@ -653,25 +700,60 @@ console.log('\nEditor actions');
     fail('placeDecor did not move the text element');
   }
 
+  // Artwork keeps its outlines in a frame of its own and carries a transform,
+  // so it moves, scales and turns like everything else rather than having
+  // thousands of points rewritten on every drag.
+  const { artRings: ringsOf } = await import('../src/lib/types');
   st().addDecor({
     id: 'a1', type: 'art', color: '#fff', mode: 'raised', reliefMm: 0.6,
-    rings: [[{ x: 0, y: 0 }, { x: 4, y: 0 }, { x: 4, y: 4 }]],
+    x: 0, y: 0, scale: 1, rotation: 0,
+    rings: [[{ x: -2, y: -2 }, { x: 2, y: -2 }, { x: 2, y: 2 }]],
   });
-  const before = st().design.decor.find((d) => d.id === 'a1');
-  const origin = before && before.type === 'art' ? before.rings : [];
-  st().placeDecor('a1', 5, 7, origin);
+  st().placeDecor('a1', 5, 7);
   const art = st().design.decor.find((d) => d.id === 'a1');
-  if (art && art.type === 'art' && art.rings[0][0].x === 5 && art.rings[0][0].y === 7 &&
-      art.rings[0][1].x === 9) {
-    pass('dragging artwork translates its outlines');
+  if (art && art.type === 'art' && art.x === 5 && art.y === 7 && art.rings[0][0].x === -2) {
+    pass('dragging artwork moves its origin, leaving the outlines alone');
   } else {
-    fail('placeDecor did not translate the artwork rings');
+    fail('placeDecor did not move the artwork');
+  }
+
+  // Where it actually sits is the transform applied to those outlines.
+  if (art && art.type === 'art') {
+    const placed = ringsOf(art);
+    if (Math.abs(placed[0][0].x - 3) < 1e-9 && Math.abs(placed[0][0].y - 5) < 1e-9) {
+      pass('and the outlines land where the origin puts them');
+    } else {
+      fail(`first point came out at ${placed[0][0].x}, ${placed[0][0].y}, expected 3, 5`);
+    }
+
+    // Scaling is about its own origin, so it grows in place rather than
+    // wandering off across the panel.
+    st().updateDecor('a1', { scale: 2 });
+    const big = st().design.decor.find((d) => d.id === 'a1');
+    const grown = big && big.type === 'art' ? ringsOf(big) : [];
+    if (Math.abs(grown[0][0].x - 1) < 1e-9 && Math.abs(grown[0][0].y - 3) < 1e-9) {
+      pass('scaling grows it about its own origin');
+    } else {
+      fail(`scaled first point ${grown[0]?.[0]?.x}, ${grown[0]?.[0]?.y}, expected 1, 3`);
+    }
+
+    // A quarter turn takes the corner at (-2,-2) round to (2,-2) in its own
+    // frame, which lands 4 mm to the right of where it was.
+    st().updateDecor('a1', { scale: 1, rotation: 90 });
+    const turned = st().design.decor.find((d) => d.id === 'a1');
+    const spun = turned && turned.type === 'art' ? ringsOf(turned) : [];
+    if (Math.abs(spun[0][0].x - 7) < 1e-9 && Math.abs(spun[0][0].y - 5) < 1e-9) {
+      pass('and rotation turns it about the same point');
+    } else {
+      fail(`turned first point ${spun[0]?.[0]?.x}, ${spun[0]?.[0]?.y}, expected 7, 5`);
+    }
+    st().updateDecor('a1', { rotation: 0 });
   }
 
   const dupArt = st().duplicateDecor(['a1'], 0);
   const copy = st().design.decor.find((d) => d.id === dupArt[0]);
-  if (copy && copy.type === 'art' && copy.rings[0][0].x === 5 && dupArt[0] !== 'a1') {
-    pass('duplicating artwork copies its outlines');
+  if (copy && copy.type === 'art' && copy.x === 5 && copy.y === 7 && dupArt[0] !== 'a1') {
+    pass('duplicating artwork copies it, transform and all');
   } else {
     fail('duplicateDecor did not copy the artwork');
   }
@@ -1570,6 +1652,79 @@ console.log('\nEvery edit leaves the panel unsaved');
   await st().clearEverything();
   if (!st().dirty) pass('nor is clearing everything');
   else fail('clearing everything left an empty panel looking unsaved');
+}
+
+// ------------------------------------------------------------- 7a2. undo/redo
+console.log('\nStepping back and forward');
+{
+  const { useStore } = await import('../src/lib/store');
+  const st = () => useStore.getState();
+  const pause = () => new Promise((r) => setTimeout(r, 500));
+
+  st().newDesign();
+  if (st().past.length === 0) pass('a fresh panel has nothing to step back to');
+  else fail(`a new panel came up with ${st().past.length} steps behind it`);
+
+  // Edits far enough apart to be separate steps.
+  st().addFeature('circle', 10, 10);
+  await pause();
+  st().addFeature('circle', 20, 20);
+  await pause();
+  const two = st().design.features.length;
+
+  st().undo();
+  if (st().design.features.length === two - 1) pass('undo takes back the last edit');
+  else fail(`after undo there were ${st().design.features.length} cutouts, expected ${two - 1}`);
+
+  st().undo();
+  if (st().design.features.length === two - 2) pass('and the one before it');
+  else fail(`after a second undo there were ${st().design.features.length}`);
+
+  st().redo();
+  st().redo();
+  if (st().design.features.length === two) pass('redo puts them back');
+  else fail(`after redo there were ${st().design.features.length}, expected ${two}`);
+
+  // A new edit is a new branch, so there is nothing left to go forward to.
+  st().undo();
+  await pause();
+  st().addFeature('circle', 30, 30);
+  if (st().future.length === 0) pass('an edit after undoing clears what was undone');
+  else fail(`${st().future.length} steps were still waiting to be redone`);
+
+  // A drag writes a position on every pointer move; walking back through one
+  // a pixel at a time is not what "undo that" means.
+  await pause();
+  const id = st().design.features[0].id;
+  const start = st().design.features[0].x;
+  const steps = st().past.length;
+  for (let i = 1; i <= 20; i++) st().updateFeature(id, { x: start + i });
+  if (st().past.length === steps + 1) pass('a burst of edits is one step, not twenty');
+  else fail(`a 20-frame drag left ${st().past.length - steps} steps behind it`);
+  st().undo();
+  if (st().design.features[0].x === start) pass('and stepping back undoes the whole gesture');
+  else fail(`x came back as ${st().design.features[0].x}, expected ${start}`);
+
+  // Opening another panel is not something to undo into.
+  st().setDesignName('Stepped');
+  st().saveCurrentDesign();
+  const saved = st().activeDesignId!;
+  st().newDesign();
+  if (st().past.length === 0 && st().future.length === 0) pass('starting a new panel clears the history');
+  else fail('a new panel kept the previous one in its history');
+  st().openDesign(saved);
+  if (st().past.length === 0) pass('and so does opening a saved one');
+  else fail('opening a panel left another one behind it in the history');
+
+  // Nothing to step back to is not an error; it is just nothing.
+  st().newDesign();
+  const quiet = st().design;
+  st().undo();
+  st().redo();
+  if (st().design === quiet) pass('undo and redo on an empty history do nothing at all');
+  else fail('an empty history still changed the panel');
+
+  await st().clearEverything();
 }
 
 // ------------------------------------------------- 7b. the reference photo
