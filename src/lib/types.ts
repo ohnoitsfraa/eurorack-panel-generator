@@ -305,6 +305,8 @@ export interface DetectionResult {
   debugMask?: ImageData;
   /** Detections discarded as printing rather than hardware. */
   droppedAsMarkings?: number;
+  /** Of those, the letters recognised as lettering, each counted once. */
+  droppedAsLettering?: number;
 }
 
 export interface DetectSettings {
@@ -320,6 +322,11 @@ export interface DetectSettings {
   detectRects: boolean;
   /** Snap detected centres onto a grid of this pitch, mm. 0 disables. */
   snapMm: number;
+  /**
+   * Recognise the panel's lettering and keep it from becoming cutouts. On
+   * unless a row of real hardware is ever mistaken for a word.
+   */
+  ignoreLettering: boolean;
 }
 
 export const DEFAULT_DETECT_SETTINGS: DetectSettings = {
@@ -331,6 +338,7 @@ export const DEFAULT_DETECT_SETTINGS: DetectSettings = {
   detectSlots: true,
   detectRects: true,
   snapMm: 0,
+  ignoreLettering: true,
 };
 
 /** A rectangle in source-image pixels. */

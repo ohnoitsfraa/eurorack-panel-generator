@@ -4,6 +4,7 @@ import { blur, cropImage, fitWithin, percentiles, toGray, type Gray } from './im
 import { binarizeDark, thresholdLadder } from './threshold';
 import { findBlobs, type Blob } from './components';
 import { classifyBlob, type Candidate } from './classify';
+import { findLettering, letteringHit } from './lettering';
 import { COMPONENT_SPECS, type FeatureKind } from '../eurorack';
 
 /** Working resolution. Big enough to resolve a 3 mm LED, small enough to be instant. */
@@ -79,6 +80,10 @@ export function detectFeatures(input: DetectInput): DetectionResult {
 
   const gray = blur(toGray(work), 1);
   const blobs = sweepThresholds(gray, settings, mmPerPx);
+  // Once per picture, not per threshold level: the lettering is a property
+  // of the panel, and each reading is checked against it where it sits.
+  const lettering = settings.ignoreLettering ? findLettering(gray, mmPerPx) : null;
+  const letters = new Set<string>();
 
   const candidates: Candidate[] = [];
   for (const b of blobs) {
@@ -90,6 +95,11 @@ export function detectFeatures(input: DetectInput): DetectionResult {
     // A slot is a rectangle rounded into a stadium; a display cutout is not.
     if (c.feature.kind === 'slider' && !settings.detectSlots) continue;
     if (c.feature.kind === 'display' && !settings.detectRects) continue;
+    // Lettering goes before anything else sees it. Left in, a letter read as
+    // a hole would be merged, vote on the size of real holes, and could be
+    // found to overlap a real jack beside it and take that jack down too.
+    const letter = lettering ? letteringHit(lettering, b, c) : null;
+    if (letter !== null) { letters.add(letter); continue; }
     c.feature.x = round3(b.cx * mmPerPxX);
     c.feature.y = round3(b.cy * mmPerPxY);
     candidates.push(c);
@@ -100,7 +110,8 @@ export function detectFeatures(input: DetectInput): DetectionResult {
   const unified = unifyByCluster(surviving);
   const smeared = dropSmears(unified);
   const impossible = dropImpossibleRuns(smeared.kept);
-  const droppedAsMarkings = smeared.dropped + impossible.droppedAsMarkings;
+  const droppedAsLettering = letters.size;
+  const droppedAsMarkings = smeared.dropped + impossible.droppedAsMarkings + droppedAsLettering;
   const kept = impossible.kept.map((c) => c.feature);
 
   const snapped = settings.snapMm > 0 ? kept.map((f) => snapFeature(f, settings.snapMm)) : kept;
@@ -109,7 +120,7 @@ export function detectFeatures(input: DetectInput): DetectionResult {
   // Report the scale against the crop the user actually sees, not the
   // downsampled copy we analysed, so the figure in the UI is checkable.
   const workScale = work.width / cropped.width;
-  return { features: snapped, mmPerPx: mmPerPx * workScale, crop, droppedAsMarkings };
+  return { features: snapped, mmPerPx: mmPerPx * workScale, crop, droppedAsMarkings, droppedAsLettering };
 }
 
 function sweepThresholds(gray: Gray, settings: DetectSettings, mmPerPx: number): Blob[] {
@@ -259,9 +270,19 @@ function dropImpossibleRuns(cands: Candidate[]): { kept: Candidate[]; droppedAsM
     // Two is enough. Merging has already folded together anything that was one
     // hole found twice, so whatever still overlaps afterwards is two separate
     // detections claiming to be holes that would run into each other — which
-    // cannot be true of either, so both go.
+    // cannot be true of all of them.
     if (members.length < 2) continue;
-    for (const i of members) drop.add(i);
+    // One round reading clearly bigger than the rest is the hardware, and the
+    // rest are printing beside it: an icon next to a button, a dot next to a
+    // jack. Dropping the lot would throw the button out with the icon. Marks
+    // of much the same size, as the letters of a word are, all go. Only for
+    // round ones: a printed box with its label inside is a rectangle bigger
+    // than the letters too, and is no more a window for it.
+    const sized = members.map((i) => cands[i].measuredMm);
+    const biggest = members[sized.indexOf(Math.max(...sized))];
+    const clear = members.every((i) => cands[i].feature.shape === 'circle')
+      && members.every((i) => i === biggest || cands[biggest].measuredMm >= 1.4 * cands[i].measuredMm);
+    for (const i of members) if (!(clear && i === biggest)) drop.add(i);
   }
 
   return {

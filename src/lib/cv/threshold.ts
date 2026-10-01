@@ -34,6 +34,18 @@ export function binarizeDark(g: Gray, t: number): Uint8Array {
 }
 
 /**
+ * Binary mask of pixels lighter than `t`.
+ *
+ * Holes are dark, so this is not for finding them. It is for finding light
+ * lettering on a dark panel, whose counters would otherwise pass for holes.
+ */
+export function binarizeLight(g: Gray, t: number): Uint8Array {
+  const out = new Uint8Array(g.data.length);
+  for (let i = 0; i < out.length; i++) out[i] = g.data[i] > t ? 1 : 0;
+  return out;
+}
+
+/**
  * Threshold levels to sweep when hunting for blobs.
  *
  * A single global threshold fails on real photographs: a black jack nut and a

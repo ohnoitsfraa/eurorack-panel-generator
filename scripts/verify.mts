@@ -479,10 +479,209 @@ console.log('\nDetection on a synthetic panel');
     else fail(`${r3.features.length} cutouts from two tight but legal holes`);
   }
 
+  // A small printed mark right beside a jack — an icon, a bullet — would
+  // overlap it as holes. Only one of them can be the mistake, and the much
+  // bigger one is the hardware: it stays, the mark goes.
+  {
+    const img4 = new ImageDataShim(iw, ih);
+    for (let i = 0; i < iw * ih; i++) {
+      const p = i * 4;
+      img4.data[p] = 205; img4.data[p + 1] = 205; img4.data[p + 2] = 200; img4.data[p + 3] = 255;
+    }
+    const fill = (cxMm: number, cyMm: number, dMm: number) => {
+      const cx = cxMm * PPMM, cy = cyMm * PPMM, r = (dMm / 2) * PPMM;
+      for (let y = Math.floor(cy - r - 1); y <= Math.ceil(cy + r + 1); y++)
+        for (let x = Math.floor(cx - r - 1); x <= Math.ceil(cx + r + 1); x++) {
+          if (x < 0 || y < 0 || x >= iw || y >= ih) continue;
+          if ((x + 0.5 - cx) ** 2 + (y + 0.5 - cy) ** 2 <= r * r) {
+            const p = (y * iw + x) * 4;
+            img4.data[p] = 18; img4.data[p + 1] = 18; img4.data[p + 2] = 20;
+          }
+        }
+    };
+    // In the picture they are 0.4 mm apart, clearly two things; as a 6 mm
+    // jack hole and a 3 mm LED hole they would be 4.4 mm apart against
+    // 4.5 mm of radius, so they cannot both be holes.
+    fill(18, 60, 5.4);
+    fill(22.4, 60, 2.6);
+    const r4 = detectFeatures({
+      image: img4 as unknown as ImageData, hp: HP, format: '3U',
+      crop: { x: 0, y: 0, w: iw, h: ih },
+      settings: { ...DEFAULT_DETECT_SETTINGS, sensitivity: 0.5 },
+    });
+    const kept = r4.features.map((f) => `${f.kind} at ${f.x.toFixed(1)}`).join(', ');
+    if (r4.features.length === 1 && r4.features[0].kind === 'jack' && Math.abs(r4.features[0].x - 18) < 0.5) {
+      pass('a jack with a small mark beside it is kept, the mark is not');
+    } else {
+      fail(`a jack beside a small mark gave: ${kept || 'nothing'}`);
+    }
+  }
+
   // Every detection must map to a known component so the UI can label it.
   const unknown = res.features.filter((f) => !COMPONENT_SPECS[f.kind]);
   if (unknown.length === 0) pass('every detection has a component type');
   else fail(`${unknown.length} detection(s) with an unknown type`);
+}
+
+// ------------------------------------------------- 3b. lettering is not holes
+console.log('\nLettering is not cutouts');
+{
+  // Real glyphs, drawn the way a render or a photo shows them: an O is a ring
+  // like a knob outline, a 0 a disc like an LED, and on a dark panel the dark
+  // insides of O, D, 8 and B are dark islands exactly like holes.
+  const fontPath = await ensureTestFont();
+  if (!fontPath) {
+    console.log('  skip  no font available (set VERIFY_FONT to a .ttf to run these)');
+  } else {
+    const buf = readFileSync(fontPath);
+    const font = parse(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) as ArrayBuffer);
+    const { detectFeatures } = await import('../src/lib/cv/detect');
+
+    const scene = (ppmm: number, dark: boolean, source: 'artwork' | 'photo') => {
+      const HP = 12;
+      const W = panelWidthMm(HP);
+      const H = panelHeightMm('3U');
+      const iw = Math.round(W * ppmm), ih = Math.round(H * ppmm);
+      const img = new ImageDataShim(iw, ih);
+      const bg = dark ? 30 : 205, ink = dark ? 235 : 18, hole = dark ? 8 : 18;
+      for (let i = 0; i < iw * ih; i++) {
+        const p = i * 4;
+        img.data[p] = img.data[p + 1] = img.data[p + 2] = bg; img.data[p + 3] = 255;
+      }
+      const put = (x: number, y: number, v: number, c: number) => {
+        if (x < 0 || y < 0 || x >= iw || y >= ih) return;
+        const p = (y * iw + x) * 4;
+        for (let k = 0; k < 3; k++) img.data[p + k] = Math.round(img.data[p + k] * (1 - c) + v * c);
+      };
+      // Supersampled, so edges are soft like a real render.
+      const disc = (cx: number, cy: number, d: number, v: number) => {
+        const r = (d / 2) * ppmm, X = cx * ppmm, Y = cy * ppmm;
+        for (let y = Math.floor(Y - r - 1); y <= Math.ceil(Y + r + 1); y++) {
+          for (let x = Math.floor(X - r - 1); x <= Math.ceil(X + r + 1); x++) {
+            let c = 0;
+            for (let sy = 0; sy < 4; sy++) for (let sx = 0; sx < 4; sx++) {
+              if ((x + (sx + 0.5) / 4 - X) ** 2 + (y + (sy + 0.5) / 4 - Y) ** 2 <= r * r) c++;
+            }
+            if (c) put(x, y, v, c / 16);
+          }
+        }
+      };
+      const labels: Array<{ x0: number; y0: number; x1: number; y1: number; text: string }> = [];
+      // Filled by the nonzero rule: Inter's outlines overlap themselves, and
+      // even-odd would punch holes through A, K and M.
+      const text = (t: string, x: number, y: number, size: number, rotation = 0) => {
+        const rings = textToRings({
+          id: 't', type: 'text', text: t, x, y, sizeMm: size, fontFamily: 'Inter', fontWeight: 700,
+          letterSpacing: 0.15, align: 'center', rotation, color: '#ffffff', mode: 'raised', reliefMm: 0.6,
+        }, font);
+        const pts = rings.flat();
+        const box = {
+          x0: Math.min(...pts.map((p) => p.x)), x1: Math.max(...pts.map((p) => p.x)),
+          y0: Math.min(...pts.map((p) => p.y)), y1: Math.max(...pts.map((p) => p.y)), text: t,
+        };
+        labels.push(box);
+        const px0 = Math.floor(box.x0 * ppmm) - 1, px1 = Math.ceil(box.x1 * ppmm) + 1;
+        const py0 = Math.floor(box.y0 * ppmm) - 1, py1 = Math.ceil(box.y1 * ppmm) + 1;
+        const rw = px1 - px0 + 1;
+        const cov = new Float32Array(rw * (py1 - py0 + 1));
+        for (let py = py0; py <= py1; py++) {
+          for (let s = 0; s < 4; s++) {
+            const yy = (py + (s + 0.5) / 4) / ppmm;
+            const xs: Array<{ x: number; w: number }> = [];
+            for (const r of rings) {
+              for (let i = 0; i < r.length; i++) {
+                const a = r[i], b = r[(i + 1) % r.length];
+                if ((a.y <= yy) !== (b.y <= yy)) {
+                  xs.push({ x: (a.x + (yy - a.y) * (b.x - a.x) / (b.y - a.y)) * ppmm, w: b.y > a.y ? 1 : -1 });
+                }
+              }
+            }
+            xs.sort((p, q) => p.x - q.x);
+            let wind = 0;
+            for (let i = 0; i < xs.length - 1; i++) {
+              wind += xs[i].w;
+              if (wind === 0) continue;
+              for (let px = Math.floor(xs[i].x); px <= Math.floor(xs[i + 1].x); px++) {
+                const c = Math.min(px + 1, xs[i + 1].x) - Math.max(px, xs[i].x);
+                if (c > 0 && px >= px0 && px <= px1) cov[(py - py0) * rw + (px - px0)] += c / 4;
+              }
+            }
+          }
+        }
+        for (let py = py0; py <= py1; py++) {
+          for (let px = px0; px <= px1; px++) {
+            const c = Math.min(1, cov[(py - py0) * rw + (px - px0)]);
+            if (c > 0) put(px, py, ink, c);
+          }
+        }
+      };
+
+      // A render shows the aperture, a photo the hole with some of the nut.
+      const jackD = source === 'artwork' ? 4 : 8;
+      const ledD = source === 'artwork' ? 2.4 : 3;
+      const potD = source === 'artwork' ? 12 : 14;
+      const holes: Array<{ kind: string; x: number; y: number }> = [];
+      const jack = (x: number, y: number) => {
+        if (dark) disc(x, y, jackD + 3.5, 200); // a light nut round it
+        disc(x, y, jackD, hole);
+        holes.push({ kind: 'jack', x, y });
+      };
+      const led = (x: number, y: number) => {
+        if (dark) disc(x, y, ledD + 1.6, 210); // a light bezel
+        disc(x, y, ledD, dark ? 70 : hole);
+        holes.push({ kind: 'led', x, y });
+      };
+      const cx = W / 2;
+      text('RESONANCE', cx, 10, 2.5);
+      text('CV 1', cx, 20, 2.5);
+      disc(cx, 30, potD, dark ? 12 : 25); holes.push({ kind: 'pot', x: cx, y: 30 });
+      text('D0', 12, 44, 3);
+      text('80 BPM', 42, 44, 2.5);
+      // Letters standing alone, with no word around them to give them away.
+      text('8', 8, 54, 3); text('6', 18, 54, 3); text('0', 28, 54, 3); text('D', 38, 54, 3);
+      // Hardware in rows, which must not be read as words.
+      for (let i = 0; i < 6; i++) led(10 + i * 6, 66);
+      text('OUT', 15, 80, 2.5); jack(15, 86);
+      text('IN', 35, 80, 2.5); jack(35, 86);
+      text('OSC 0', 55, 100, 2.5, -90);
+      for (let i = 0; i < 4; i++) jack(10 + i * 10, 106);
+      // An LED beside its label, as clock and gate lights usually are.
+      text('CLK', 30, 120, 2.5); led(23, 120);
+      return { img, iw, ih, HP, labels, holes };
+    };
+
+    const onLabel = (f: Feature, labels: ReturnType<typeof scene>['labels']) =>
+      labels.find((b) => f.x >= b.x0 - 0.3 && f.x <= b.x1 + 0.3 && f.y >= b.y0 - 0.3 && f.y <= b.y1 + 0.3);
+
+    for (const [ppmm, dark, source] of [
+      [6.4, false, 'artwork'], [6.4, true, 'artwork'], [12, false, 'photo'], [12, true, 'photo'],
+    ] as const) {
+      const sc = scene(ppmm, dark, source);
+      const run = (ignoreLettering: boolean) => detectFeatures({
+        image: sc.img as unknown as ImageData, hp: sc.HP, format: '3U',
+        crop: { x: 0, y: 0, w: sc.iw, h: sc.ih },
+        settings: { ...DEFAULT_DETECT_SETTINGS, sourceKind: source, ignoreLettering },
+      });
+      const what = `${dark ? 'light text on a dark panel' : 'dark text on a light panel'}, ${source} at ${ppmm} px/mm`;
+
+      const res = run(true);
+      const stray = res.features.filter((f) => onLabel(f, sc.labels));
+      const missed = sc.holes.filter((h) => !res.features.some((f) => Math.hypot(f.x - h.x, f.y - h.y) < 1.5));
+      if (stray.length === 0) pass(`${what}: nothing detected on the lettering`);
+      else fail(`${what}: ${stray.map((f) => `${f.kind} on "${onLabel(f, sc.labels)!.text}"`).join(', ')}`);
+      if (missed.length === 0) pass(`${what}: all ${sc.holes.length} real holes still found, beside labels and in rows`);
+      else fail(`${what}: missed ${missed.map((h) => `${h.kind} at ${h.x},${h.y}`).join('; ')}`);
+
+      // The same picture without the filter has to go wrong, or the checks
+      // above would pass whether the filter did anything or not.
+      const unfiltered = run(false).features.filter((f) => onLabel(f, sc.labels));
+      if (unfiltered.length > 0 && (res.droppedAsLettering ?? 0) > 0) {
+        pass(`${what}: ${unfiltered.length} would land on lettering without it; ${res.droppedAsLettering} letters recognised`);
+      } else if (unfiltered.length > 0) {
+        fail(`${what}: lettering was avoided but none was reported as recognised`);
+      }
+    }
+  }
 }
 
 // ------------------------------------------------------------------- 4. text

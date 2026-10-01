@@ -69,6 +69,8 @@ interface State {
   mmPerPx: number | null;
   /** Marks the last detection discarded as printing rather than hardware. */
   droppedAsMarkings: number;
+  /** Of those, how many were recognised as lettering. */
+  droppedAsLettering: number;
   view: ViewMode;
   tab: InspectorTab;
   selectedIds: string[];
@@ -226,6 +228,7 @@ export const useStore = create<State>((set, get) => ({
   detecting: false,
   mmPerPx: null,
   droppedAsMarkings: 0,
+  droppedAsLettering: 0,
   view: '2d',
   tab: 'panel',
   selectedIds: [],
@@ -286,7 +289,7 @@ export const useStore = create<State>((set, get) => ({
   clearSource: () =>
     set({
       sourceImage: null, sourceUrl: null, sourceLabel: null, sourceHp: null, sourceBlob: null,
-      crop: null, mmPerPx: null, droppedAsMarkings: 0,
+      crop: null, mmPerPx: null, droppedAsMarkings: 0, droppedAsLettering: 0,
     }),
 
   setCrop: (crop) => set({ crop }),
@@ -316,6 +319,7 @@ export const useStore = create<State>((set, get) => ({
           },
           mmPerPx: res.mmPerPx,
           droppedAsMarkings: res.droppedAsMarkings ?? 0,
+          droppedAsLettering: res.droppedAsLettering ?? 0,
           detecting: false,
           selectedIds: [],
         }));
@@ -582,7 +586,9 @@ export const useStore = create<State>((set, get) => ({
         activeDesignId: session.activeDesignId,
         dirty: session.dirty,
         crop: session.crop,
-        detect: session.detect,
+        // Over the defaults, so a setting added since the session was saved
+        // starts at its default rather than as undefined, which reads as off.
+        detect: { ...DEFAULT_DETECT_SETTINGS, ...session.detect },
         mmPerPx: session.mmPerPx,
         sourceLabel: session.sourceLabel,
         sourceHp: session.sourceHp ?? null,

@@ -44,6 +44,10 @@ const NEIGHBOURS_Y = [0, 0, 1, -1];
  * whose area falls inside [minArea, maxArea].
  *
  * `mask` is consumed: visited pixels are cleared as we go.
+ *
+ * With `labelsOut`, each pixel of a blob that is kept is set to that blob's
+ * index plus one, so a caller can ask which blob a pixel belongs to; pixels of
+ * blobs that were not kept are left alone.
  */
 export function findBlobs(
   mask: Uint8Array,
@@ -52,6 +56,7 @@ export function findBlobs(
   minArea: number,
   maxArea: number,
   level: number,
+  labelsOut?: Int32Array,
 ): Blob[] {
   const blobs: Blob[] = [];
   // One scratch buffer, reused for every component, sized for the worst case.
@@ -153,6 +158,10 @@ export function findBlobs(
       touchesBorder: touches,
       level,
     });
+    if (labelsOut) {
+      const label = blobs.length;
+      for (let k = 0; k < n; k++) labelsOut[pixels[k]] = label;
+    }
   }
 
   return blobs;

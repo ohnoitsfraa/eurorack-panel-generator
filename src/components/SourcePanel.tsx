@@ -570,6 +570,8 @@ function DetectSection() {
   const detecting = useStore((s) => s.detecting);
   const mmPerPx = useStore((s) => s.mmPerPx);
   const droppedAsMarkings = useStore((s) => s.droppedAsMarkings);
+  const droppedAsLettering = useStore((s) => s.droppedAsLettering);
+  const collided = droppedAsMarkings - droppedAsLettering;
 
   return (
     <Section title="Detection">
@@ -612,6 +614,7 @@ function DetectSection() {
 
       <Toggle checked={detect.detectSlots} onChange={(v) => setDetect({ detectSlots: v })} label="Find sliders and slots" />
       <Toggle checked={detect.detectRects} onChange={(v) => setDetect({ detectRects: v })} label="Find rectangular cutouts" />
+      <Toggle checked={detect.ignoreLettering} onChange={(v) => setDetect({ ignoreLettering: v })} label="Ignore lettering" />
 
       <Field label="Snap detected holes to grid">
         <Select
@@ -638,10 +641,20 @@ function DetectSection() {
       )}
 
       {droppedAsMarkings > 0 && (
-        <p className="text-[12.5px] leading-relaxed text-ink-400">
-          {droppedAsMarkings} mark{droppedAsMarkings === 1 ? '' : 's'} ignored as printing —
-          lettering and logos look like small holes, but holes that would run
-          into each other cannot both be real.
+        <p className="text-[12.5px] leading-relaxed text-ink-400" data-dropped-marks="">
+          {droppedAsMarkings} mark{droppedAsMarkings === 1 ? '' : 's'} ignored as printing
+          {droppedAsLettering > 0 && collided > 0 ? ': ' : ' — '}
+          {droppedAsLettering > 0 && (
+            <>
+              {droppedAsLettering} recognised as lettering
+              {collided > 0 ? ', and ' : '.'}
+            </>
+          )}
+          {collided > 0 && (
+            <>
+              {collided}{droppedAsLettering > 0 ? ' more' : ''} would have run into each other, which holes cannot do.
+            </>
+          )}
         </p>
       )}
 

@@ -37,6 +37,14 @@ const CIRCLE_FILL = Math.PI / 4;
  * a solid dot, and the only way these knobs get found at all.
  */
 const RING_FILL = { min: 0.12, max: 0.62 };
+/**
+ * The shortest slot taken for a fader's travel, mm.
+ *
+ * The shortest faders travel about 15 mm. Without a floor every upright
+ * stroke on the panel qualifies — an I, an l, the 1 of "CV 1" — since a
+ * letter's stem is exactly as long and thin as a tiny slot.
+ */
+const SLOT_MIN_LENGTH_MM = 8;
 
 export function classifyBlob(b: Blob, mmPerPx: number, source: SourceKind = 'photo'): Candidate | null {
   const majorMm = b.major * mmPerPx;
@@ -101,7 +109,7 @@ export function classifyBlob(b: Blob, mmPerPx: number, source: SourceKind = 'pho
     };
   }
 
-  if (isSlot) {
+  if (isSlot && majorMm >= SLOT_MIN_LENGTH_MM) {
     // A fader's travel slot: a rectangle rounded all the way into a stadium.
     // Slot width is standardised like any other component, but the length
     // genuinely varies by fader model, so the measurement is kept.
@@ -124,7 +132,12 @@ export function classifyBlob(b: Blob, mmPerPx: number, source: SourceKind = 'pho
     };
   }
 
-  if (isRect) {
+  // A rectangle has to be the size of a display window. Smaller ones are not
+  // cutouts anyone makes, but they are what the counter of a D or a 0 looks
+  // like on a dark panel with light lettering. Compared with the bottom of
+  // the range directly: rangeScore's margin is a share of a 70 mm wide range,
+  // which would wave through anything at all.
+  if (isRect && majorMm >= rangeFor(COMPONENT_SPECS.display, source)[0] * 0.75) {
     return {
       support: 1,
       score: b.rectFill,
