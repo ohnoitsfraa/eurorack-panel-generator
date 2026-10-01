@@ -1921,6 +1921,36 @@ console.log('\nEditing several labels at once');
   else fail('undo after a batch edit left some labels changed');
 }
 
+console.log('\nSelecting opens the tab that edits it');
+{
+  const { useStore } = await import('../src/lib/store');
+  const st = () => useStore.getState();
+  st().newDesign();
+  st().addFeature('circle', 10, 20);
+  st().addFeature('circle', 20, 40);
+  const a = st().addTextLabel();
+  const b = st().addTextLabel();
+  const cutouts = st().design.features.map((f) => f.id);
+
+  st().setTab('panel');
+  st().select([a, b]);
+  if (st().tab === 'decor') pass('selecting several labels opens Text & art');
+  else fail(`selecting labels left the tab on ${st().tab}`);
+
+  st().select(cutouts);
+  if (st().tab === 'features') pass('selecting several cutouts opens Cutouts');
+  else fail(`selecting cutouts left the tab on ${st().tab}`);
+
+  st().setTab('export');
+  st().select([a, cutouts[0]]);
+  if (st().tab === 'export') pass('a mix of both leaves the tab alone');
+  else fail(`a mixed selection moved the tab to ${st().tab}`);
+
+  st().select([]);
+  if (st().tab === 'export') pass('and so does clearing the selection');
+  else fail(`clearing the selection moved the tab to ${st().tab}`);
+}
+
 console.log('\nSizing several cutouts at once');
 {
   const { useStore } = await import('../src/lib/store');

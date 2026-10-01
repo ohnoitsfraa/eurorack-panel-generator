@@ -762,6 +762,52 @@ async function open(colorScheme: 'light' | 'dark' = 'dark') {
   await page.close();
 }
 
+// --- a sweep across labels opens their tab ---
+{
+  const { page, problems } = await open();
+  const toScreen = (mx: number, my: number) =>
+    page.evaluate(([x, y]) => {
+      const el = document.querySelector('[data-panel-canvas]') as SVGSVGElement;
+      const p = new DOMPoint(x, y).matrixTransform(el.getScreenCTM()!);
+      return { x: p.x, y: p.y };
+    }, [mx, my] as [number, number]);
+  const sweep = async (x0: number, y0: number, x1: number, y1: number) => {
+    const a = await toScreen(x0, y0);
+    const b = await toScreen(x1, y1);
+    await page.mouse.move(a.x, a.y);
+    await page.mouse.down();
+    await page.mouse.move(b.x, b.y, { steps: 6 });
+    await page.mouse.up();
+    await page.waitForTimeout(300);
+  };
+
+  // Two labels and two cutouts, kept apart so a box can take either pair.
+  await page.getByRole('button', { name: 'Text & art', exact: true }).click();
+  await page.getByRole('button', { name: 'Text label', exact: true }).click();
+  await page.getByRole('button', { name: 'Text label', exact: true }).click();
+  await page.getByRole('button', { name: 'Cutouts', exact: true }).click();
+  for (const y of [80, 100]) {
+    await page.getByRole('button', { name: 'Circle', exact: true }).click();
+    const at = await toScreen(20, y);
+    await page.mouse.click(at.x, at.y);
+    await page.waitForTimeout(200);
+  }
+
+  await page.getByRole('button', { name: 'Panel', exact: true }).click();
+  await sweep(2, 4, 38, 20);
+  if (await page.locator('[data-batch-editor]').count()) pass('sweeping across labels opens Text & art on their batch editor');
+  else fail('a sweep across labels did not open Text & art');
+
+  await page.getByRole('button', { name: 'Panel', exact: true }).click();
+  await sweep(2, 70, 38, 110);
+  if (await page.locator('[data-batch-cutouts]').count()) pass('sweeping across cutouts opens Cutouts');
+  else fail('a sweep across cutouts did not open Cutouts');
+
+  if (problems.length === 0) pass('no uncaught errors following the selection');
+  else fail(`tab follows selection: ${[...new Set(problems)].join(' | ')}`);
+  await page.close();
+}
+
 // --- several cutouts sized at once ---
 {
   const { page, problems } = await open();

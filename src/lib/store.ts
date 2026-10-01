@@ -1223,6 +1223,29 @@ export function fontNeedsForBuilds(
   return [...needed.values()];
 }
 
+/**
+ * The tab that edits what is selected: Cutouts for cutouts, Text & art for
+ * labels, shapes and artwork. Nothing for a mix, which neither tab can edit
+ * as a whole, so the tab is left where it is.
+ */
+export function tabForSelection(s: Pick<State, 'design' | 'selectedIds'>): InspectorTab | null {
+  if (s.selectedIds.length === 0) return null;
+  const features = new Set(s.design.features.map((f) => f.id));
+  const decor = new Set(s.design.decor.map((d) => d.id));
+  if (s.selectedIds.every((id) => features.has(id))) return 'features';
+  if (s.selectedIds.every((id) => decor.has(id))) return 'decor';
+  return null;
+}
+
+// Selecting something opens the tab that edits it, wherever it was selected
+// from, so a sweep across several labels lands on their batch editor rather
+// than on whichever tab happened to be open.
+useStore.subscribe((state, prev) => {
+  if (state.selectedIds === prev.selectedIds) return;
+  const tab = tabForSelection(state);
+  if (tab && tab !== state.tab) useStore.setState({ tab });
+});
+
 useStore.subscribe((state, prev) => {
   if (state.design === prev.design && state.library === prev.library && state.rack === prev.rack) return;
   for (const { family, weight } of fontNeedsForBuilds(state)) state.ensureFont(family, weight);
