@@ -16,11 +16,11 @@ import { autoCrop, detectFeatures } from './cv/detect';
 import {
   clearSession, deleteDesign as dbDeleteDesign, loadDesigns, loadRack as dbLoadRack,
   loadSession, migrateFromLocalStorage, putDesign, putDesigns, saveRack as dbSaveRack,
-  isRefetchable, loadFontFiles, putFontFile, saveSession, type SavedDesign, type SourceReference,
+  hashFont, isRefetchable, loadFontFiles, putFontFile, saveSession, type SavedDesign, type SourceReference,
 } from './storage';
 import {
   base64ToBytes, backupFilename, buildLibraryBackup, buildPanelBackup, buildRackBackup, mergeBackup,
-  parseBackup, withNewIds, type Backup, type MergeReport,
+  parseBackup, renameFontFamilies, withNewIds, type Backup, type MergeReport,
 } from './backup';
 import {
   conflicts, defaultRack, emptyRow, firstFreeHp, touchRack,
@@ -32,7 +32,7 @@ import {
 } from './theme';
 import { fetchImage, imageDataFromBlob } from './cv/image';
 import { fontsUsedBy, loadFont, registerFont } from './model/text';
-import { FONT_FAMILIES } from './fonts';
+import { uploadedFontName } from './fonts';
 
 export type ViewMode = '2d' | '3d' | 'rack';
 export type InspectorTab = 'panel' | 'features' | 'decor' | 'export' | 'library';
@@ -532,6 +532,7 @@ export const useStore = create<State>((set, get) => ({
     for (const f of await loadFontFiles()) {
       try {
         registerFont(f.family, f.data);
+        installedByHash.set(f.hash, f.family);
         customFonts.push(f.family);
       } catch {
         // A file that no longer parses is left out of the list rather than
@@ -803,37 +804,35 @@ export const useStore = create<State>((set, get) => ({
     // A rack file brings a rack with it; a single panel plainly should not
     // rearrange the one you have.
     const replaceRack = Boolean(payload.rack) && payload.kind !== 'panel';
-    const merged = mergeBackup(get().library, payload, { replaceRack });
 
     // Fonts before panels: the moment the panels land, their lettering is
     // asked for, and a family not registered by then is looked for on Google
-    // Fonts instead. A font already here under the same name is kept, so an
-    // import never swaps out the file someone's own panels were set in.
-    const have = new Set(get().customFonts);
-    const added: string[] = [];
+    // Fonts instead. A font identical to one installed is that font, under
+    // whatever name it has here; a different font whose name is taken gets a
+    // name of its own. Either way its labels are renamed to follow it.
+    const rename = new Map<string, string>();
+    let fontsAdded = 0;
     for (const f of payload.fonts ?? []) {
-      if (have.has(f.family)) continue;
       try {
-        const data = base64ToBytes(f.data);
-        registerFont(f.family, data.slice(0));
-        await putFontFile({ family: f.family, data });
-        have.add(f.family);
-        added.push(f.family);
+        const installed = await installFont(f.family, base64ToBytes(f.data));
+        if (installed.family !== f.family) rename.set(f.family, installed.family);
+        if (installed.added) fontsAdded++;
       } catch {
         // A damaged font leaves its lettering missing, not the import failed.
       }
     }
-    const report = { ...merged.report, fontsAdded: added.length };
+    const incoming = renameFontFamilies(payload, rename);
+    const merged = mergeBackup(get().library, incoming, { replaceRack });
+    const report = { ...merged.report, fontsAdded };
 
     set((st) => ({
       library: merged.library,
       rack: merged.rack ?? st.rack,
-      customFonts: [...st.customFonts, ...added].sort((a, b) => a.localeCompare(b)),
       lastImport: { ...report, at: Date.now() },
       error: null,
     }));
 
-    await putDesigns(payload.panels);
+    await putDesigns(incoming.panels);
     if (merged.rack) await dbSaveRack(merged.rack);
     return report;
   },
@@ -1003,31 +1002,53 @@ export const useStore = create<State>((set, get) => ({
 
   addCustomFont: async (file) => {
     const data = await file.arrayBuffer();
-    const base = file.name.replace(/\.(ttf|otf)$/i, '').trim() || 'My font';
-    // A file called Inter.ttf must not quietly stand in for the Inter
-    // everyone else's copy of a panel will fetch.
-    const family = (FONT_FAMILIES as readonly string[]).includes(base) ? `${base} (uploaded)` : base;
+    const wanted = file.name.replace(/\.(ttf|otf)$/i, '').trim() || 'My font';
     try {
-      registerFont(family, data.slice(0));
+      return (await installFont(wanted, data)).family;
     } catch {
       set({ error: `"${file.name}" could not be read as a font. Use a TrueType (.ttf) or OpenType (.otf) file.` });
       return null;
     }
-    set((s) => ({
-      // Uploading a new file under a name already in use replaces it, so the
-      // lettering is rebuilt from the new one rather than the copy in hand.
-      fonts: new Map([...s.fonts].filter(([k]) => !k.startsWith(`${family}@`))),
-      fontVersion: s.fontVersion + 1,
-      customFonts: s.customFonts.includes(family)
-        ? s.customFonts
-        : [...s.customFonts, family].sort((a, b) => a.localeCompare(b)),
-    }));
-    void putFontFile({ family, data }).catch(() => {
-      set({ error: `"${family}" works for now, but could not be stored and will be gone after a reload.` });
-    });
-    return family;
   },
 }));
+
+/** Installed uploaded fonts by the SHA-256 of their file. */
+const installedByHash = new Map<string, string>();
+let fontInstalls: Promise<unknown> = Promise.resolve();
+
+/**
+ * Install a font file, or find the identical one already installed.
+ *
+ * Matched by content, so the same file uploaded twice, or brought back by a
+ * backup under another name, is one font rather than two. A different file
+ * never replaces an installed one: if its name is taken it is stored as
+ * "Name (2)". Runs one at a time, since two installs at once would both see
+ * the same name as free. Throws if the file is not a font.
+ */
+function installFont(wanted: string, data: ArrayBuffer): Promise<{ family: string; added: boolean }> {
+  const run = fontInstalls.then(async () => {
+    const hash = await hashFont(data);
+    const existing = installedByHash.get(hash);
+    if (existing) return { family: existing, added: false };
+
+    const family = uploadedFontName(wanted, useStore.getState().customFonts);
+    registerFont(family, data.slice(0));
+    installedByHash.set(hash, family);
+    useStore.setState((s) => ({
+      customFonts: [...s.customFonts, family].sort((a, b) => a.localeCompare(b)),
+    }));
+    try {
+      await putFontFile({ family, data, hash });
+    } catch {
+      useStore.setState({
+        error: `"${family}" works for now, but could not be stored and will be gone after a reload.`,
+      });
+    }
+    return { family, added: true };
+  });
+  fontInstalls = run.catch(() => {});
+  return run;
+}
 
 function round2(v: number): number {
   return Math.round(v * 100) / 100;

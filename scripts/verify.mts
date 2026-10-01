@@ -1546,6 +1546,97 @@ console.log('\nExport, import and local storage');
     if (again.fontsAdded === 0) pass('and a font already here is left as it is');
     else fail('an import replaced a font that was already installed');
 
+    // --- fonts are matched by what is in the file, not by its name ---
+    const { uploadedFontName } = await import('../src/lib/fonts');
+    if (uploadedFontName('Inter', []) === 'Inter (uploaded)' && uploadedFontName('X', ['X', 'X (2)']) === 'X (3)') {
+      pass('a taken font name is numbered, and a built-in one marked as uploaded');
+    } else {
+      fail(`uploadedFontName gave ${uploadedFontName('Inter', [])} and ${uploadedFontName('X', ['X', 'X (2)'])}`);
+    }
+
+    // Fonts stored before the hash existed are given one on load, and it is
+    // written back.
+    const rawFonts = async (put?: unknown[]) => {
+      const db = await new Promise<IDBDatabase>((res, rej) => {
+        const r = indexedDB.open('eurorack-panel-generator');
+        r.onsuccess = () => res(r.result);
+        r.onerror = () => rej(r.error);
+      });
+      return new Promise<Array<{ family: string; hash?: string }>>((res, rej) => {
+        const st = db.transaction('meta', put ? 'readwrite' : 'readonly').objectStore('meta');
+        const r = put ? st.put(put, 'fonts') : st.get('fonts');
+        r.onsuccess = () => { db.close(); res(put ? [] : (r.result ?? [])); };
+        r.onerror = () => rej(r.error);
+      });
+    };
+    const mineData = real[0].data;
+    const mineHash = await storage.hashFont(mineData);
+    await rawFonts([{ family: 'Mine', data: mineData }]);
+    const backfilled = await storage.loadFontFiles();
+    const written = await rawFonts();
+    if (backfilled[0]?.hash === mineHash && written[0]?.hash === mineHash) pass('a font stored without a hash is given one and kept');
+    else fail(`backfill: loaded ${backfilled[0]?.hash?.slice(0, 8)}, stored ${written[0]?.hash?.slice(0, 8)}`);
+
+    // Two files with the same name but different content. Trailing bytes are
+    // ignored by the parser, so they are fonts that only differ in their hash.
+    const variant = (extra: number) => {
+      const out = new Uint8Array(mineData.byteLength + extra);
+      out.set(new Uint8Array(mineData));
+      return out.buffer;
+    };
+    const st = () => useStore.getState();
+    const storedCount = async () => (await storage.loadFontFiles()).length;
+
+    const countBefore = await storedCount();
+    const sameAgain = await st().addCustomFont(new File([mineData], 'Some other name.ttf'));
+    if (sameAgain === 'Mine' && !st().customFonts.includes('Some other name') && (await storedCount()) === countBefore) {
+      pass('uploading a font that is already here reuses it');
+    } else {
+      fail(`re-upload gave ${sameAgain}, list ${JSON.stringify(st().customFonts)}`);
+    }
+
+    const second = await st().addCustomFont(new File([variant(16)], 'Mine.ttf'));
+    const afterSecond = await storage.loadFontFiles();
+    if (second === 'Mine (2)' && afterSecond.find((f) => f.family === 'Mine')?.hash === mineHash) {
+      pass('a different file under a taken name is stored as "Name (2)", leaving the original');
+    } else {
+      fail(`a clashing upload gave ${second}; Mine is now ${afterSecond.find((f) => f.family === 'Mine')?.hash?.slice(0, 8)}`);
+    }
+
+    // On import, a font identical to an installed one is that font, and its
+    // labels are renamed to match.
+    const named = (name: string, family: string) => ({
+      ...lettered,
+      id: `d_${name}`,
+      name,
+      design: { ...lettered.design, decor: lettered.design.decor.map((d) => ({ ...d, fontFamily: family })) },
+    });
+    const familyOf = (name: string) => {
+      const d = st().library.find((p) => p.name === name)?.design.decor[0];
+      return d && d.type === 'text' ? d.fontFamily : undefined;
+    };
+    const theirs = await st().importBackup(JSON.stringify(
+      buildPanelBackup(named('Their panel', 'Theirs'), [{ family: 'Theirs', data: mineData, hash: '' }]),
+    ), { asCopy: true });
+    if (theirs.fontsAdded === 0 && familyOf('Their panel') === 'Mine' && !st().customFonts.includes('Theirs')) {
+      pass('an imported font identical to an installed one is mapped onto it, labels and all');
+    } else {
+      fail(`identical import: ${theirs.fontsAdded} added, label set in ${familyOf('Their panel')}`);
+    }
+
+    // A different font under a name that is taken gets a name of its own,
+    // and its labels follow it there.
+    const clash = await st().importBackup(JSON.stringify(
+      buildPanelBackup(named('Clashing panel', 'Mine'), [{ family: 'Mine', data: variant(32), hash: '' }]),
+    ), { asCopy: true });
+    const finalFonts = await storage.loadFontFiles();
+    if (clash.fontsAdded === 1 && familyOf('Clashing panel') === 'Mine (3)'
+      && finalFonts.find((f) => f.family === 'Mine')?.hash === mineHash) {
+      pass('an imported font whose name is taken is installed as "Name (3)", labels renamed');
+    } else {
+      fail(`clashing import: ${clash.fontsAdded} added, label set in ${familyOf('Clashing panel')}`);
+    }
+
     // The storage checks below count what is in the database.
     const imported = useStore.getState().library.filter((d) => !before.has(d.id));
     for (const d of imported) await storage.deleteDesign(d.id);

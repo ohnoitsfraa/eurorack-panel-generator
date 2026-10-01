@@ -244,6 +244,30 @@ export function withNewIds(backup: Backup): Backup {
   };
 }
 
+/**
+ * Point a file's lettering at the names its fonts were installed under.
+ *
+ * An imported font can land under another name: the identical file may
+ * already be installed as something else, or the name may belong to a
+ * different font here. Its labels follow it, or they would be set in the
+ * wrong font or in none.
+ */
+export function renameFontFamilies(backup: Backup, rename: Map<string, string>): Backup {
+  if (rename.size === 0) return backup;
+  return {
+    ...backup,
+    panels: backup.panels.map((p) => ({
+      ...p,
+      design: {
+        ...p.design,
+        decor: p.design.decor.map((d) =>
+          d.type === 'text' && rename.has(d.fontFamily) ? { ...d, fontFamily: rename.get(d.fontFamily)! } : d),
+      },
+    })),
+    fonts: backup.fonts?.map((f) => ({ ...f, family: rename.get(f.family) ?? f.family })),
+  };
+}
+
 /** A filename that sorts by date and survives a filesystem. */
 export function backupFilename(kind: BackupKind, name?: string): string {
   const stamp = new Date().toISOString().slice(0, 10);

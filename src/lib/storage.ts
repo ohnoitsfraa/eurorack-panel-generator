@@ -145,26 +145,70 @@ export async function saveRack(rack: Rack): Promise<void> {
   await tx(META, 'readwrite', (s) => s.put(rack, RACK_KEY));
 }
 
-/** A font file the user uploaded, kept so lettering set in it survives a reload. */
+/**
+ * A font file the user uploaded, kept so lettering set in it survives a reload.
+ *
+ * Fonts are told apart by what is in the file, not by what it was called: the
+ * same font uploaded twice, or brought back by a backup under another name, is
+ * one font. The hash is how that is recognised.
+ */
 export interface StoredFont {
   family: string;
   data: ArrayBuffer;
+  /** SHA-256 of `data`, lowercase hex. */
+  hash: string;
 }
 
+export async function hashFont(data: ArrayBuffer): Promise<string> {
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', data));
+  let hex = '';
+  for (const b of digest) hex += b.toString(16).padStart(2, '0');
+  return hex;
+}
+
+/**
+ * Every stored font, each with its hash.
+ *
+ * Fonts stored before the hash existed are given one here and written back,
+ * so the next load does not have to work it out again.
+ */
 export async function loadFontFiles(): Promise<StoredFont[]> {
+  let all: Array<Partial<StoredFont>>;
   try {
-    const all = await tx<StoredFont[] | undefined>(META, 'readonly', (s) =>
-      s.get(FONTS_KEY) as IDBRequest<StoredFont[] | undefined>);
-    return Array.isArray(all) ? all.filter((f) => typeof f?.family === 'string' && f.data instanceof ArrayBuffer) : [];
+    const raw = await tx<Array<Partial<StoredFont>> | undefined>(META, 'readonly', (s) =>
+      s.get(FONTS_KEY) as IDBRequest<Array<Partial<StoredFont>> | undefined>);
+    all = Array.isArray(raw) ? raw : [];
   } catch {
     return [];
   }
+
+  const fonts: StoredFont[] = [];
+  let backfilled = false;
+  for (const f of all) {
+    if (typeof f?.family !== 'string' || !(f.data instanceof ArrayBuffer)) continue;
+    let hash = f.hash;
+    if (typeof hash !== 'string' || !/^[0-9a-f]{64}$/.test(hash)) {
+      hash = await hashFont(f.data);
+      backfilled = true;
+    }
+    fonts.push({ family: f.family, data: f.data, hash });
+  }
+  if (backfilled) {
+    try {
+      await tx(META, 'readwrite', (s) => s.put(fonts, FONTS_KEY));
+    } catch {
+      // Worked out again next time; nothing is lost by failing here.
+    }
+  }
+  return fonts;
 }
 
-/** Add a font, or replace the one already stored under its family name. */
-export async function putFontFile(font: StoredFont): Promise<void> {
+/** Store a font under its family name, replacing any entry by that name. */
+export async function putFontFile(font: Omit<StoredFont, 'hash'> & { hash?: string }): Promise<StoredFont> {
+  const stored: StoredFont = { ...font, hash: font.hash ?? (await hashFont(font.data)) };
   const rest = (await loadFontFiles()).filter((f) => f.family !== font.family);
-  await tx(META, 'readwrite', (s) => s.put([...rest, font], FONTS_KEY));
+  await tx(META, 'readwrite', (s) => s.put([...rest, stored], FONTS_KEY));
+  return stored;
 }
 
 /**
