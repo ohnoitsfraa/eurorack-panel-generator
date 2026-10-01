@@ -29,6 +29,12 @@ import { Button } from './ui';
  */
 const FIT = { minPxPerHp: 5, maxPxPerHp: 22, sidePaddingPx: 40 } as const;
 
+/**
+ * What counts as a double press: about the system default interval, and a
+ * little movement allowed for a finger, which never lands twice in one place.
+ */
+const DOUBLE_PRESS = { ms: 400, slopPx: 10 } as const;
+
 export function RackView() {
   const rack = useStore((s) => s.rack);
   const library = useStore((s) => s.library);
@@ -75,6 +81,21 @@ export function RackView() {
   } | null>(null);
 
   const byId = new Map(library.map((d) => [d.id, d]));
+
+  // Two quick presses on the same panel open it. Counted on pointerdown rather
+  // than left to dblclick, which touch screens do not reliably send, and which
+  // would otherwise have to compete with the drag the first press starts.
+  const lastPress = useRef<{ placementId: string; at: number; x: number; y: number } | null>(null);
+  const isSecondPress = (placementId: string, e: React.PointerEvent): boolean => {
+    const prev = lastPress.current;
+    const now = e.timeStamp;
+    const again = prev !== null
+      && prev.placementId === placementId
+      && now - prev.at < DOUBLE_PRESS.ms
+      && Math.hypot(e.clientX - prev.x, e.clientY - prev.y) < DOUBLE_PRESS.slopPx;
+    lastPress.current = again ? null : { placementId, at: now, x: e.clientX, y: e.clientY };
+    return again;
+  };
 
   /** Which row is under this pointer position, if any. */
   const rowAt = useCallback((clientY: number): RackRow | null => {
@@ -249,6 +270,11 @@ export function RackView() {
                       style={{ left: p.hp * scale, width: w, cursor: 'grab' }}
                       onPointerDown={(e) => {
                         e.preventDefault();
+                        if (isSecondPress(p.id, e)) {
+                          endDrag();
+                          openDesign(p.designId);
+                          return;
+                        }
                         (e.currentTarget as Element).setPointerCapture?.(e.pointerId);
                         const r = e.currentTarget.getBoundingClientRect();
                         drag.current = {
@@ -260,7 +286,7 @@ export function RackView() {
                         };
                         setDragging(p.id);
                       }}
-                      title={`${saved.name} · ${saved.design.hp} HP`}
+                      title={`${saved.name} · ${saved.design.hp} HP · double-click to edit`}
                       data-rack-panel={saved.name}
                     >
                       <PanelThumb

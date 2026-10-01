@@ -434,7 +434,8 @@ async function open(colorScheme: 'light' | 'dark' = 'dark') {
   const chosen = () => page.evaluate(() =>
     [...document.querySelectorAll('aside:last-of-type li button')]
       .map((r) => (r.className.includes('bg-accent') ? '1' : '0')).join(''));
-  const columns = () => page.locator('[data-panel-canvas] circle').evaluateAll((els) =>
+  // The cutouts themselves, not the dot a selected one carries at its centre.
+  const columns = () => page.locator('[data-panel-canvas] circle:not([pointer-events="none"])').evaluateAll((els) =>
     els.map((e) => Number(e.getAttribute('cx'))).filter((v) => v > 5 && v < 60));
   // Playwright's click modifiers do not reach pointerdown, so the key is held
   // the long way round.
@@ -693,6 +694,25 @@ async function open(colorScheme: 'light' | 'dark' = 'dark') {
   // They must not hang over the neighbouring panel, whose controls they are not.
   if (controls.every((c) => c.inside)) pass('and stay on the panel they belong to');
   else fail('a control overhangs its panel');
+
+  // Double-clicking a panel opens it for editing; a single click must not,
+  // since that is also how a drag starts.
+  const box = (await panel.boundingBox())!;
+  const at = { x: box.x + box.width * 0.3, y: box.y + box.height * 0.7 };
+  await page.mouse.click(at.x, at.y);
+  await page.waitForTimeout(500);
+  if (/Add row/i.test(await page.locator('body').innerText())) pass('a single click leaves you in the rack');
+  else fail('a single click on a rack panel left the rack');
+  await page.mouse.dblclick(at.x, at.y);
+  await page.waitForTimeout(500);
+  const opened = !/Add row/i.test(await page.locator('body').innerText())
+    && (await page.getByLabel('Panel name').inputValue()) === 'Rack me';
+  if (opened) pass('double-clicking a panel in the rack opens it for editing');
+  else fail('double-clicking a rack panel did not open it');
+  await page.getByRole('button', { name: 'Rack', exact: true }).click();
+  await page.waitForTimeout(400);
+  await panel.hover();
+  await page.waitForTimeout(250);
 
   await page.locator('button[aria-label*="Remove Rack me"]').first().click();
   await page.waitForTimeout(400);
