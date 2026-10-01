@@ -222,6 +222,33 @@ export function buildPanel(design: PanelDesign, opts: BuildOptions): BuildResult
   };
 }
 
+/**
+ * `buildPanel` for use during render, where a throw takes the whole app down.
+ *
+ * The design is persisted before it is built, so a design that trips a
+ * geometry bug would otherwise fail again on every reload and leave no way
+ * back in short of clearing site data. Here the failure becomes a warning and
+ * an empty model, and the editor stays usable to undo or delete what caused it.
+ */
+export function buildPanelSafe(design: PanelDesign, opts: BuildOptions): BuildResult {
+  try {
+    return buildPanel(design, opts);
+  } catch (err) {
+    console.error('Panel build failed', err);
+    return {
+      meshes: [],
+      warnings: ['The 3D model could not be built from this design. The last change may have caused it; undo it or remove the element.'],
+      pending: [],
+      stats: {
+        widthMm: panelWidthMm(design.hp),
+        heightMm: panelHeightMm(design.format),
+        triangles: 0,
+        holes: 0,
+      },
+    };
+  }
+}
+
 /** Indices of every pair of rings that intersect. */
 function overlappingPairs(rings: Ring[]): Array<[number, number]> {
   const out: Array<[number, number]> = [];

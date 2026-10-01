@@ -2,7 +2,7 @@
 
 import { useMemo } from 'react';
 import { useStore } from './store';
-import { buildPanel, type BuildResult } from './model/build';
+import { buildPanel, buildPanelSafe, type BuildResult } from './model/build';
 import { fontsSettled } from './model/text';
 import type { Mesh } from './types';
 
@@ -19,7 +19,7 @@ export function usePanelBuild(): { result: BuildResult } {
   const fontVersion = useStore((s) => s.fontVersion);
 
   const result = useMemo(
-    () => buildPanel(design, { fonts }),
+    () => buildPanelSafe(design, { fonts }),
     // fontVersion changes identity when a font finishes loading, which is what
     // should trigger text geometry to appear.
     // eslint-disable-next-line react-hooks/exhaustive-deps

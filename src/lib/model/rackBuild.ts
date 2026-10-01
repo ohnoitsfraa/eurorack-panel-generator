@@ -3,7 +3,7 @@ import { HP_MM, PANEL_HEIGHTS, panelWidthMm } from '../eurorack';
 import type { Mesh } from '../types';
 import type { Rack } from '../rack';
 import type { SavedDesign } from '../storage';
-import { buildPanel } from './build';
+import { buildPanelSafe } from './build';
 import { translateMesh } from './mesh';
 
 export interface RackBuildResult {
@@ -31,7 +31,7 @@ export function buildRack(
   fonts: Map<string, Font>,
 ): RackBuildResult {
   const byId = new Map(library.map((d) => [d.id, d]));
-  const cache = new Map<string, ReturnType<typeof buildPanel>>();
+  const cache = new Map<string, ReturnType<typeof buildPanelSafe>>();
   const meshes: Mesh[] = [];
   const warnings: string[] = [];
   const pending: string[] = [];
@@ -59,7 +59,7 @@ export function buildRack(
 
       let built = cache.get(p.designId);
       if (!built) {
-        built = buildPanel(saved.design, { fonts });
+        built = buildPanelSafe(saved.design, { fonts });
         cache.set(p.designId, built);
         for (const w of built.warnings) warnings.push(`${saved.name}: ${w}`);
         // Not prefixed with the panel: which panel is waiting on Inter is of

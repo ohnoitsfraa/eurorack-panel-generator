@@ -236,12 +236,17 @@ export function repairTJunctions(pos: number[], nrm: number[], maxPasses = 3): v
       const n: [number, number, number] = [nrm[i], nrm[i + 1], nrm[i + 2]];
 
       // Walk the triangle's boundary, inserting any vertex that lies on it.
+      // Only an edge without a partner can be the long side of a T-junction;
+      // a paired one is already closed, and scanning every candidate against
+      // every edge is what makes a panel full of lettering slow to rebuild.
+      const ks = tri.map((p) => key(p[0], p[1], p[2]));
       const boundary: Array<[number, number, number]> = [];
       let inserted = false;
       for (let e = 0; e < 3; e++) {
         const a = tri[e];
         const b = tri[(e + 1) % 3];
         boundary.push(a);
+        if (edges.has(`${ks[(e + 1) % 3]}|${ks[e]}`)) continue;
         const on = candidates
           .map((p) => ({ p, t: paramOnSegment(a, b, p) }))
           .filter((h) => h.t !== null) as Array<{ p: [number, number, number]; t: number }>;
@@ -253,8 +258,10 @@ export function repairTJunctions(pos: number[], nrm: number[], maxPasses = 3): v
       }
 
       if (!inserted) {
-        outPos.push(...pos.slice(i, i + 9));
-        outNrm.push(...nrm.slice(i, i + 9));
+        for (let k = i; k < i + 9; k++) {
+          outPos.push(pos[k]);
+          outNrm.push(nrm[k]);
+        }
         continue;
       }
 
@@ -272,10 +279,15 @@ export function repairTJunctions(pos: number[], nrm: number[], maxPasses = 3): v
     }
 
     if (!changed) return;
-    pos.length = 0;
-    nrm.length = 0;
-    pos.push(...outPos);
-    nrm.push(...outNrm);
+    // Copied element by element: spreading a mesh-sized array into push()
+    // passes every number as an argument and overflows the stack once a panel
+    // carries enough labels.
+    pos.length = outPos.length;
+    nrm.length = outNrm.length;
+    for (let k = 0; k < outPos.length; k++) {
+      pos[k] = outPos[k];
+      nrm[k] = outNrm[k];
+    }
   }
 }
 

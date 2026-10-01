@@ -18,7 +18,8 @@ import 'fake-indexeddb/auto';
 import { readFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { createRequire } from 'node:module';
-import { buildPanel } from '../src/lib/model/build';
+import { buildPanel, buildPanelSafe } from '../src/lib/model/build';
+import { repairTJunctions } from '../src/lib/model/mesh';
 import { buildRack } from '../src/lib/model/rackBuild';
 import { textToRings } from '../src/lib/model/text';
 import { nestRings } from '../src/lib/geom/poly';
@@ -207,6 +208,47 @@ console.log('\nPanel geometry');
     }
     if (Math.abs(fillVol - pocket) < pocket * 0.08) pass('and the filling piece is the size of the hole');
     else fail(`the fill came to ${fillVol.toFixed(1)} mm³, expected about ${pocket.toFixed(1)}`);
+  }
+}
+
+// ------------------------------------------------------- 1b. large models
+console.log('\nLarge models');
+{
+  // A panel full of lettering is hundreds of thousands of coordinates. The
+  // T-junction repair once copied them back with push(...array), which passes
+  // each one as an argument and overflowed the stack; the design was already
+  // saved, so the app then failed on every reload.
+  const pos: number[] = [];
+  const nrm: number[] = [];
+  for (let i = 0; i < 60000; i++) {
+    pos.push(i, 0, 0, i + 1, 0, 0, i, 1, 0, i, 0, 0, i, 1, 0, i + 1, 0, 0);
+    for (let k = 0; k < 18; k++) nrm.push(0);
+  }
+  // One T-junction, so the repair actually rewrites the arrays.
+  pos.push(0, 0, -5, 2, 0, -5, 1, 1, -5, 2, 0, -5, 1, 0, -5, 1, -1, -5, 1, 0, -5, 0, 0, -5, 1, -1, -5);
+  for (let k = 0; k < 27; k++) nrm.push(0);
+  const before = pos.length;
+  try {
+    repairTJunctions(pos, nrm, 1);
+    if (pos.length === before + 9 && nrm.length === pos.length) pass('T-junction repair copes with a large mesh');
+    else fail(`T-junction repair on a large mesh: ${before} -> ${pos.length} coordinates`);
+  } catch (e) {
+    fail(`T-junction repair on a large mesh threw: ${(e as Error).message}`);
+  }
+
+  // Whatever the cause, a build that throws during render must not take the
+  // editor with it.
+  const broken = { ...BASE, features: null } as unknown as PanelDesign;
+  const logError = console.error;
+  console.error = () => {};
+  try {
+    const r = buildPanelSafe(broken, { fonts: noFonts });
+    if (r.meshes.length === 0 && r.warnings.length === 1) pass('a failed build becomes a warning, not a crash');
+    else fail(`failed build: got ${r.meshes.length} meshes and ${JSON.stringify(r.warnings)}`);
+  } catch (e) {
+    fail(`buildPanelSafe threw: ${(e as Error).message}`);
+  } finally {
+    console.error = logError;
   }
 }
 
