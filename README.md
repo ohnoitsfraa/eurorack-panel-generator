@@ -248,7 +248,25 @@ away is caught on a capturing pointerdown as well as on blur, since the canvas
 takes the pointer for dragging and the marquee without focus necessarily
 moving.
 
+### Handles
+
+A selected cutout has handles for width, height, corner radius and rotation.
+A label or a piece of traced artwork has four corners and a rotation knob, and
+the corners scale proportionally — there are no edge handles, because a
+squashed logo or a condensed label is not something anyone arrives at on
+purpose. What the corner sets differs by what it is holding: a label's cap
+height, which is the number panels are specified in, and artwork's multiplier
+on whatever it was traced at.
+
+The box is measured with the rotation taken out, so the handles sit on the
+element's own corners and turn with it rather than hugging an upright
+rectangle around a tilted label.
+
 ### Keyboard
+
+Pressing `?` lists all of them. That is the only place they are written down:
+there are enough now that putting them in the interface would cost more room
+than they save, and the one thing to discover is how to ask.
 
 | | |
 | --- | --- |
@@ -260,6 +278,7 @@ moving.
 | `⌘D` | duplicate |
 | Backspace | delete |
 | Escape | drop the tool and the selection |
+| `?` | the list of all of them |
 
 Undo covers the panel — its cutouts, decor, settings and name — and not the
 library or the rack, which are filing rather than drawing. Edits closer

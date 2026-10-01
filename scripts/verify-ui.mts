@@ -210,6 +210,55 @@ async function open(colorScheme: 'light' | 'dark' = 'dark') {
   if ((await editor.count()) === 0) pass('and so does clicking away');
   else fail('the editor stayed open after a click elsewhere');
 
+  // Handles on a label: four to scale, one to turn. Scaling a label means its
+  // cap height, which is the number panels are specified in.
+  await page.locator('[data-decor="text"] rect[fill="transparent"]').first().click();
+  await page.waitForTimeout(350);
+  const capHeight = () =>
+    page.locator('aside').last().locator('input[inputmode="decimal"]').first().inputValue();
+  const scaleHandles = () =>
+    page.locator('[data-panel-canvas] rect[style*="nwse-resize"]').count();
+  if ((await scaleHandles()) === 4) pass('a selected label carries corner handles');
+  else fail(`a label showed ${await scaleHandles()} scale handles, expected 4`);
+
+  const before = Number(await capHeight());
+  const corner = await page.evaluate(() => {
+    const r = [...document.querySelectorAll('[data-panel-canvas] rect[style*="nwse-resize"]')][2];
+    const b = r.getBoundingClientRect();
+    return { x: b.x + b.width / 2, y: b.y + b.height / 2 };
+  });
+  await page.mouse.move(corner.x, corner.y);
+  await page.mouse.down();
+  await page.mouse.move(corner.x + 60, corner.y + 40, { steps: 10 });
+  await page.mouse.up();
+  await page.waitForTimeout(350);
+  const after = Number(await capHeight());
+  if (after > before * 1.2) pass(`and dragging one sets the cap height (${before} to ${after} mm)`);
+  else fail(`cap height went ${before} to ${after}`);
+
+  // Turning it, from the knob above the box.
+  const knob = await page.evaluate(() => {
+    const c = document.querySelector('[data-panel-canvas] circle[style*="grab"]');
+    if (!c) return null;
+    const b = c.getBoundingClientRect();
+    return { x: b.x + b.width / 2, y: b.y + b.height / 2 };
+  });
+  if (knob) {
+    await page.mouse.move(knob.x, knob.y);
+    await page.mouse.down();
+    await page.mouse.move(knob.x + 90, knob.y + 90, { steps: 12 });
+    await page.mouse.up();
+    await page.waitForTimeout(350);
+    const turned = await page.locator('aside').last().innerText();
+    if (/ROTATION\s*\n?\s*-?\d{1,3}°/.test(turned) && !/ROTATION\s*\n?\s*0°/.test(turned)) {
+      pass('and the knob above it turns it');
+    } else {
+      fail('the rotation handle did not turn the label');
+    }
+  } else {
+    fail('no rotation handle appeared on the label');
+  }
+
   // Arrow keys moved cutouts but not decor, which is the same operation on
   // the same kind of thing.
   await page.locator('[data-decor="text"] rect[fill="transparent"]').first().click();
@@ -243,6 +292,26 @@ async function open(colorScheme: 'light' | 'dark' = 'dark') {
   const save = (await page.getByRole('button', { name: /^Save/ }).first().innerText()).trim();
   if (save === 'Saved') pass('and Cmd-S saves from wherever you are');
   else fail(`the save button reads "${save}" after Cmd-S`);
+
+  // All of it is listed somewhere, on its own shortcut, rather than spread
+  // through the interface.
+  // Out of the name field first: a question mark typed into a box is a
+  // question mark, which is the whole point of the guard.
+  await page.locator('[data-panel-canvas]').click({ position: { x: 600, y: 60 } });
+  await page.waitForTimeout(250);
+  await page.keyboard.press('?');
+  await page.waitForTimeout(350);
+  const sheet = page.locator('[role="dialog"]');
+  if ((await sheet.count()) === 1) pass('? brings up the list of shortcuts');
+  else fail('? did not open the shortcuts');
+  const listed = await sheet.innerText();
+  const missing = ['Circle', 'Text label', 'Undo', 'Redo', 'Save'].filter((k) => !listed.includes(k));
+  if (missing.length === 0) pass('and it has the shapes, the label and the panel keys in it');
+  else fail(`the list is missing ${missing.join(', ')}`);
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(250);
+  if ((await sheet.count()) === 0) pass('and Escape puts it away');
+  else fail('the shortcuts stayed up after Escape');
 
   if (problems.length === 0) pass('no uncaught errors from the keyboard');
   else fail(`keyboard: ${[...new Set(problems)].join(' | ')}`);

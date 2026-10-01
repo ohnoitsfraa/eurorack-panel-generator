@@ -14,6 +14,7 @@ import { usePanelBuild } from '@/lib/usePanelBuild';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { Logo } from '@/components/Logo';
 import { PanelIdentity } from '@/components/PanelIdentity';
+import { Shortcuts } from '@/components/Shortcuts';
 
 const TABS: Array<{ id: InspectorTab; label: string }> = [
   { id: 'panel', label: 'Panel' },
@@ -165,6 +166,7 @@ export default function Page() {
         <PanelIdentity />
 
         <div className="ml-auto flex shrink-0 items-center gap-3 text-[12.5px] text-ink-400">
+          <Shortcuts />
           <ThemeToggle />
           {result.warnings.length > 0 && (
             <button

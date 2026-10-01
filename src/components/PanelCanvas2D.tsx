@@ -2,7 +2,9 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { CUTOUT_PRESETS, MOUNT_SLOT, mountSlotPositions, panelHeightMm, panelWidthMm } from '@/lib/eurorack';
-import { artExtent, artRings, type DecorElement, type Feature } from '@/lib/types';
+import {
+  artExtent, artRings, type ArtElement, type DecorElement, type Feature, type TextElement,
+} from '@/lib/types';
 import { useStore } from '@/lib/store';
 import { textToRings } from '@/lib/model/text';
 import { bbox, type Ring } from '@/lib/geom/poly';
@@ -354,6 +356,11 @@ export function PanelCanvas2D() {
   const handleMm = HANDLE_PX * mmPerPx;
   const soleSelection =
     selectedIds.length === 1 ? features.find((f) => f.id === selectedIds[0]) : undefined;
+  // Labels and artwork get handles of their own: one number to scale rather
+  // than a width and a height.
+  const soleDecor = selectedIds.length === 1
+    ? decor.find((d) => d.id === selectedIds[0] && (d.type === 'text' || d.type === 'art'))
+    : undefined;
   // Worked out from the panel rather than the theme: a hole has to contrast
   // with the surface it is cut through, whatever colour that has been set to.
   const holeFill = cutoutFill(design.backgroundColor);
@@ -524,6 +531,9 @@ export function PanelCanvas2D() {
             different centres at once is more confusing than useful. */}
         {!tool && !duplicating && soleSelection && (
           <FeatureHandles f={soleSelection} handleMm={handleMm} />
+        )}
+        {!tool && !duplicating && soleDecor && (soleDecor.type === 'text' || soleDecor.type === 'art') && (
+          <DecorHandles el={soleDecor} handleMm={handleMm} />
         )}
 
         {marquee && (
@@ -1156,5 +1166,144 @@ function TextEditor({
         transform: 'translateX(-50%)',
       }}
     />
+  );
+}
+
+/**
+ * Scale and rotation handles for a label or a piece of traced artwork.
+ *
+ * Separate from the cutout handles because what "bigger" means differs: a
+ * cutout has a width and a height to set in millimetres, a label has a cap
+ * height, and artwork has a multiplier on whatever it was traced at. All three
+ * are one number here, so the corners scale proportionally and there are no
+ * edge handles to stretch one axis — a squashed logo or a condensed label is
+ * not something you would arrive at on purpose.
+ *
+ * The box is measured with the rotation taken out, so the handles sit on the
+ * element's own corners and turn with it rather than hugging an upright
+ * rectangle around a tilted label.
+ */
+function DecorHandles({
+  el, handleMm,
+}: { el: TextElement | ArtElement; handleMm: number }) {
+  const updateDecor = useStore((s) => s.updateDecor);
+  const fonts = useStore((s) => s.fonts);
+  const fontVersion = useStore((s) => s.fontVersion);
+  const svgRef = useContext(CanvasFrame);
+  const drag = useRef<{ role: 'scale' | 'rotate'; from: number; size: number } | null>(null);
+
+  const box = useMemo(() => {
+    const rings = el.type === 'art'
+      ? artRings({ ...el, rotation: 0 })
+      : (() => {
+        const font = fonts.get(`${el.fontFamily}@${el.fontWeight}`);
+        return font ? textToRings({ ...el, rotation: 0 }, font) : [];
+      })();
+    if (!rings.length || !rings[0].length) return null;
+    let u0 = Infinity; let u1 = -Infinity; let v0 = Infinity; let v1 = -Infinity;
+    for (const ring of rings) {
+      for (const p of ring) {
+        if (p.x < u0) u0 = p.x;
+        if (p.x > u1) u1 = p.x;
+        if (p.y < v0) v0 = p.y;
+        if (p.y > v1) v1 = p.y;
+      }
+    }
+    return { u0: u0 - el.x, u1: u1 - el.x, v0: v0 - el.y, v1: v1 - el.y };
+    // fontVersion is what changes when a font finishes loading.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [el, fonts, fontVersion]);
+
+  const rot = (el.rotation * Math.PI) / 180;
+  const cos = Math.cos(rot);
+  const sin = Math.sin(rot);
+  const toPanel = (u: number, v: number) => ({
+    x: el.x + u * cos - v * sin,
+    y: el.y + u * sin + v * cos,
+  });
+
+  const pointAt = (e: React.PointerEvent) => {
+    const svg = svgRef?.current;
+    if (!svg) return { x: 0, y: 0 };
+    return new DOMPoint(e.clientX, e.clientY).matrixTransform(svg.getScreenCTM()!.inverse());
+  };
+
+  const onMove = (e: React.PointerEvent) => {
+    const d = drag.current;
+    if (!d) return;
+    const p = pointAt(e);
+
+    if (d.role === 'rotate') {
+      const raw = (Math.atan2(p.y - el.y, p.x - el.x) * 180) / Math.PI + 90;
+      // Shift for 15° steps. Unlike a cutout this keeps the full turn: a label
+      // upside down is a different thing from a label the right way up.
+      const stepped = e.shiftKey ? Math.round(raw / 15) * 15 : Math.round(raw);
+      updateDecor(el.id, { rotation: ((stepped + 540) % 360) - 180 });
+      return;
+    }
+
+    // Proportional, measured from the element's own origin, so the handle
+    // stays under the pointer along the line out from it.
+    const now = Math.hypot(p.x - el.x, p.y - el.y);
+    if (d.from < 1e-6) return;
+    const factor = now / d.from;
+    if (el.type === 'text') {
+      updateDecor(el.id, { sizeMm: Math.max(0.6, Math.min(60, round2(d.size * factor))) });
+    } else {
+      updateDecor(el.id, { scale: Math.max(0.02, Math.min(30, Math.round(d.size * factor * 1000) / 1000)) });
+    }
+  };
+
+  const begin = (role: 'scale' | 'rotate') => (e: React.PointerEvent) => {
+    e.stopPropagation();
+    (e.target as Element).setPointerCapture?.(e.pointerId);
+    const p = pointAt(e);
+    drag.current = {
+      role,
+      from: Math.hypot(p.x - el.x, p.y - el.y),
+      size: el.type === 'text' ? el.sizeMm : el.scale,
+    };
+  };
+  const end = () => { drag.current = null; };
+
+  if (!box) return null;
+  const r = handleMm * 0.42;
+  const corners = [
+    [box.u0, box.v0], [box.u1, box.v0], [box.u1, box.v1], [box.u0, box.v1],
+  ] as const;
+  const rotateAt = toPanel((box.u0 + box.u1) / 2, box.v0 - handleMm * 1.5);
+  const topMid = toPanel((box.u0 + box.u1) / 2, box.v0);
+
+  return (
+    <g onPointerMove={onMove} onPointerUp={end} onPointerLeave={end}>
+      <line
+        x1={topMid.x} y1={topMid.y} x2={rotateAt.x} y2={rotateAt.y}
+        stroke="var(--color-accent)" strokeWidth={handleMm * 0.1} pointerEvents="none"
+      />
+      <circle
+        cx={rotateAt.x} cy={rotateAt.y} r={r}
+        fill="var(--color-ink-950)" stroke="var(--color-accent)" strokeWidth={handleMm * 0.14}
+        style={{ cursor: 'grab' }}
+        onPointerDown={begin('rotate')}
+      >
+        <title>Drag to rotate · Shift for 15° steps</title>
+      </circle>
+      {corners.map(([u, v], i) => {
+        const p = toPanel(u, v);
+        return (
+          <rect
+            key={i}
+            x={p.x - r} y={p.y - r} width={r * 2} height={r * 2}
+            fill="var(--color-accent)" stroke="var(--color-ink-950)" strokeWidth={handleMm * 0.08}
+            style={{ cursor: 'nwse-resize' }}
+            onPointerDown={begin('scale')}
+          >
+            <title>
+              {el.type === 'text' ? 'Drag to set the cap height' : 'Drag to resize'}
+            </title>
+          </rect>
+        );
+      })}
+    </g>
   );
 }
