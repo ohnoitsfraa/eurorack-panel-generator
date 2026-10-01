@@ -25,6 +25,51 @@ import { shapeRingsForPreview } from '@/lib/model/preview';
 
 const HANDLE_PX = 9;
 
+const ZOOM = { min: 0.4, max: 8 } as const;
+/** How much of the panel stays in view however far it is panned, mm. */
+const KEEP_IN_VIEW_MM = 5;
+
+/** Where the canvas is looking: a zoom factor and an offset in mm. */
+interface Camera { zoom: number; x: number; y: number }
+
+/**
+ * Keep some of the panel in view. A view panned off into empty space has
+ * nothing left on screen to grab and pull it back with.
+ */
+function clampCamera(c: Camera, W: number, H: number, pad: number): Camera {
+  const viewW = (W + pad * 2) / c.zoom;
+  const viewH = (H + pad * 2) / c.zoom;
+  const k = Math.min(KEEP_IN_VIEW_MM, W / 2, H / 2);
+  return {
+    zoom: c.zoom,
+    x: Math.min(W - k + pad, Math.max(k - viewW + pad, c.x)),
+    y: Math.min(H - k + pad, Math.max(k - viewH + pad, c.y)),
+  };
+}
+
+/**
+ * Zoom by `factor` about a point in panel mm, which stays put on screen; about
+ * the middle of the view when there is no point, as for the buttons.
+ *
+ * Worked out from the centre of the view box because that is what `meet`
+ * pins to the centre of the element: a point's offset from it, as a share of
+ * the view, is the same before and after.
+ */
+function zoomAbout(c: Camera, factor: number, at: { x: number; y: number } | null, W: number, H: number, pad: number): Camera {
+  const zoom = Math.min(ZOOM.max, Math.max(ZOOM.min, c.zoom * factor));
+  const baseW = W + pad * 2;
+  const baseH = H + pad * 2;
+  const vw = baseW / c.zoom, vh = baseH / c.zoom;
+  const nvw = baseW / zoom, nvh = baseH / zoom;
+  const cx = -pad + c.x + vw / 2;
+  const cy = -pad + c.y + vh / 2;
+  const ax = at?.x ?? cx;
+  const ay = at?.y ?? cy;
+  const ncx = ax - (ax - cx) * (nvw / vw);
+  const ncy = ay - (ay - cy) * (nvh / vh);
+  return clampCamera({ zoom, x: ncx - nvw / 2 + pad, y: ncy - nvh / 2 + pad }, W, H, pad);
+}
+
 /**
  * The SVG element, so handles can convert pointer positions into panel
  * millimetres. Passed by context rather than threaded through props, because
@@ -68,8 +113,14 @@ export function PanelCanvas2D() {
   const H = panelHeightMm(design.format);
 
   const svgRef = useRef<SVGSVGElement>(null);
-  const [zoom, setZoom] = useState(1);
-  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [camera, setCamera] = useState<Camera>({ zoom: 1, x: 0, y: 0 });
+  const zoom = camera.zoom;
+  const pan = camera;
+  /** A pan under way: the last pointer position, in screen pixels. */
+  const panDrag = useRef<{ x: number; y: number } | null>(null);
+  const [panning, setPanning] = useState(false);
+  const [spaceHeld, setSpaceHeld] = useState(false);
+  const pointerOver = useRef(false);
   const [marquee, setMarquee] =
     useState<{ x0: number; y0: number; x1: number; y1: number; add: boolean } | null>(null);
   /**
@@ -217,7 +268,23 @@ export function PanelCanvas2D() {
     void isDecor;
   };
 
+  /** Millimetres per screen pixel right now, read straight off the SVG. */
+  const mmPerPxNow = () => {
+    const ctm = svgRef.current?.getScreenCTM();
+    return ctm && ctm.a > 0 ? 1 / ctm.a : mmPerPx;
+  };
+
   const onPointerMove = (e: React.PointerEvent) => {
+    const pd = panDrag.current;
+    if (pd) {
+      // The panel follows the pointer, so the view moves the other way.
+      const s = mmPerPxNow();
+      const dx = (e.clientX - pd.x) * s;
+      const dy = (e.clientY - pd.y) * s;
+      panDrag.current = { x: e.clientX, y: e.clientY };
+      setCamera((c) => clampCamera({ ...c, x: c.x - dx, y: c.y - dy }, W, H, pad));
+      return;
+    }
     const d = drag.current;
     if (d) {
       const now = toMm(e);
@@ -266,6 +333,11 @@ export function PanelCanvas2D() {
   };
 
   const onPointerUp = () => {
+    if (panDrag.current) {
+      panDrag.current = null;
+      setPanning(false);
+      return;
+    }
     if (marquee) {
       const x0 = Math.min(marquee.x0, marquee.x1);
       const x1 = Math.max(marquee.x0, marquee.x1);
@@ -299,7 +371,27 @@ export function PanelCanvas2D() {
     setGuides([]);
   };
 
+  const beginPan = (e: React.PointerEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    svgRef.current?.setPointerCapture?.(e.pointerId);
+    panDrag.current = { x: e.clientX, y: e.clientY };
+    setPanning(true);
+  };
+
+  /**
+   * Space or the middle button pans from anywhere, over a cutout or a label
+   * as much as over empty panel. Taken in the capture phase, before whatever
+   * is under the pointer can start a drag of its own.
+   */
+  const onPointerDownCapture = (e: React.PointerEvent) => {
+    if (spaceHeld || e.button === 1) beginPan(e);
+  };
+
   const onBackgroundPointerDown = (e: React.PointerEvent) => {
+    // Cmd/Ctrl-drag on anything that is not a part moves the view. On a part
+    // it still means "ignore the grid", and adding to a sweep is Shift's job.
+    if (!tool && (e.metaKey || e.ctrlKey)) { beginPan(e); return; }
     const p = toMm(e);
     if (tool) {
       const free = e.metaKey || e.ctrlKey;
@@ -308,9 +400,9 @@ export function PanelCanvas2D() {
       if (!e.shiftKey) setTool(null);
       return;
     }
-    // Holding a modifier adds to the selection rather than replacing it, so a
+    // Holding Shift adds to the selection rather than replacing it, so a
     // second sweep can pick up another row.
-    setMarquee({ x0: p.x, y0: p.y, x1: p.x, y1: p.y, add: e.shiftKey || e.metaKey || e.ctrlKey });
+    setMarquee({ x0: p.x, y0: p.y, x1: p.x, y1: p.y, add: e.shiftKey });
   };
 
   // --- keyboard ---
@@ -360,11 +452,59 @@ export function PanelCanvas2D() {
   }, [selectedIds, features, decor, gridMm, removeFeatures, removeDecor, duplicateFeatures,
       duplicateDecor, updateFeature, placeDecor, select, setTool]);
 
-  const onWheel = (e: React.WheelEvent) => {
-    if (!e.ctrlKey && !e.metaKey) return;
-    e.preventDefault();
-    setZoom((z) => Math.min(8, Math.max(0.4, z * (e.deltaY < 0 ? 1.12 : 0.89))));
-  };
+  /**
+   * Scroll pans, and Cmd/Ctrl-scroll zooms about the pointer. A trackpad pinch
+   * arrives as a Ctrl-scroll, so it zooms too.
+   *
+   * A listener of our own rather than React's onWheel, which is passive: the
+   * browser would scroll or zoom the page underneath regardless.
+   */
+  useEffect(() => {
+    const svg = svgRef.current;
+    if (!svg) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? svg.clientHeight : 1;
+      if (e.ctrlKey || e.metaKey) {
+        // About 12% a notch on a mouse wheel; smooth for a pinch, whose steps
+        // are much smaller.
+        const factor = Math.exp(-e.deltaY * unit * 0.0012);
+        const at = toMm(e);
+        setCamera((c) => zoomAbout(c, factor, at, W, H, pad));
+      } else {
+        const s = mmPerPxNow();
+        const dx = e.deltaX * unit * s;
+        const dy = e.deltaY * unit * s;
+        setCamera((c) => clampCamera({ ...c, x: c.x + dx, y: c.y + dy }, W, H, pad));
+      }
+    };
+    svg.addEventListener('wheel', onWheel, { passive: false });
+    return () => svg.removeEventListener('wheel', onWheel);
+  });
+
+  // Space held over the canvas turns any drag into a pan. Only over the
+  // canvas, so Space still presses whatever button has the focus elsewhere.
+  useEffect(() => {
+    const typing = () => {
+      const el = document.activeElement as HTMLElement | null;
+      return !!el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable);
+    };
+    const down = (e: KeyboardEvent) => {
+      if (e.code !== 'Space' || !pointerOver.current || typing()) return;
+      e.preventDefault();
+      setSpaceHeld(true);
+    };
+    const up = (e: KeyboardEvent) => { if (e.code === 'Space') setSpaceHeld(false); };
+    const release = () => setSpaceHeld(false);
+    window.addEventListener('keydown', down);
+    window.addEventListener('keyup', up);
+    window.addEventListener('blur', release);
+    return () => {
+      window.removeEventListener('keydown', down);
+      window.removeEventListener('keyup', up);
+      window.removeEventListener('blur', release);
+    };
+  }, []);
 
   /**
    * Type into a label where it sits.
@@ -400,12 +540,18 @@ export function PanelCanvas2D() {
         role="application"
         aria-label="Panel layout"
         data-panel-canvas=""
-        className={`h-full w-full ${tool ? 'cursor-crosshair' : 'cursor-default'}`}
+        className={`h-full w-full ${
+          panning ? 'cursor-grabbing' : spaceHeld ? 'cursor-grab' : tool ? 'cursor-crosshair' : 'cursor-default'}`}
+        onPointerDownCapture={onPointerDownCapture}
         onPointerDown={onBackgroundPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
-        onPointerLeave={onPointerUp}
-        onWheel={onWheel}
+        onPointerEnter={() => { pointerOver.current = true; }}
+        onPointerLeave={() => {
+          pointerOver.current = false;
+          // A pan holds the pointer, so leaving mid-pan is not the end of it.
+          if (!panDrag.current) onPointerUp();
+        }}
       >
         <defs>
           <clipPath id="panelClip">
@@ -578,14 +724,14 @@ export function PanelCanvas2D() {
               + `${gapSummary(guides)} · ⌘/Ctrl to ignore`
             : tool
             ? `Click to place a ${(CUTOUT_PRESETS.find((p) => p.id === tool)?.label ?? 'cutout').toLowerCase()} · Shift-click to keep placing · Esc to stop`
-            : 'Alt drag to duplicate · ⌘/Ctrl drag to ignore grid · ⌘/Ctrl scroll to zoom'}
+            : 'Scroll or Space drag to move · ⌘/Ctrl scroll to zoom · Alt drag to duplicate · ⌘/Ctrl drag a part to ignore grid'}
         </span>
       </div>
 
       <div className="absolute right-3 top-3 flex gap-1">
-        <ZoomButton onClick={() => setZoom((z) => Math.min(8, z * 1.25))}>+</ZoomButton>
-        <ZoomButton onClick={() => setZoom((z) => Math.max(0.4, z / 1.25))}>−</ZoomButton>
-        <ZoomButton onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); }}>Fit</ZoomButton>
+        <ZoomButton onClick={() => setCamera((c) => zoomAbout(c, 1.25, null, W, H, pad))}>+</ZoomButton>
+        <ZoomButton onClick={() => setCamera((c) => zoomAbout(c, 1 / 1.25, null, W, H, pad))}>−</ZoomButton>
+        <ZoomButton onClick={() => setCamera({ zoom: 1, x: 0, y: 0 })}>Fit</ZoomButton>
       </div>
     </div>
     </CanvasFrame.Provider>

@@ -45,7 +45,10 @@ const GROUPS: Array<{ title: string; keys: Array<[string, string]> }> = [
     title: 'View',
     keys: [
       ['⌘ scroll', 'Zoom the canvas'],
-      ['⌘ drag', 'Ignore the grid and the guides'],
+      ['Scroll', 'Move around the canvas'],
+      ['Space + drag', 'Move around, from anywhere'],
+      ['⌘ drag empty space', 'Move around'],
+      ['⌘ drag a part', 'Ignore the grid and the guides'],
       ['?', 'This list'],
     ],
   },

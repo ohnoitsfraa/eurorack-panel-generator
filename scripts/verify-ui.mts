@@ -717,6 +717,108 @@ async function open(colorScheme: 'light' | 'dark' = 'dark') {
   await page.close();
 }
 
+// --- moving around a zoomed-in panel ---
+{
+  const { page, problems } = await open();
+  const svg = page.locator('[data-panel-canvas]');
+  const viewBox = async () => (await svg.getAttribute('viewBox'))!.split(' ').map(Number);
+  const toScreen = (mx: number, my: number) =>
+    page.evaluate(([x, y]) => {
+      const el = document.querySelector('[data-panel-canvas]') as SVGSVGElement;
+      const p = new DOMPoint(x, y).matrixTransform(el.getScreenCTM()!);
+      return { x: p.x, y: p.y };
+    }, [mx, my] as [number, number]);
+  const toMm = (sx: number, sy: number) =>
+    page.evaluate(([x, y]) => {
+      const el = document.querySelector('[data-panel-canvas]') as SVGSVGElement;
+      const p = new DOMPoint(x, y).matrixTransform(el.getScreenCTM()!.inverse());
+      return { x: p.x, y: p.y };
+    }, [sx, sy] as [number, number]);
+
+  // Something to grab, so Space can be shown to pan over a part too.
+  await page.getByRole('button', { name: 'Cutouts', exact: true }).click();
+  await page.getByRole('button', { name: 'Circle', exact: true }).click();
+  const jack = await toScreen(20, 60);
+  await page.mouse.click(jack.x, jack.y);
+  await page.waitForTimeout(200);
+  const jackX = () => page.locator('[data-panel-canvas] circle:not([pointer-events="none"])').evaluateAll((els) =>
+    els.map((e) => Number(e.getAttribute('cx'))).find((v) => Math.abs(v - 20) < 15));
+  const cxBefore = await jackX();
+
+  for (let i = 0; i < 4; i++) await page.getByRole('button', { name: '+', exact: true }).click();
+  await page.waitForTimeout(200);
+
+  // Zoom has to be about the pointer, or zooming in takes you away from
+  // what you were looking at.
+  const at = await toScreen(25, 40);
+  const mmBefore = await toMm(at.x, at.y);
+  await page.mouse.move(at.x, at.y);
+  await page.keyboard.down('Meta');
+  await page.mouse.wheel(0, -100);
+  await page.keyboard.up('Meta');
+  await page.waitForTimeout(250);
+  const mmAfter = await toMm(at.x, at.y);
+  if (Math.hypot(mmAfter.x - mmBefore.x, mmAfter.y - mmBefore.y) < 0.2) pass('Cmd-scroll zooms about the pointer');
+  else fail(`the point under the pointer drifted by ${Math.hypot(mmAfter.x - mmBefore.x, mmAfter.y - mmBefore.y).toFixed(2)} mm`);
+
+  // Plain scrolling moves the view.
+  let v0 = await viewBox();
+  await page.mouse.wheel(0, 120);
+  await page.waitForTimeout(250);
+  let v1 = await viewBox();
+  if (v1[1] > v0[1] + 1 && Math.abs(v1[2] - v0[2]) < 1e-6) pass('scrolling moves around a zoomed-in panel');
+  else fail(`scrolling: view box went from ${v0.join(' ')} to ${v1.join(' ')}`);
+
+  // Cmd-drag on empty panel drags the view along with the pointer.
+  const empty = await toScreen(30, 90);
+  v0 = await viewBox();
+  await page.mouse.move(empty.x, empty.y);
+  await page.keyboard.down('Meta');
+  await page.mouse.down();
+  await page.mouse.move(empty.x + 120, empty.y + 60, { steps: 8 });
+  await page.mouse.up();
+  await page.keyboard.up('Meta');
+  await page.waitForTimeout(250);
+  v1 = await viewBox();
+  const grabbed = await toMm(empty.x + 120, empty.y + 60);
+  if (v1[0] < v0[0] - 1 && v1[1] < v0[1] - 1 && Math.hypot(grabbed.x - 30, grabbed.y - 90) < 0.5) {
+    pass('Cmd-drag on the panel moves the view, keeping the grabbed spot under the pointer');
+  } else {
+    fail(`Cmd-drag: view box ${v0.join(' ')} -> ${v1.join(' ')}, grabbed spot now at ${grabbed.x.toFixed(1)}, ${grabbed.y.toFixed(1)}`);
+  }
+
+  // Space-drag pans even when it starts on a part, and leaves the part be.
+  const onJack = await toScreen(20, 60);
+  v0 = await viewBox();
+  await page.mouse.move(onJack.x, onJack.y);
+  await page.keyboard.down('Space');
+  await page.mouse.down();
+  await page.mouse.move(onJack.x - 80, onJack.y - 40, { steps: 8 });
+  await page.mouse.up();
+  await page.keyboard.up('Space');
+  await page.waitForTimeout(250);
+  v1 = await viewBox();
+  if (v1[0] > v0[0] + 1 && cxBefore !== undefined && (await jackX()) === cxBefore) pass('Space-drag pans from on top of a part without moving it');
+  else fail(`Space-drag: view box ${v0.join(' ')} -> ${v1.join(' ')}, cutout at ${await jackX()} (was ${cxBefore})`);
+
+  // However far it is pushed, some of the panel stays in view.
+  for (let i = 0; i < 40; i++) await page.mouse.wheel(4000, 4000);
+  await page.waitForTimeout(250);
+  const far = await viewBox();
+  if (far[0] < 40.3 && far[1] < 128.5) pass('the panel cannot be scrolled out of sight');
+  else fail(`after scrolling far away the view box is ${far.join(' ')}`);
+
+  await page.getByRole('button', { name: 'Fit', exact: true }).click();
+  await page.waitForTimeout(200);
+  const fit = await viewBox();
+  if (fit[0] === -8 && fit[1] === -8) pass('Fit brings it back');
+  else fail(`Fit left the view box at ${fit.join(' ')}`);
+
+  if (problems.length === 0) pass('no uncaught errors moving around the canvas');
+  else fail(`moving around: ${[...new Set(problems)].join(' | ')}`);
+  await page.close();
+}
+
 // --- putting a panel in the rack shows you the rack ---
 {
   const { page, problems } = await open();
