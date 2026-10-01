@@ -338,7 +338,8 @@ function ArtworkTracer() {
         // to rewrite thousands of traced points.
         rings: rings.map((ring) => ring.map((p) => ({ x: p.x - cx, y: p.y - cy }))),
         x: cx, y: cy, scale: 1, rotation: 0,
-        color: '#f2f2f0', mode: 'raised', reliefMm: 0.6,
+        // Flush by default, like a new label.
+        color: '#f2f2f0', mode: 'flush', reliefMm: 0.6,
       };
       addDecor(el);
     } catch (e) {

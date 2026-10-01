@@ -460,7 +460,9 @@ export const useStore = create<State>((set, get) => ({
       x: panelWidthMm(design.hp) / 2, y: 12, sizeMm: 3.2,
       fontFamily: 'Inter', fontWeight: 700,
       letterSpacing: 0.2, align: 'center', rotation: 0,
-      color: '#f2f2f0', mode: 'raised', reliefMm: 0.6,
+      // Flush by default: a level face in a second colour is what panel
+      // lettering usually is, and it prints without anything standing proud.
+      color: '#f2f2f0', mode: 'flush', reliefMm: 0.6,
     };
     get().addDecor(el);
     return el.id;
