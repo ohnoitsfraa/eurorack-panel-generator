@@ -241,14 +241,3 @@ export function isSaved(v: unknown): v is SavedDesign {
   );
 }
 
-/**
- * A design without its reference bitmap.
- *
- * A background image is a data URL running to megabytes and is a guide for
- * designing rather than part of the model, so it is dropped on save and on
- * export.
- */
-export function stripForStorage(design: PanelDesign): PanelDesign {
-  const { backgroundImage: _drop, ...rest } = design;
-  return rest;
-}

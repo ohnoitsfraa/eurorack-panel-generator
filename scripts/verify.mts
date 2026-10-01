@@ -26,7 +26,7 @@ import { nestRings } from '../src/lib/geom/poly';
 import { meshesTo3MF } from '../src/lib/export/threemf';
 import { meshesToBinarySTL } from '../src/lib/export/stl';
 import { COMPONENT_SPECS, panelHeightMm, panelWidthMm } from '../src/lib/eurorack';
-import { DEFAULT_DETECT_SETTINGS } from '../src/lib/types';
+import { DEFAULT_DETECT_SETTINGS, migrateDesign } from '../src/lib/types';
 import type { Feature, Mesh, PanelDesign, TextElement } from '../src/lib/types';
 import type { SavedDesign } from '../src/lib/storage';
 
@@ -129,8 +129,6 @@ const BASE: PanelDesign = {
   thicknessMm: 2,
   cornerRadiusMm: 1.5,
   backgroundColor: '#1a1a1a',
-  backgroundImageOpacity: 1,
-  backgroundImageFit: 'cover',
   includeMountSlots: true,
   holeClearanceMm: 0,
   features: [],
@@ -1573,13 +1571,20 @@ console.log('\nExport, import and local storage');
     else fail(`second migration moved ${again}, library now ${count}`);
   }
 
-  // A background image is a reference photo, not part of the model, and would
-  // fill the quota within a few saves.
-  const withPhoto = { ...BASE, backgroundImage: 'data:image/png;base64,AAAA' };
-  if (!('backgroundImage' in storage.stripForStorage(withPhoto))) {
-    pass('a reference photo is not written to storage');
+  // Panels used to carry a background image, a data URL running to megabytes
+  // that never reached the model. One saved before it was removed must shed
+  // it on load rather than keep dragging it through every save.
+  const withImage = {
+    ...BASE,
+    backgroundImage: 'data:image/png;base64,AAAA',
+    backgroundImageOpacity: 0.5,
+    backgroundImageFit: 'contain',
+  } as PanelDesign;
+  const migrated = migrateDesign(withImage);
+  if (!Object.keys(migrated).some((k) => k.startsWith('backgroundImage'))) {
+    pass('an old background image is dropped on load');
   } else {
-    fail('the background image was stored');
+    fail('a saved background image survived loading');
   }
 }
 

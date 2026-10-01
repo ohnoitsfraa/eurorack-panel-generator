@@ -16,7 +16,7 @@ import { autoCrop, detectFeatures } from './cv/detect';
 import {
   clearSession, deleteDesign as dbDeleteDesign, loadDesigns, loadRack as dbLoadRack,
   loadSession, migrateFromLocalStorage, putDesign, putDesigns, saveRack as dbSaveRack,
-  isRefetchable, saveSession, stripForStorage, type SavedDesign, type SourceReference,
+  isRefetchable, saveSession, type SavedDesign, type SourceReference,
 } from './storage';
 import {
   backupFilename, buildLibraryBackup, buildPanelBackup, buildRackBackup, mergeBackup,
@@ -196,8 +196,6 @@ export const DEFAULT_DESIGN: PanelDesign = {
   thicknessMm: 2,
   cornerRadiusMm: 1.5,
   backgroundColor: '#e8e6df',   // Brushed Alu, so a new panel starts on-brand
-  backgroundImageOpacity: 1,
-  backgroundImageFit: 'cover',
   includeMountSlots: true,
   holeClearanceMm: HOLE_CLEARANCE.default,
   features: [],
@@ -589,7 +587,7 @@ export const useStore = create<State>((set, get) => ({
       id,
       name: (name ?? designName).trim() || 'Untitled panel',
       updatedAt: Date.now(),
-      design: stripForStorage(design),
+      design,
       ...(reference ? { reference } : {}),
     };
     const items = [entry, ...library.filter((i) => i.id !== entry.id)]
@@ -789,7 +787,7 @@ export const useStore = create<State>((set, get) => ({
       error: null,
     }));
 
-    await putDesigns(payload.panels.map((d) => ({ ...d, design: stripForStorage(d.design) })));
+    await putDesigns(payload.panels);
     if (merged.rack) await dbSaveRack(merged.rack);
     return merged.report;
   },

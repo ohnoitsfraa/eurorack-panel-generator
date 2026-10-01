@@ -4,7 +4,7 @@ import { simplifyRing } from './simplify';
 /**
  * Marching squares: binary bitmap -> closed contour rings.
  *
- * Used to turn an uploaded logo or background image into printable relief.
+ * Used to turn an uploaded logo or picture into printable relief.
  * Each cell of the mask contributes zero, one or two directed segments; the
  * segments are then stitched end-to-end into rings. Because every segment is
  * directed with the filled side on a consistent hand, stitching never has to

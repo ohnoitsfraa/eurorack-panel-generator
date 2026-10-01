@@ -109,10 +109,22 @@ export function migrateFeature(raw: unknown): Feature | null {
   return { ...base, shape: 'rect', w, h, radius: Math.min(num(f.radius, 0), Math.min(w, h) / 2) };
 }
 
-/** Run every feature in a design through the migration. */
+/**
+ * Run every feature in a design through the migration.
+ *
+ * Panels once had a background image, shown in the 2D view only. It never
+ * reached the printed model, so it was removed; designs saved with one lose
+ * it here, along with its settings.
+ */
 export function migrateDesign(design: PanelDesign): PanelDesign {
+  const {
+    backgroundImage: _image,
+    backgroundImageOpacity: _opacity,
+    backgroundImageFit: _fit,
+    ...rest
+  } = design as PanelDesign & Record<'backgroundImage' | 'backgroundImageOpacity' | 'backgroundImageFit', unknown>;
   return {
-    ...design,
+    ...rest,
     features: (design.features ?? [])
       .map((f) => migrateFeature(f))
       .filter((f): f is Feature => f !== null),
@@ -261,10 +273,6 @@ export interface PanelDesign {
   /** Rounded corners on the panel outline, mm. */
   cornerRadiusMm: number;
   backgroundColor: string;
-  /** Data URL of a background image, used for the 2D preview only. */
-  backgroundImage?: string;
-  backgroundImageOpacity: number;
-  backgroundImageFit: 'cover' | 'contain' | 'stretch';
   includeMountSlots: boolean;
   /** Added to every cutout when the model is built, to suit your printer. */
   holeClearanceMm: number;

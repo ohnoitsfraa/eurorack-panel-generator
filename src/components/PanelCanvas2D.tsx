@@ -425,19 +425,6 @@ export function PanelCanvas2D() {
         <g clipPath="url(#panelClip)">
           <rect x={0} y={0} width={W} height={H} fill={design.backgroundColor} />
 
-          {design.backgroundImage && (
-            <image
-              href={design.backgroundImage}
-              x={0} y={0} width={W} height={H}
-              opacity={design.backgroundImageOpacity}
-              preserveAspectRatio={
-                design.backgroundImageFit === 'stretch' ? 'none'
-                : design.backgroundImageFit === 'contain' ? 'xMidYMid meet'
-                : 'xMidYMid slice'
-              }
-            />
-          )}
-
           {/* The source photo, for checking that detected holes line up. */}
           {showSource && croppedUrl && (
             <image

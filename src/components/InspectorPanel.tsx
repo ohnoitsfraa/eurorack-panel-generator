@@ -278,8 +278,6 @@ export function PanelTab() {
             />
           ))}
         </div>
-
-        <BackgroundImageField />
       </Section>
 
       <Section title="Editing">
@@ -302,63 +300,6 @@ export function PanelTab() {
         </p>
       </Section>
     </>
-  );
-}
-
-function BackgroundImageField() {
-  const design = useStore((s) => s.design);
-  const setDesign = useStore((s) => s.setDesign);
-
-  return (
-    <div className="space-y-2 border-t border-ink-800 pt-3">
-      <Field label="Background image">
-        <input
-          type="file"
-          accept="image/*"
-          onChange={(e) => {
-            const f = e.target.files?.[0];
-            if (!f) return;
-            const reader = new FileReader();
-            reader.onload = () => setDesign({ backgroundImage: String(reader.result) });
-            reader.readAsDataURL(f);
-            e.target.value = '';
-          }}
-          className="w-full text-[12.5px] text-ink-400 file:mr-2 file:rounded file:border-0
-                     file:bg-ink-700 file:px-2 file:py-1 file:text-[12.5px] file:text-ink-100"
-        />
-      </Field>
-
-      {design.backgroundImage && (
-        <>
-          <Field label="Opacity" hint={`${Math.round(design.backgroundImageOpacity * 100)}%`}>
-            <Slider
-              min={0} max={1} step={0.05}
-              value={design.backgroundImageOpacity}
-              onChange={(backgroundImageOpacity) => setDesign({ backgroundImageOpacity })}
-            />
-          </Field>
-          <Field label="Fit">
-            <Select
-              value={design.backgroundImageFit}
-              onChange={(backgroundImageFit) => setDesign({ backgroundImageFit })}
-              options={[
-                { value: 'cover', label: 'Cover' },
-                { value: 'contain', label: 'Contain' },
-                { value: 'stretch', label: 'Stretch' },
-              ]}
-            />
-          </Field>
-          <Button variant="ghost" onClick={() => setDesign({ backgroundImage: undefined })}>
-            Remove image
-          </Button>
-          <p className="text-[12.5px] leading-relaxed text-ink-400">
-            A background image is a visual reference only — it is not part of
-            the printed model. To print artwork, trace it into relief from the
-            Text &amp; art tab.
-          </p>
-        </>
-      )}
-    </div>
   );
 }
 

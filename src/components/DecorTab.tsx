@@ -270,8 +270,8 @@ function FontUpload() {
 /**
  * Turn a bitmap into printable relief.
  *
- * A background image alone cannot be printed, so this traces it to outlines
- * that get extruded like any other decor. The threshold is exposed because
+ * A picture cannot be printed as it is, so this traces it to outlines that
+ * get extruded like any other decor. The threshold is exposed because
  * where the edge falls is a judgement call about the artwork, not something
  * that can be inferred.
  */
