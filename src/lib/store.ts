@@ -110,6 +110,8 @@ interface State {
 
   addFeature: (shape: CutoutShapeId, x: number, y: number) => void;
   updateFeature: (id: string, patch: Partial<Feature>) => void;
+  /** Change several cutouts, each by its own patch, as one step for undo. */
+  updateFeatures: (ids: string[], patch: (f: Feature) => Partial<Feature>) => void;
   removeFeatures: (ids: string[]) => void;
   duplicateFeatures: (ids: string[], offsetMm?: number) => string[];
   mirrorFeatures: (ids: string[], axis: 'x' | 'y') => void;
@@ -363,6 +365,17 @@ export const useStore = create<State>((set, get) => ({
         features: s.design.features.map((f) => (f.id === id ? { ...f, ...patch } : f)),
       },
     })),
+
+  updateFeatures: (ids, patch) =>
+    set((s) => {
+      const which = new Set(ids);
+      return {
+        design: {
+          ...s.design,
+          features: s.design.features.map((f) => (which.has(f.id) ? { ...f, ...patch(f) } : f)),
+        },
+      };
+    }),
 
   removeFeatures: (ids) =>
     set((s) => ({

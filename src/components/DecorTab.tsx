@@ -6,7 +6,7 @@ import { uid, type ArtElement, type ReliefMode, type ShapeElement, type TextElem
 import { useStore } from '@/lib/store';
 import { traceArtwork } from '@/lib/model/trace';
 import { FONT_FAMILIES, FONT_WEIGHTS } from '@/lib/fonts';
-import { Button, ColorInput, Field, NumberInput, Section, Select, Slider } from './ui';
+import { Button, ColorInput, Field, NumberInput, Section, Select, Slider, shared } from './ui';
 
 const RELIEF_OPTIONS: Array<{ value: ReliefMode; label: string }> = [
   { value: 'raised', label: 'Raised — sits on the surface' },
@@ -255,11 +255,6 @@ function DecorEditor({ id }: { id: string }) {
       </Field>
     </Section>
   );
-}
-
-/** The value every one of these has, or undefined if they differ. */
-function shared<T>(values: T[]): T | undefined {
-  return values.length > 0 && values.every((v) => v === values[0]) ? values[0] : undefined;
 }
 
 /**

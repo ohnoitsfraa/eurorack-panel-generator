@@ -6,7 +6,7 @@ import {
 } from '@/lib/eurorack';
 import { describeFeature, isStadium, type Feature, type FeatureKind, type PanelFormat } from '@/lib/types';
 import { featureForKind, useStore } from '@/lib/store';
-import { Button, ColorInput, Field, NumberInput, Section, Select, Slider, Toggle } from './ui';
+import { Button, ColorInput, Field, NumberInput, Section, Select, Slider, Toggle, shared } from './ui';
 
 /**
  * Everything about one cutout.
@@ -149,6 +149,124 @@ function FeatureEditor({ feature: f }: { feature: Feature }) {
         <Button variant="danger" onClick={() => removeFeatures([f.id])}>Delete</Button>
       </div>
     </Section>
+  );
+}
+
+/**
+ * Size several cutouts at once.
+ *
+ * Each field shows the value the selection shares, or says it is mixed and
+ * shows the first one's; setting it sets it on all of them, as one step for
+ * undo. Circles and rectangles are sized by their own fields, so a selection
+ * of both can still give every circle one diameter without touching the
+ * rectangles.
+ */
+function BatchFeatureSize({ features }: { features: Feature[] }) {
+  const updateFeatures = useStore((s) => s.updateFeatures);
+  const circles = features.filter((f) => f.shape === 'circle');
+  const rects = features.filter((f) => f.shape === 'rect');
+  const ids = features.map((f) => f.id);
+
+  const kind = shared(features.map((f) => (hasStandardSize(f.kind) ? f.kind : 'custom')));
+  const shape = shared(features.map((f) => f.shape));
+  const diameter = shared(circles.map((f) => f.w));
+  const width = shared(rects.map((f) => f.w));
+  const height = shared(rects.map((f) => f.h));
+  const radius = shared(rects.map((f) => Math.min(f.radius, Math.min(f.w, f.h) / 2)));
+  const rotation = shared(rects.map((f) => f.rotation));
+  const mixed = (v: unknown, unit = 'mm') => (v === undefined ? 'mixed' : unit);
+  const count = (n: number, one: string) => (features.length > n ? ` · ${n} ${one}${n === 1 ? '' : 's'}` : '');
+
+  // As for one cutout: a circle's radius follows its diameter, and a corner
+  // radius never exceeds half the shorter side.
+  const resizeRects = (w: (f: Feature) => number, h: (f: Feature) => number) =>
+    updateFeatures(rects.map((f) => f.id), (f) => {
+      const nw = w(f), nh = h(f);
+      return { w: nw, h: nh, radius: Math.min(f.radius, Math.min(nw, nh) / 2) };
+    });
+
+  return (
+    <div className="space-y-2" data-batch-cutouts="">
+      <Field label="Standard size" hint={kind === undefined ? 'mixed' : undefined}>
+        <Select<FeatureKind | 'custom' | ''>
+          value={kind ?? ''}
+          onChange={(k) => {
+            if (!k) return;
+            updateFeatures(ids, (f) => (k === 'custom' ? { kind: 'custom' } : { ...featureForKind(k), x: f.x, y: f.y }));
+          }}
+          options={[
+            ...(kind === undefined ? [{ value: '' as const, label: 'Mixed' }] : []),
+            { value: 'custom', label: 'Custom size' },
+            ...STANDARD_KINDS.map((k) => ({
+              value: k,
+              label: `${COMPONENT_SPECS[k].label} — ${COMPONENT_SPECS[k].holeMm} mm`,
+            })),
+          ]}
+        />
+      </Field>
+
+      <Field label="Shape" hint={shape === undefined ? 'mixed' : undefined}>
+        <Select<'circle' | 'rect' | ''>
+          value={shape ?? ''}
+          onChange={(s) => {
+            if (!s) return;
+            updateFeatures(ids, (f) => (s === 'circle'
+              ? { shape: s, h: f.w, radius: f.w / 2 }
+              : { shape: s, radius: Math.min(f.radius, Math.min(f.w, f.h) / 2) }));
+          }}
+          options={[
+            ...(shape === undefined ? [{ value: '' as const, label: 'Mixed' }] : []),
+            { value: 'circle', label: 'Circle' },
+            { value: 'rect', label: 'Rectangle' },
+          ]}
+        />
+      </Field>
+
+      {circles.length > 0 && (
+        <Field label={`Diameter${count(circles.length, 'circle')}`} hint={mixed(diameter)}>
+          <NumberInput
+            value={diameter ?? circles[0].w}
+            onChange={(d) => updateFeatures(circles.map((f) => f.id), () => ({ w: d, h: d, radius: d / 2 }))}
+            min={0.2} max={200} step={0.1}
+          />
+        </Field>
+      )}
+
+      {rects.length > 0 && (
+        <>
+          <div className="grid grid-cols-2 gap-2">
+            <Field label={`Width${count(rects.length, 'rectangle')}`} hint={mixed(width)}>
+              <NumberInput
+                value={width ?? rects[0].w}
+                onChange={(w) => resizeRects(() => w, (f) => f.h)}
+                min={0.2} max={300} step={0.1}
+              />
+            </Field>
+            <Field label="Height" hint={mixed(height)}>
+              <NumberInput
+                value={height ?? rects[0].h}
+                onChange={(h) => resizeRects((f) => f.w, () => h)}
+                min={0.2} max={300} step={0.1}
+              />
+            </Field>
+          </div>
+          <Field label="Corner radius" hint={mixed(radius)}>
+            <NumberInput
+              value={radius ?? rects[0].radius}
+              onChange={(r) => updateFeatures(rects.map((f) => f.id), (f) => ({ radius: Math.min(r, Math.min(f.w, f.h) / 2) }))}
+              min={0} max={150} step={0.05}
+            />
+          </Field>
+          <Field label="Rotation" hint={rotation === undefined ? 'mixed' : `${rotation.toFixed(0)}°`}>
+            <Slider
+              min={-90} max={90} step={1}
+              value={rotation ?? rects[0].rotation}
+              onChange={(r) => updateFeatures(rects.map((f) => f.id), () => ({ rotation: r }))}
+            />
+          </Field>
+        </>
+      )}
+    </div>
   );
 }
 
@@ -359,7 +477,11 @@ export function FeaturesTab() {
               <li key={f.id}>
                 <button
                   type="button"
-                  onClick={() => select([f.id])}
+                  onClick={(e) => {
+                    // Shift or Cmd adds to the selection or takes back out, as on the canvas.
+                    if (!(e.shiftKey || e.metaKey || e.ctrlKey)) { select([f.id]); return; }
+                    select(selectedIds.includes(f.id) ? selectedIds.filter((i) => i !== f.id) : [...selectedIds, f.id]);
+                  }}
                   className={`flex w-full items-center justify-between gap-2 rounded px-2 py-1 text-left text-[12.5px]
                     ${selectedIds.includes(f.id) ? 'bg-accent/15 text-accent' : 'text-ink-300 hover:bg-ink-800'}`}
                 >
@@ -381,6 +503,7 @@ export function FeaturesTab() {
 
       {picked.length > 1 && (
         <Section title={`${picked.length} selected`}>
+          <BatchFeatureSize features={picked} />
           <div className="grid grid-cols-3 gap-1">
             <Button onClick={() => alignFeatures(selectedIds, 'left')}>Left</Button>
             <Button onClick={() => alignFeatures(selectedIds, 'cx')}>Centre X</Button>

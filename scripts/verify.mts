@@ -1921,6 +1921,41 @@ console.log('\nEditing several labels at once');
   else fail('undo after a batch edit left some labels changed');
 }
 
+console.log('\nSizing several cutouts at once');
+{
+  const { useStore } = await import('../src/lib/store');
+  const st = () => useStore.getState();
+  const pause = () => new Promise((r) => setTimeout(r, 500));
+
+  st().newDesign();
+  st().addFeature('circle', 10, 20);
+  st().addFeature('circle', 20, 40);
+  st().addFeature('circle', 30, 60);
+  await pause();
+  const ids = st().design.features.map((f) => f.id);
+  const [first, ...rest] = ids;
+  const before = st().design.features.find((f) => f.id === first)!;
+
+  st().updateFeatures(rest, () => ({ w: 8, h: 8, radius: 4 }));
+  const sized = st().design.features.filter((f) => rest.includes(f.id));
+  const untouched = st().design.features.find((f) => f.id === first)!;
+  if (sized.every((f) => f.w === 8 && f.h === 8 && f.radius === 4) && untouched.w === before.w) {
+    pass('a diameter set on a selection reaches each of them and nothing else');
+  } else {
+    fail(`after sizing: ${st().design.features.map((f) => f.w).join(', ')}`);
+  }
+  if (sized.every((f, i) => f.x === [20, 30][i])) pass('and leaves them where they were');
+  else fail('sizing several cutouts moved them');
+
+  await pause();
+  st().undo();
+  if (st().design.features.filter((f) => rest.includes(f.id)).every((f) => f.w === before.w)) {
+    pass('one undo takes the whole resize back');
+  } else {
+    fail('undo after a batch resize left some cutouts resized');
+  }
+}
+
 console.log('\nStepping back and forward');
 {
   const { useStore } = await import('../src/lib/store');

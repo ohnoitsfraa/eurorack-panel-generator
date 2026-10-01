@@ -2,6 +2,14 @@
 
 import { useEffect, useRef, useState } from 'react';
 
+/**
+ * The value every one of these has, or undefined if they differ: what a field
+ * editing several things at once shows, or "mixed".
+ */
+export function shared<T>(values: T[]): T | undefined {
+  return values.length > 0 && values.every((v) => v === values[0]) ? values[0] : undefined;
+}
+
 export function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
     <label className="block">

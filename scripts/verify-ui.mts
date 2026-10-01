@@ -762,6 +762,48 @@ async function open(colorScheme: 'light' | 'dark' = 'dark') {
   await page.close();
 }
 
+// --- several cutouts sized at once ---
+{
+  const { page, problems } = await open();
+  await page.getByRole('button', { name: 'Cutouts', exact: true }).click();
+  const toScreen = (mx: number, my: number) =>
+    page.evaluate(([x, y]) => {
+      const el = document.querySelector('[data-panel-canvas]') as SVGSVGElement;
+      const p = new DOMPoint(x, y).matrixTransform(el.getScreenCTM()!);
+      return { x: p.x, y: p.y };
+    }, [mx, my] as [number, number]);
+  for (const y of [25, 50, 75]) {
+    await page.getByRole('button', { name: 'Circle', exact: true }).click();
+    const at = await toScreen(20, y);
+    await page.mouse.click(at.x, at.y);
+    await page.waitForTimeout(200);
+  }
+
+  // Picked from the list, Shift-click by Shift-click.
+  const rows = page.locator('aside:last-of-type li button');
+  await rows.nth(0).click();
+  await rows.nth(1).click({ modifiers: ['Shift'] });
+  await rows.nth(2).click({ modifiers: ['Meta'] });
+  await page.waitForTimeout(200);
+  const batch = page.locator('[data-batch-cutouts]');
+  if (await batch.count()) pass('selecting several cutouts offers to size them together');
+  else fail('no sizing controls with several cutouts selected');
+
+  const diameter = batch.locator('label', { hasText: 'Diameter' }).locator('input');
+  await diameter.fill('8');
+  await diameter.press('Enter');
+  await page.waitForTimeout(300);
+  const radii = await page.locator('[data-panel-canvas] circle:not([pointer-events="none"])').evaluateAll((els) =>
+    els.map((e) => ({ cx: Number(e.getAttribute('cx')), r: Number(e.getAttribute('r')) }))
+      .filter((c) => Math.abs(c.cx - 20) < 0.01));
+  if (radii.length === 3 && radii.every((c) => Math.abs(c.r - 4) < 0.01)) pass('setting a diameter makes every selected circle that size');
+  else fail(`circle radii after the batch resize: ${radii.map((c) => c.r).join(', ')}`);
+
+  if (problems.length === 0) pass('no uncaught errors sizing cutouts together');
+  else fail(`batch sizing: ${[...new Set(problems)].join(' | ')}`);
+  await page.close();
+}
+
 // --- moving around a zoomed-in panel ---
 {
   const { page, problems } = await open();
