@@ -182,7 +182,10 @@ function BackupSection() {
         <p className="rounded-md border border-ink-700 bg-ink-900 px-2.5 py-2 text-[12.5px] leading-relaxed text-ink-100">
           Imported: {lastImport.added} added, {lastImport.updated} updated,{' '}
           {lastImport.unchanged} already current
-          {lastImport.rackReplaced ? ', rack replaced' : ''}.
+          {lastImport.rackReplaced ? ', rack replaced' : ''}
+          {lastImport.fontsAdded
+            ? `, ${lastImport.fontsAdded} font${lastImport.fontsAdded === 1 ? '' : 's'} added`
+            : ''}.
         </p>
       )}
 

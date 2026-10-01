@@ -1499,6 +1499,59 @@ console.log('\nExport, import and local storage');
     fail('copied rack still references the originals');
   }
 
+  // Uploaded fonts travel in the file, or a panel lettered in one arrives on
+  // another machine with no lettering.
+  const { bytesToBase64, base64ToBytes } = await import('../src/lib/backup');
+  const bytes = new Uint8Array(300_000).map((_, i) => (i * 7919) % 256);
+  const back = new Uint8Array(base64ToBytes(bytesToBase64(bytes.buffer)));
+  if (back.length === bytes.length && back.every((b, i) => b === bytes[i])) pass('a font file survives base64 intact');
+  else fail('a font file came back from base64 changed');
+
+  const lettered = {
+    ...one,
+    design: {
+      ...one.design,
+      decor: [{
+        id: 't', type: 'text' as const, text: 'CV', x: 20, y: 20, sizeMm: 4, fontFamily: 'Mine',
+        fontWeight: 700, letterSpacing: 0, align: 'center' as const, rotation: 0,
+        color: '#ffffff', mode: 'raised' as const, reliefMm: 0.6,
+      }],
+    },
+  };
+  const stored = [{ family: 'Mine', data: bytes.buffer }, { family: 'Unused', data: bytes.buffer }];
+  const panelFile = parseBackup(JSON.stringify(buildPanelBackup(lettered, stored))).backup;
+  if (panelFile.fonts?.map((f) => f.family).join() === 'Mine') pass('a panel file carries the fonts it uses, and only those');
+  else fail(`panel file fonts: ${JSON.stringify(panelFile.fonts?.map((f) => f.family))}`);
+  const fullFile = buildLibraryBackup([one], rack, stored);
+  if (fullFile.fonts?.length === 2) pass('a full backup carries every uploaded font');
+  else fail(`full backup carried ${fullFile.fonts?.length ?? 0} fonts`);
+  if (!('fonts' in buildPanelBackup(one, stored))) pass('a file with no uploaded lettering has no fonts field');
+  else fail('fonts were added to a file that does not use them');
+
+  // And the import puts the font to use: registered, kept, and offered.
+  const fontPath = 'node_modules/.cache/panel-verify/Inter-700.ttf';
+  if (existsSync(fontPath)) {
+    const ttf = readFileSync(fontPath);
+    const real = [{ family: 'Mine', data: ttf.buffer.slice(ttf.byteOffset, ttf.byteOffset + ttf.byteLength) as ArrayBuffer }];
+    const { useStore } = await import('../src/lib/store');
+    const before = new Set(useStore.getState().library.map((d) => d.id));
+    const report = await useStore.getState().importBackup(JSON.stringify(buildPanelBackup(lettered, real)), { asCopy: true });
+    const keptFonts = await storage.loadFontFiles();
+    if (report.fontsAdded === 1 && useStore.getState().customFonts.includes('Mine') && keptFonts.some((f) => f.family === 'Mine')) {
+      pass('importing the file installs its font');
+    } else {
+      fail(`import: ${report.fontsAdded} fonts added, list ${JSON.stringify(useStore.getState().customFonts)}`);
+    }
+    const again = await useStore.getState().importBackup(JSON.stringify(buildPanelBackup(lettered, real)), { asCopy: true });
+    if (again.fontsAdded === 0) pass('and a font already here is left as it is');
+    else fail('an import replaced a font that was already installed');
+
+    // The storage checks below count what is in the database.
+    const imported = useStore.getState().library.filter((d) => !before.has(d.id));
+    for (const d of imported) await storage.deleteDesign(d.id);
+    useStore.setState({ library: useStore.getState().library.filter((d) => before.has(d.id)) });
+  }
+
   // A rack referring to a panel that did not come with it must not keep a
   // placement that can never be drawn or edited.
   const orphanRack = {

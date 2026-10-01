@@ -104,7 +104,41 @@ async function open(colorScheme: 'light' | 'dark' = 'dark') {
       fail(`uploaded font: ${[...new Set(problems)].join(' | ') || 'a font error is showing'}`);
     }
 
+    // A panel file has to bring the font with it: imported into a browser
+    // that has never seen it, the lettering must still find its font.
+    await page.getByLabel('Panel name').fill('Own lettering');
+    await page.getByRole('button', { name: 'Save to library' }).click();
+    await page.waitForTimeout(600);
+    await page.getByRole('button', { name: 'Library', exact: true }).click();
+    const [download] = await Promise.all([
+      page.waitForEvent('download'),
+      page.getByTitle('Export this panel to a file').first().click(),
+    ]);
+    const file = readFileSync((await download.path())!, 'utf8');
     await page.close();
+
+    const fresh = await open();
+    await fresh.page.getByRole('button', { name: 'Library', exact: true }).click();
+    await fresh.page.locator('input[type="file"][accept*=".json"]').setInputFiles({
+      name: 'own.panel.json', mimeType: 'application/json', buffer: Buffer.from(file),
+    });
+    await fresh.page.waitForTimeout(800);
+    if (/1 font added/.test(await fresh.page.locator('body').innerText())) pass('the import says it added the font');
+    else fail('the import report does not mention the font');
+    await fresh.page.getByRole('button', { name: 'Open', exact: true }).first().click();
+    await fresh.page.waitForTimeout(1200);
+    const freshBody = await fresh.page.locator('body').innerText();
+    if (fresh.problems.length === 0 && !/Could not load font|Waiting for/i.test(freshBody)) {
+      pass('a panel file brings its uploaded font to another browser');
+    } else {
+      fail(`importing a panel with its font: ${[...new Set(fresh.problems)].join(' | ') || 'lettering is missing its font'}`);
+    }
+    await fresh.page.getByRole('button', { name: 'Text & art', exact: true }).click();
+    await fresh.page.getByRole('button', { name: 'Text label', exact: true }).click();
+    await fresh.page.waitForTimeout(300);
+    if (await fresh.page.locator('option[value="Panel Grotesk"]').count()) pass('and offers it in the font list');
+    else fail('the imported font is not in the font list');
+    await fresh.page.close();
   }
 }
 

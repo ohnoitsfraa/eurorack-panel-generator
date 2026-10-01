@@ -19,7 +19,7 @@ import {
   isRefetchable, loadFontFiles, putFontFile, saveSession, type SavedDesign, type SourceReference,
 } from './storage';
 import {
-  backupFilename, buildLibraryBackup, buildPanelBackup, buildRackBackup, mergeBackup,
+  base64ToBytes, backupFilename, buildLibraryBackup, buildPanelBackup, buildRackBackup, mergeBackup,
   parseBackup, withNewIds, type Backup, type MergeReport,
 } from './backup';
 import {
@@ -773,17 +773,20 @@ export const useStore = create<State>((set, get) => ({
   exportPanel: (id) => {
     const found = get().library.find((i) => i.id === id);
     if (!found) return;
-    downloadJson(buildPanelBackup(found), backupFilename('panel', found.name));
+    void loadFontFiles().then((fonts) =>
+      downloadJson(buildPanelBackup(found, fonts), backupFilename('panel', found.name)));
   },
 
   exportRack: () => {
     const { rack, library } = get();
-    downloadJson(buildRackBackup(rack, library), backupFilename('rack', rack.name));
+    void loadFontFiles().then((fonts) =>
+      downloadJson(buildRackBackup(rack, library, fonts), backupFilename('rack', rack.name)));
   },
 
   exportEverything: () => {
     const { rack, library } = get();
-    downloadJson(buildLibraryBackup(library, rack), backupFilename('library'));
+    void loadFontFiles().then((fonts) =>
+      downloadJson(buildLibraryBackup(library, rack, fonts), backupFilename('library')));
   },
 
   /**
@@ -802,16 +805,37 @@ export const useStore = create<State>((set, get) => ({
     const replaceRack = Boolean(payload.rack) && payload.kind !== 'panel';
     const merged = mergeBackup(get().library, payload, { replaceRack });
 
+    // Fonts before panels: the moment the panels land, their lettering is
+    // asked for, and a family not registered by then is looked for on Google
+    // Fonts instead. A font already here under the same name is kept, so an
+    // import never swaps out the file someone's own panels were set in.
+    const have = new Set(get().customFonts);
+    const added: string[] = [];
+    for (const f of payload.fonts ?? []) {
+      if (have.has(f.family)) continue;
+      try {
+        const data = base64ToBytes(f.data);
+        registerFont(f.family, data.slice(0));
+        await putFontFile({ family: f.family, data });
+        have.add(f.family);
+        added.push(f.family);
+      } catch {
+        // A damaged font leaves its lettering missing, not the import failed.
+      }
+    }
+    const report = { ...merged.report, fontsAdded: added.length };
+
     set((st) => ({
       library: merged.library,
       rack: merged.rack ?? st.rack,
-      lastImport: { ...merged.report, at: Date.now() },
+      customFonts: [...st.customFonts, ...added].sort((a, b) => a.localeCompare(b)),
+      lastImport: { ...report, at: Date.now() },
       error: null,
     }));
 
     await putDesigns(payload.panels);
     if (merged.rack) await dbSaveRack(merged.rack);
-    return merged.report;
+    return report;
   },
 
   // --- rack ---
