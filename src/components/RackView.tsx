@@ -38,9 +38,6 @@ const FIT = { minPxPerHp: 5, maxPxPerHp: 22, sidePaddingPx: 40 } as const;
  */
 const DOUBLE_PRESS = { ms: 400, slopPx: 10 } as const;
 
-/** Z held longer than this is a hold, and letting go closes the view. */
-const PEEK_HOLD_MS = 350;
-
 export function RackView() {
   const rack = useStore((s) => s.rack);
   const library = useStore((s) => s.library);
@@ -60,45 +57,15 @@ export function RackView() {
   const [zoom, setZoom] = useState(1);
   const [dragging, setDragging] = useState<string | null>(null);
 
-  // Z over a panel shows it large, to read its lettering without opening it.
-  // A tap opens it until Z, Esc or a click closes it; holding Z shows it only
-  // while held, like a magnifier. The panel is the one under the pointer when
-  // Z is pressed, looked up then rather than tracked by enter and leave: the
-  // large view covers the rack, and the panel under it would count as left.
-  const pointer = useRef<{ x: number; y: number } | null>(null);
+  // A panel shown large, from its zoom button, to read its lettering
+  // without opening it. Esc or a click closes it.
   const [peek, setPeek] = useState<string | null>(null);
-  const peekOpenedAt = useRef(0);
   useEffect(() => {
-    const typing = () => {
-      const el = document.activeElement;
-      return !!el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT');
-    };
-    const onDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') { setPeek(null); return; }
-      if (e.key.toLowerCase() !== 'z' || e.repeat || e.metaKey || e.ctrlKey || e.altKey || typing()) return;
-      setPeek((open) => {
-        if (open) return null;
-        const p = pointer.current;
-        const under = p && document.elementFromPoint(p.x, p.y)?.closest<HTMLElement>('[data-rack-design]');
-        if (!under) return null;
-        peekOpenedAt.current = performance.now();
-        return under.dataset.rackDesign ?? null;
-      });
-    };
-    const onPointer = (e: PointerEvent) => { pointer.current = { x: e.clientX, y: e.clientY }; };
-    const onUp = (e: KeyboardEvent) => {
-      if (e.key.toLowerCase() !== 'z') return;
-      if (performance.now() - peekOpenedAt.current > PEEK_HOLD_MS) setPeek(null);
-    };
-    window.addEventListener('keydown', onDown);
-    window.addEventListener('keyup', onUp);
-    window.addEventListener('pointermove', onPointer);
-    return () => {
-      window.removeEventListener('pointermove', onPointer);
-      window.removeEventListener('keydown', onDown);
-      window.removeEventListener('keyup', onUp);
-    };
-  }, []);
+    if (!peek) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setPeek(null); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [peek]);
 
   // Measure the space the rack has, and fit the widest row into it.
   const frameRef = useRef<HTMLDivElement>(null);
@@ -332,9 +299,8 @@ export function RackView() {
                         };
                         setDragging(p.id);
                       }}
-                      title={`${saved.name} · ${saved.design.hp} HP · double-click to edit · Z to zoom in`}
+                      title={`${saved.name} · ${saved.design.hp} HP · double-click to edit`}
                       data-rack-panel={saved.name}
-                      data-rack-design={p.designId}
                     >
                       <PanelThumb
                         design={saved.design}
@@ -360,7 +326,7 @@ export function RackView() {
                         <PanelAction
                           size={btnPx}
                           onClick={() => setPeek(p.designId)}
-                          title={`Zoom in on ${saved.name} (Z)`}
+                          title={`Zoom in on ${saved.name}`}
                         >
                           <circle cx="7" cy="7" r="4.3" />
                           <path d="M10.2 10.2l3.4 3.4" />
@@ -392,7 +358,6 @@ export function RackView() {
 
       <p className="mt-4 text-[12.5px] text-ink-400">
         Drag panels to move them between and within rows; they snap to whole HP.
-        Point at a panel and press Z to see it up close.
         Add panels from the library on the right.
       </p>
 
@@ -429,7 +394,7 @@ function PanelPeek({
       />
       <p className="text-[13px] text-ink-200">
         {saved.name} · {saved.design.hp} HP
-        <span className="ml-2 text-ink-400">Z, Esc or click to close</span>
+        <span className="ml-2 text-ink-400">Esc or click to close</span>
       </p>
     </div>
   );
