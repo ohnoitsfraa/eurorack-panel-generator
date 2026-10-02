@@ -776,7 +776,12 @@ async function open(colorScheme: 'light' | 'dark' = 'dark') {
   else fail(`the icon picker shows ${quick} icons with nothing typed`);
 
   await picker.locator('[data-icon="mdi:sine-wave"]').click();
-  await page.waitForTimeout(3000);
+  // Waited for rather than timed: Iconify answers in a moment usually, and
+  // in seconds when it is busy.
+  await page.waitForFunction(
+    () => /Icon: Sine wave|Could not load the icon|Failed to fetch/i.test(document.body.innerText),
+    undefined, { timeout: 15000 },
+  ).catch(() => {});
   const body = await page.locator('body').innerText();
   if (/Icon: Sine wave/.test(body)) {
     pass('picking an icon adds it to the panel');
