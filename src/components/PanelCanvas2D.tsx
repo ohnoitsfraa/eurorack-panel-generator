@@ -517,9 +517,10 @@ export function PanelCanvas2D() {
 
   /**
    * Scroll pans, and Cmd/Ctrl-scroll zooms about the pointer. A trackpad pinch
-   * arrives as a Ctrl-scroll, so it zooms too.
+   * zooms the same way, about the point between the fingers: Chrome and
+   * Firefox send it as a Ctrl-scroll, Safari as gesture events of its own.
    *
-   * A listener of our own rather than React's onWheel, which is passive: the
+   * Listeners of our own rather than React's onWheel, which is passive: the
    * browser would scroll or zoom the page underneath regardless.
    */
   useEffect(() => {
@@ -529,9 +530,13 @@ export function PanelCanvas2D() {
       e.preventDefault();
       const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? svg.clientHeight : 1;
       if (e.ctrlKey || e.metaKey) {
-        // About 12% a notch on a mouse wheel; smooth for a pinch, whose steps
-        // are much smaller.
-        const factor = Math.exp(-e.deltaY * unit * 0.0012);
+        // A pinch sends Ctrl without Cmd, in small fractional steps measured
+        // so that e^(-delta/100) is how far the fingers spread; followed
+        // exactly, the panel stays under them. A mouse wheel's notch is a
+        // hundred or so, which at that rate would leap, so it takes about
+        // 12% a notch instead.
+        const pinch = e.ctrlKey && !e.metaKey && e.deltaMode === 0 && Math.abs(e.deltaY) < PINCH_MAX_DELTA;
+        const factor = Math.exp(-e.deltaY * unit * (pinch ? 0.01 : 0.0012));
         const at = toMm(e);
         setCamera((c) => zoomAbout(c, factor, at, W, H, pad));
       } else {
@@ -541,8 +546,30 @@ export function PanelCanvas2D() {
         setCamera((c) => clampCamera({ ...c, x: c.x + dx, y: c.y + dy }, W, H, pad));
       }
     };
+    // Safari: the gesture's scale is the spread since it began, so each
+    // change zooms by how much it grew since the last one.
+    let lastScale = 1;
+    const onGestureStart = (e: Event) => { e.preventDefault(); lastScale = 1; };
+    const onGestureChange = (e: Event) => {
+      e.preventDefault();
+      const g = e as Event & { scale: number; clientX: number; clientY: number };
+      if (!(g.scale > 0)) return;
+      const factor = g.scale / lastScale;
+      lastScale = g.scale;
+      const at = toMm(g);
+      setCamera((c) => zoomAbout(c, factor, at, W, H, pad));
+    };
+    const onGestureEnd = (e: Event) => e.preventDefault();
     svg.addEventListener('wheel', onWheel, { passive: false });
-    return () => svg.removeEventListener('wheel', onWheel);
+    svg.addEventListener('gesturestart', onGestureStart, { passive: false });
+    svg.addEventListener('gesturechange', onGestureChange, { passive: false });
+    svg.addEventListener('gestureend', onGestureEnd, { passive: false });
+    return () => {
+      svg.removeEventListener('wheel', onWheel);
+      svg.removeEventListener('gesturestart', onGestureStart);
+      svg.removeEventListener('gesturechange', onGestureChange);
+      svg.removeEventListener('gestureend', onGestureEnd);
+    };
   });
 
   // Space held over the canvas turns any drag into a pan. Only over the
@@ -1360,6 +1387,12 @@ function GuideGap({
     </g>
   );
 }
+
+/**
+ * Above this, a Ctrl-scroll is a mouse wheel rather than a pinch. A pinch
+ * step is a few units at most; a wheel notch is around a hundred.
+ */
+const PINCH_MAX_DELTA = 50;
 
 /** Below this many screen pixels, a press with a cutout tool is a click. */
 const DRAW_CLICK_PX = 4;

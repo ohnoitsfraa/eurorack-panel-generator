@@ -1208,6 +1208,77 @@ async function open(colorScheme: 'light' | 'dark' = 'dark') {
   await page.close();
 }
 
+// --- a trackpad pinch zooms about the fingers, as far as they spread ---
+{
+  const { page, problems } = await open();
+  const svg = page.locator('[data-panel-canvas]');
+  const width = async () => Number((await svg.getAttribute('viewBox'))!.split(' ')[2]);
+  const toScreen = (mx: number, my: number) =>
+    page.evaluate(([x, y]) => {
+      const el = document.querySelector('[data-panel-canvas]') as SVGSVGElement;
+      const p = new DOMPoint(x, y).matrixTransform(el.getScreenCTM()!);
+      return { x: p.x, y: p.y };
+    }, [mx, my] as [number, number]);
+  const toMm = (sx: number, sy: number) =>
+    page.evaluate(([x, y]) => {
+      const el = document.querySelector('[data-panel-canvas]') as SVGSVGElement;
+      const p = new DOMPoint(x, y).matrixTransform(el.getScreenCTM()!.inverse());
+      return { x: p.x, y: p.y };
+    }, [sx, sy] as [number, number]);
+
+  // Chrome and Firefox: a pinch is a run of small Ctrl-scrolls, sized so
+  // that e^(-delta/100) is the spread. 25 steps of -2 spread the fingers by
+  // e^0.5, about 1.65 times.
+  const at = await toScreen(14, 45);
+  const mmBefore = await toMm(at.x, at.y);
+  const w0 = await width();
+  const prevented = await page.evaluate(([x, y]) => {
+    const el = document.querySelector('[data-panel-canvas]')!;
+    let all = true;
+    for (let i = 0; i < 25; i++) {
+      const e = new WheelEvent('wheel', { ctrlKey: true, deltaY: -2, deltaMode: 0, clientX: x, clientY: y, bubbles: true, cancelable: true });
+      el.dispatchEvent(e);
+      all = all && e.defaultPrevented;
+    }
+    return all;
+  }, [at.x, at.y] as [number, number]);
+  await page.waitForTimeout(250);
+  const ratio = w0 / (await width());
+  const mmAfter = await toMm(at.x, at.y);
+  if (Math.abs(ratio - Math.exp(0.5)) < 0.03) pass(`a pinch zooms as far as the fingers spread (×${ratio.toFixed(2)})`);
+  else fail(`a pinch spreading ×${Math.exp(0.5).toFixed(2)} zoomed ×${ratio.toFixed(2)}`);
+  if (Math.hypot(mmAfter.x - mmBefore.x, mmAfter.y - mmBefore.y) < 0.2) pass('about the point between the fingers');
+  else fail(`the point under the pinch drifted ${Math.hypot(mmAfter.x - mmBefore.x, mmAfter.y - mmBefore.y).toFixed(2)} mm`);
+  if (prevented) pass('and the page itself is not zoomed');
+  else fail('a pinch on the canvas was left to zoom the page');
+
+  // Safari: gesture events, whose scale is the spread since the start.
+  const at2 = await toScreen(30, 90);
+  const mm2 = await toMm(at2.x, at2.y);
+  const w1 = await width();
+  await page.evaluate(([x, y]) => {
+    const el = document.querySelector('[data-panel-canvas]')!;
+    const steps: Array<[string, number]> = [
+      ['gesturestart', 1], ['gesturechange', 1.1], ['gesturechange', 1.25], ['gesturechange', 1.5], ['gestureend', 1.5],
+    ];
+    for (const [type, scale] of steps) {
+      const e = new Event(type, { bubbles: true, cancelable: true });
+      Object.defineProperties(e, { scale: { value: scale }, clientX: { value: x }, clientY: { value: y } });
+      el.dispatchEvent(e);
+    }
+  }, [at2.x, at2.y] as [number, number]);
+  await page.waitForTimeout(250);
+  const r2 = w1 / (await width());
+  const mm2After = await toMm(at2.x, at2.y);
+  if (Math.abs(r2 - 1.5) < 0.02 && Math.hypot(mm2After.x - mm2.x, mm2After.y - mm2.y) < 0.2) {
+    pass(`a Safari pinch zooms the same way (×${r2.toFixed(2)}, about the fingers)`);
+  } else fail(`a Safari pinch of ×1.5 zoomed ×${r2.toFixed(2)}, drifting ${Math.hypot(mm2After.x - mm2.x, mm2After.y - mm2.y).toFixed(2)} mm`);
+
+  if (problems.length === 0) pass('no uncaught errors pinching');
+  else fail(`pinching: ${[...new Set(problems)].join(' | ')}`);
+  await page.close();
+}
+
 // --- moving around a zoomed-in panel ---
 {
   const { page, problems } = await open();
