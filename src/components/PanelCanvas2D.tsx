@@ -624,6 +624,8 @@ export function PanelCanvas2D() {
           />
         ))}
 
+        <SelectedDecorGrab onGrab={beginDrag} onEditText={onEditText} />
+
         {/* Alignment guides. Drawn over everything, since their whole job is
             to be noticed the moment two things line up. */}
         {guides.map((g, i) => {
@@ -1025,6 +1027,64 @@ function DecorLayer({
   );
 }
 
+/** A label's, shape's or artwork's outline on the panel, as drawn. */
+function decorOutline(el: DecorElement, fonts: Map<string, OpentypeFont>): Ring[] {
+  if (el.type === 'text') {
+    const font = fonts.get(`${el.fontFamily}@${el.fontWeight}`);
+    return font ? textToRings(el, font) : [];
+  }
+  if (el.type === 'art') return artRings(el);
+  return shapeRingsForPreview(el);
+}
+
+/**
+ * Selected labels and artwork, grabbable above the cutouts.
+ *
+ * Cutouts are drawn over the decor, because a hole goes through whatever is
+ * printed there. But a new icon or label lands in the middle of the panel,
+ * selected, and is often dropped over a cutout; grabbing it there moved the
+ * cutout instead. So a selected element's hit area is drawn on top, and it
+ * is picked up first, the way its handles already are.
+ */
+function SelectedDecorGrab({
+  onGrab, onEditText,
+}: {
+  onGrab: (e: React.PointerEvent, id: string, isDecor: boolean) => void;
+  onEditText: (id: string) => void;
+}) {
+  const decor = useStore((s) => s.design.decor);
+  const fonts = useStore((s) => s.fonts);
+  const fontVersion = useStore((s) => s.fontVersion);
+  const selectedIds = useStore((s) => s.selectedIds);
+  const selected = useMemo(
+    () => decor
+      .filter((d) => selectedIds.includes(d.id))
+      .map((el) => ({ el, rings: decorOutline(el, fonts) }))
+      .filter(({ rings }) => rings.length > 0)
+      .map(({ el, rings }) => ({ el, box: bbox(rings) })),
+    // fontVersion is what changes when a font finishes loading.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [decor, selectedIds, fonts, fontVersion],
+  );
+  return (
+    <>
+      {selected.map(({ el, box }) => (
+        <g key={el.id} data-decor-grab={el.type}>
+          <rect
+            x={box.x0} y={box.y0}
+            width={Math.max(0.01, box.x1 - box.x0)}
+            height={Math.max(0.01, box.y1 - box.y0)}
+            fill="transparent"
+            onPointerDown={(e) => onGrab(e, el.id, true)}
+            onDoubleClick={el.type === 'text' ? () => onEditText(el.id) : undefined}
+            style={{ cursor: 'move' }}
+          />
+        </g>
+      ))}
+    </>
+  );
+}
+
 function DecorShape({
   el, fonts, selected, handleMm, onPointerDown, onEdit,
 }: {
@@ -1037,14 +1097,7 @@ function DecorShape({
   /** Present on a text label: a double click types into it where it sits. */
   onEdit?: () => void;
 }) {
-  const rings = useMemo<Ring[]>(() => {
-    if (el.type === 'text') {
-      const font = fonts.get(`${el.fontFamily}@${el.fontWeight}`);
-      return font ? textToRings(el, font) : [];
-    }
-    if (el.type === 'art') return artRings(el);
-    return shapeRingsForPreview(el);
-  }, [el, fonts]);
+  const rings = useMemo<Ring[]>(() => decorOutline(el, fonts), [el, fonts]);
 
   if (el.type === 'text' && rings.length === 0) {
     // Font still in flight: show the string so the layout is not a mystery.
@@ -1085,17 +1138,20 @@ function DecorShape({
       {/*
         An invisible hit area over the element's bounds. Text at panel sizes is
         thin, and asking someone to land the pointer on a 0.4 mm letter stroke
-        to move a label is no good.
+        to move a label is no good. A selected element's is drawn above the
+        cutouts instead, by SelectedDecorGrab.
       */}
-      <rect
-        x={box.x0} y={box.y0}
-        width={Math.max(0.01, box.x1 - box.x0)}
-        height={Math.max(0.01, box.y1 - box.y0)}
-        fill="transparent"
-        onPointerDown={onPointerDown}
-        onDoubleClick={onEdit}
-        style={{ cursor: 'move' }}
-      />
+      {!selected && (
+        <rect
+          x={box.x0} y={box.y0}
+          width={Math.max(0.01, box.x1 - box.x0)}
+          height={Math.max(0.01, box.y1 - box.y0)}
+          fill="transparent"
+          onPointerDown={onPointerDown}
+          onDoubleClick={onEdit}
+          style={{ cursor: 'move' }}
+        />
+      )}
       {selected && (
         <rect
           x={box.x0} y={box.y0}

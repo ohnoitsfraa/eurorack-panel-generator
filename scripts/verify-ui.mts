@@ -253,7 +253,7 @@ async function open(colorScheme: 'light' | 'dark' = 'dark') {
   // Typing into a label where it sits, rather than going to the sidebar. The
   // outlines only exist once the font has arrived, so wait for them rather
   // than for a guess at how long that takes.
-  const hit = page.locator('[data-decor="text"] rect[fill="transparent"]').first();
+  const hit = page.locator(':is([data-decor="text"], [data-decor-grab="text"]) rect[fill="transparent"]').first();
   await hit.waitFor({ timeout: 30000 });
   if ((await hit.evaluate((e) => getComputedStyle(e).cursor)) === 'move') {
     pass('and hovering it offers to move it, not to type');
@@ -291,7 +291,7 @@ async function open(colorScheme: 'light' | 'dark' = 'dark') {
 
   // Handles on a label: four to scale, one to turn. Scaling a label means its
   // cap height, which is the number panels are specified in.
-  await page.locator('[data-decor="text"] rect[fill="transparent"]').first().click();
+  await page.locator(':is([data-decor="text"], [data-decor-grab="text"]) rect[fill="transparent"]').first().click();
   await page.waitForTimeout(350);
   const capHeight = () =>
     page.locator('aside').last().locator('input[inputmode="decimal"]').first().inputValue();
@@ -340,7 +340,7 @@ async function open(colorScheme: 'light' | 'dark' = 'dark') {
 
   // Arrow keys moved cutouts but not decor, which is the same operation on
   // the same kind of thing.
-  await page.locator('[data-decor="text"] rect[fill="transparent"]').first().click();
+  await page.locator(':is([data-decor="text"], [data-decor-grab="text"]) rect[fill="transparent"]').first().click();
   await page.waitForTimeout(250);
   const boxBefore = await page.locator('[data-decor="text"]').first().boundingBox();
   await page.keyboard.press('ArrowRight');
@@ -810,6 +810,51 @@ async function open(colorScheme: 'light' | 'dark' = 'dark') {
   }
   if (problems.length === 0) pass('no uncaught errors dragging an icon');
   else fail(`dragging an icon: ${[...new Set(problems)].join(' | ')}`);
+  await page.close();
+}
+
+// --- a new icon over a cutout is the thing that gets dragged ---
+{
+  const { page, problems } = await open();
+  const toScreen = (mx: number, my: number) =>
+    page.evaluate(([x, y]) => {
+      const el = document.querySelector('[data-panel-canvas]') as SVGSVGElement;
+      const p = new DOMPoint(x, y).matrixTransform(el.getScreenCTM()!);
+      return { x: p.x, y: p.y };
+    }, [mx, my] as [number, number]);
+  // A rectangle cutout in the middle of the panel, where new icons land.
+  const W = 8 * 5.08 - 0.3, H = 128.5;
+  await page.getByRole('button', { name: 'Cutouts', exact: true }).click();
+  await page.getByRole('button', { name: 'Rectangle', exact: true }).click();
+  const mid = await toScreen(W / 2, H / 2);
+  await page.mouse.click(mid.x, mid.y);
+  await page.waitForTimeout(200);
+  const cutout = page.locator('[data-panel-canvas] rect[width="20"][height="10"]').first();
+  const cutoutBefore = await cutout.boundingBox();
+
+  await page.getByRole('button', { name: 'Text & art', exact: true }).click();
+  await page.locator('[data-icon-picker] [data-icon="mdi:circle"]').click();
+  await page.waitForFunction(() => document.querySelector('[data-decor="art"] path'), undefined, { timeout: 15000 }).catch(() => {});
+  const art = page.locator('[data-decor="art"] path').first();
+  if (await art.count() === 0 || !cutoutBefore) {
+    skip('icon over a cutout: Iconify is unreachable, or the cutout was not placed');
+  } else {
+    const artBefore = (await art.boundingBox())!;
+    // Grabbed right where it landed, on top of the cutout.
+    await page.mouse.move(mid.x, mid.y);
+    await page.mouse.down();
+    await page.mouse.move(mid.x + 40, mid.y + 120, { steps: 10 });
+    await page.mouse.up();
+    await page.waitForTimeout(300);
+    const artAfter = (await art.boundingBox())!;
+    const cutoutAfter = (await cutout.boundingBox())!;
+    const artMoved = Math.hypot(artAfter.x - artBefore.x, artAfter.y - artBefore.y) > 20;
+    const cutoutStayed = Math.hypot(cutoutAfter.x - cutoutBefore.x, cutoutAfter.y - cutoutBefore.y) < 1;
+    if (artMoved && cutoutStayed) pass('a new icon dropped on a cutout is what gets dragged');
+    else fail(`dragging the new icon: icon moved ${artMoved}, cutout stayed ${cutoutStayed}`);
+  }
+  if (problems.length === 0) pass('no uncaught errors dragging an icon off a cutout');
+  else fail(`icon over a cutout: ${[...new Set(problems)].join(' | ')}`);
   await page.close();
 }
 
