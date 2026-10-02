@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { panelHeightMm, panelWidthMm } from '@/lib/eurorack';
 import { uid, type ArtElement } from '@/lib/types';
-import { useStore } from '@/lib/store';
+import { newElementAt, useStore } from '@/lib/store';
 import {
   ICON_SETS, QUICK_ICONS, fetchIcon, fetchIcons, iconLabel, iconPreviewSrc, iconToRings, printableBody,
   searchIcons, type IconData,
@@ -68,12 +68,13 @@ export function IconPicker() {
     setAdding(id);
     try {
       const rings = iconToRings(await fetchIcon(id));
+      const at = newElementAt({ x: panelWidthMm(design.hp) / 2, y: panelHeightMm(design.format) / 2 });
       const el: ArtElement = {
         id: uid('a'),
         type: 'art',
         rings,
-        x: panelWidthMm(design.hp) / 2,
-        y: panelHeightMm(design.format) / 2,
+        x: at.x,
+        y: at.y,
         scale: 1,
         rotation: 0,
         // Flush by default, like a new label.

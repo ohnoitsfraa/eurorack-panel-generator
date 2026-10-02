@@ -2328,6 +2328,59 @@ console.log('\nEvery edit leaves the panel unsaved');
   else fail('clearing everything left an empty panel looking unsaved');
 }
 
+// --------------------------------------------------- 7a1. where new things go
+console.log('\nNew elements at the pointer');
+{
+  const { useStore, notePanelPointer, notePanelPress } = await import('../src/lib/store');
+  const st = () => useStore.getState();
+  const rest = () => new Promise((r) => setTimeout(r, 400));
+  const at = (id: string) => {
+    const d = st().design.decor.find((e) => e.id === id)!;
+    return `${d.x},${d.y}`;
+  };
+  st().newDesign();
+  // An earlier section may have left a grid on.
+  const gridBefore = st().gridMm;
+  st().setGrid(0);
+  const W = panelWidthMm(st().design.hp);
+
+  const before = st().addTextLabel();
+  if (at(before) === `${W / 2},12`) pass('with the pointer never over the panel, a label goes to the top as before');
+  else fail(`a label with no pointer went to ${at(before)}`);
+
+  // Over the panel, as when a key adds it: right under the pointer.
+  notePanelPointer({ x: 12.3456, y: 80.789 });
+  const label = st().addTextLabel();
+  const line = st().addShapeElement();
+  if (at(label) === '12.35,80.79' && at(line) === '12.35,80.79') pass('a new label or shape goes under the pointer');
+  else fail(`with the pointer at 12.35,80.79 a label went to ${at(label)}, a shape to ${at(line)}`);
+
+  st().setGrid(2.54);
+  const snapped = st().addTextLabel();
+  if (at(snapped) === `${Math.round(12.3456 / 2.54) * 2.54},${Math.round(80.789 / 2.54) * 2.54}`) pass('and onto the grid when there is one');
+  else fail(`on a 2.54 mm grid a label went to ${at(snapped)}`);
+  st().setGrid(0);
+
+  // Off to the sidebar: where it rested, not where it crossed the edge.
+  await rest();
+  notePanelPointer({ x: 39.9, y: 70 });
+  notePanelPointer(null);
+  const fromSidebar = st().addTextLabel();
+  if (at(fromSidebar) === '12.35,80.79') pass('from the sidebar, where the pointer last rested, not where it left the panel');
+  else fail(`after resting at 12.35,80.79 and leaving by the edge, a label went to ${at(fromSidebar)}`);
+
+  notePanelPress({ x: 30, y: 20 });
+  notePanelPointer(null);
+  const pressed = st().addTextLabel();
+  if (at(pressed) === '30,20') pass('and a click on the panel counts as resting there');
+  else fail(`after a click at 30,20 a label went to ${at(pressed)}`);
+
+  // Nothing remembered for the sections after this one.
+  notePanelPress({ x: -1, y: -1 });
+  st().setGrid(gridBefore);
+  st().newDesign();
+}
+
 // ------------------------------------------------------------- 7a2. undo/redo
 console.log('\nEditing several labels at once');
 {

@@ -33,6 +33,7 @@ import {
 import { fetchImage, imageDataFromBlob } from './cv/image';
 import { fontsUsedBy, loadFont, registerFont } from './model/text';
 import { uploadedFontName } from './fonts';
+import { snapToGrid } from './align';
 
 export type ViewMode = '2d' | '3d' | 'rack';
 export type InspectorTab = 'panel' | 'features' | 'decor' | 'export' | 'library';
@@ -200,6 +201,49 @@ let restoring = false;
 const COALESCE_MS = 450;
 const HISTORY_LIMIT = 100;
 let lastPushAt = 0;
+
+/**
+ * Where the pointer is, or rested last, over the panel, in panel millimetres.
+ *
+ * New labels, shapes and icons go there rather than to a fixed spot: whoever
+ * is adding one has usually just been looking at where it should go. Added
+ * from a key, that is right under the pointer. Added from a button in the
+ * sidebar, the pointer has had to cross the panel's edge to get there, so it
+ * is the last place the pointer held still or pressed instead, not where it
+ * happened to leave. Kept outside the store's state, since it changes on
+ * every pointer move and nothing redraws for it.
+ */
+let pointerLive: { x: number; y: number } | null = null;
+let pointerRested: { x: number; y: number } | null = null;
+let restTimer: ReturnType<typeof setTimeout> | null = null;
+/** Long enough to tell a pause from passing through. */
+const POINTER_REST_MS = 250;
+
+/** The pointer is at this place on the panel, or (null) is not over it. */
+export function notePanelPointer(p: { x: number; y: number } | null): void {
+  pointerLive = p;
+  if (restTimer) clearTimeout(restTimer);
+  restTimer = p ? setTimeout(() => { pointerRested = p; }, POINTER_REST_MS) : null;
+}
+
+/** A press on the panel says where things go as plainly as a pause does. */
+export function notePanelPress(p: { x: number; y: number }): void {
+  pointerRested = p;
+}
+
+/**
+ * Where a new element should go: under the pointer if it is over the panel,
+ * else where it last rested there, on the grid; or at the given spot if the
+ * pointer has not been over this panel.
+ */
+export function newElementAt(fallback: { x: number; y: number }): { x: number; y: number } {
+  const { design, gridMm } = useStore.getState();
+  const W = panelWidthMm(design.hp), H = panelHeightMm(design.format);
+  const p = pointerLive ?? pointerRested;
+  if (!p || p.x < 0 || p.y < 0 || p.x > W || p.y > H) return fallback;
+  const on = (v: number, max: number) => Math.min(max, Math.max(0, snapToGrid(v, gridMm)));
+  return { x: on(p.x, W), y: on(p.y, H) };
+}
 
 export const DEFAULT_DESIGN: PanelDesign = {
   hp: 8,
@@ -474,9 +518,10 @@ export const useStore = create<State>((set, get) => ({
 
   addTextLabel: () => {
     const { design } = get();
+    const at = newElementAt({ x: panelWidthMm(design.hp) / 2, y: 12 });
     const el: DecorElement = {
       id: uid('t'), type: 'text', text: 'LABEL',
-      x: panelWidthMm(design.hp) / 2, y: 12, sizeMm: 3.2,
+      x: at.x, y: at.y, sizeMm: 3.2,
       fontFamily: 'Inter', fontWeight: 700,
       letterSpacing: 0.2, align: 'center', rotation: 0,
       // Flush by default: a level face in a second colour is what panel
@@ -490,9 +535,10 @@ export const useStore = create<State>((set, get) => ({
   addShapeElement: () => {
     const { design } = get();
     const W = panelWidthMm(design.hp);
+    const at = newElementAt({ x: W / 2, y: panelHeightMm(design.format) / 2 });
     const el: DecorElement = {
       id: uid('s'), type: 'shape', shape: 'line',
-      x: W / 2, y: panelHeightMm(design.format) / 2, w: W * 0.6, h: 0.8,
+      x: at.x, y: at.y, w: W * 0.6, h: 0.8,
       radius: 0.4, rotation: 0,
       color: '#f2f2f0', mode: 'raised', reliefMm: 0.6,
     };

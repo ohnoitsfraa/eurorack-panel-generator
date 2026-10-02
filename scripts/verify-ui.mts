@@ -858,6 +858,56 @@ async function open(colorScheme: 'light' | 'dark' = 'dark') {
   await page.close();
 }
 
+// --- new things go where the pointer is on the panel ---
+{
+  const { page, problems } = await open();
+  const toScreen = (mx: number, my: number) =>
+    page.evaluate(([x, y]) => {
+      const el = document.querySelector('[data-panel-canvas]') as SVGSVGElement;
+      const p = new DOMPoint(x, y).matrixTransform(el.getScreenCTM()!);
+      return { x: p.x, y: p.y };
+    }, [mx, my] as [number, number]);
+  const centre = async (sel: string) => {
+    const b = (await page.locator(sel).last().boundingBox())!;
+    return { x: b.x + b.width / 2, y: b.y + b.height / 2 };
+  };
+  const near = (a: { x: number; y: number }, b: { x: number; y: number }, px: number) =>
+    Math.hypot(a.x - b.x, a.y - b.y) < px;
+
+  // T with the pointer over the panel: the label lands under it.
+  const spot = await toScreen(12, 90);
+  await page.mouse.move(spot.x - 20, spot.y - 20);
+  await page.mouse.move(spot.x, spot.y, { steps: 4 });
+  await page.keyboard.press('t');
+  await page.waitForTimeout(400);
+  const label = await centre('[data-decor="text"] path, [data-decor="text"] text');
+  if (near(label, spot, 12)) pass('T over the panel puts the label under the pointer');
+  else fail(`the label landed at ${Math.round(label.x)},${Math.round(label.y)}, the pointer was at ${Math.round(spot.x)},${Math.round(spot.y)}`);
+
+  // From the sidebar, an icon goes where the pointer rested on the panel,
+  // not where it crossed the edge on the way over.
+  const there = await toScreen(28, 40);
+  await page.mouse.move(there.x, there.y, { steps: 4 });
+  await page.waitForTimeout(400);
+  const tile = page.locator('[data-icon-picker] [data-icon="mdi:circle"]');
+  await tile.scrollIntoViewIfNeeded();
+  const tb = (await tile.boundingBox())!;
+  await page.mouse.move(tb.x + tb.width / 2, tb.y + tb.height / 2, { steps: 25 });
+  await page.mouse.down();
+  await page.mouse.up();
+  await page.waitForFunction(() => document.querySelector('[data-decor="art"] path'), undefined, { timeout: 15000 }).catch(() => {});
+  if (await page.locator('[data-decor="art"] path').count() === 0) {
+    skip('icon at the pointer: Iconify is unreachable right now');
+  } else {
+    const icon = await centre('[data-decor="art"] path');
+    if (near(icon, there, 12)) pass('an icon picked in the sidebar goes where the pointer rested on the panel');
+    else fail(`the icon landed at ${Math.round(icon.x)},${Math.round(icon.y)}, the pointer left the panel at ${Math.round(there.x)},${Math.round(there.y)}`);
+  }
+  if (problems.length === 0) pass('no uncaught errors adding at the pointer');
+  else fail(`adding at the pointer: ${[...new Set(problems)].join(' | ')}`);
+  await page.close();
+}
+
 // --- an icon picked from the list lands on the panel ---
 {
   const { page, problems } = await open();

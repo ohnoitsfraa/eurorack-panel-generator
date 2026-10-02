@@ -5,7 +5,7 @@ import { CUTOUT_PRESETS, MOUNT_SLOT, mountSlotPositions, panelHeightMm, panelWid
 import {
   artExtent, artRings, type ArtElement, type DecorElement, type Feature, type TextElement,
 } from '@/lib/types';
-import { useStore } from '@/lib/store';
+import { notePanelPointer, notePanelPress, useStore } from '@/lib/store';
 import { textToRings } from '@/lib/model/text';
 import { bbox, type Ring } from '@/lib/geom/poly';
 import { alignTo, snapToGrid, type AlignTarget, type Guide, type SpacingHint } from '@/lib/align';
@@ -276,6 +276,9 @@ export function PanelCanvas2D() {
   };
 
   const onPointerMove = (e: React.PointerEvent) => {
+    // Remembered for whatever is added next; see newElementAt.
+    const over = toMm(e);
+    notePanelPointer(over.x >= 0 && over.y >= 0 && over.x <= W && over.y <= H ? over : null);
     const pd = panDrag.current;
     if (pd) {
       // The panel follows the pointer, so the view moves the other way.
@@ -549,13 +552,18 @@ export function PanelCanvas2D() {
         data-panel-canvas=""
         className={`h-full w-full ${
           panning ? 'cursor-grabbing' : spaceHeld ? 'cursor-grab' : tool ? 'cursor-crosshair' : 'cursor-default'}`}
-        onPointerDownCapture={onPointerDownCapture}
+        onPointerDownCapture={(e) => {
+          const at = toMm(e);
+          if (at.x >= 0 && at.y >= 0 && at.x <= W && at.y <= H) notePanelPress(at);
+          onPointerDownCapture(e);
+        }}
         onPointerDown={onBackgroundPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerEnter={() => { pointerOver.current = true; }}
         onPointerLeave={() => {
           pointerOver.current = false;
+          notePanelPointer(null);
           // A pan holds the pointer, so leaving mid-pan is not the end of it.
           if (!panDrag.current) onPointerUp();
         }}
