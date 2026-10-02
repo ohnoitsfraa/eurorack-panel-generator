@@ -1709,6 +1709,50 @@ console.log('\nAlignment guides');
   }
 }
 
+// ------------------------------------------------------- 6c1. drawn cutouts
+console.log('\nDrawing cutouts');
+{
+  const { drawnCutout } = await import('../src/lib/drawCutout');
+  const { useStore } = await import('../src/lib/store');
+  const st = () => useStore.getState();
+  const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+
+  const box = drawnCutout('rect', { x: 10, y: 20 }, { x: 30, y: 30 });
+  if (same(box, { x: 20, y: 25, w: 20, h: 10 })) pass('a rectangle is drawn corner to corner');
+  else fail(`corner to corner: ${JSON.stringify(box)}`);
+  const back = drawnCutout('rect', { x: 30, y: 30 }, { x: 10, y: 20 });
+  if (same(back, box)) pass('in whichever direction it is dragged');
+  else fail(`dragged backwards: ${JSON.stringify(back)}`);
+  const centred = drawnCutout('rect', { x: 20, y: 25 }, { x: 30, y: 30 }, { fromCentre: true });
+  if (same(centred, box)) pass('or out from its centre with Alt');
+  else fail(`from the centre: ${JSON.stringify(centred)}`);
+  const square = drawnCutout('rect', { x: 10, y: 20 }, { x: 30, y: 26 }, { square: true });
+  if (same(square, { x: 20, y: 30, w: 20, h: 20 })) pass('and square with Shift');
+  else fail(`square: ${JSON.stringify(square)}`);
+  const circle = drawnCutout('circle', { x: 10, y: 20 }, { x: 17, y: 23 });
+  if (same(circle, { x: 13.5, y: 23.5, w: 7, h: 7 })) pass('a circle takes the longer side of the drag, grown from its corner');
+  else fail(`circle: ${JSON.stringify(circle)}`);
+  if (drawnCutout('circle', { x: 10, y: 20 }, { x: 10.3, y: 20.2 }) === null) pass('a drag too short to be a size is a click');
+  else fail('a tiny drag was taken as a size');
+
+  st().newDesign();
+  st().addFeature('slot', 20, 60, { w: 3, h: 40 });
+  st().addFeature('roundrect', 20, 30, { w: 3, h: 3 });
+  st().addFeature('circle', 20, 90, { w: 9, h: 2 });
+  st().addFeature('circle', 20, 110);
+  const [slot, small, round, plain] = st().design.features;
+  if (slot.w === 3 && slot.h === 40 && slot.radius === 1.5) pass('a drawn slot keeps round ends at its size');
+  else fail(`slot: ${JSON.stringify(slot)}`);
+  if (small.radius === 1.5) pass('a rounded rectangle drawn small rounds no further than it can');
+  else fail(`small rounded rectangle radius ${small.radius}`);
+  if (round.w === 9 && round.h === 9 && round.radius === 4.5) pass('a drawn circle is round, whatever the box');
+  else fail(`circle: ${JSON.stringify(round)}`);
+  if (plain.w === 6 && plain.radius === 3) pass('a clicked circle is still the usual 6 mm');
+  else fail(`clicked circle: ${JSON.stringify(plain)}`);
+
+  st().newDesign();
+}
+
 // ------------------------------------------------------------ 6c2. hole colour
 console.log('\nCutout legibility');
 {

@@ -648,6 +648,76 @@ async function open(colorScheme: 'light' | 'dark' = 'dark') {
   await page.close();
 }
 
+// --- a cutout shortcut draws the cutout at the size dragged ---
+{
+  const { page, problems } = await open();
+  const toScreen = (mx: number, my: number) =>
+    page.evaluate(([x, y]) => {
+      const el = document.querySelector('[data-panel-canvas]') as SVGSVGElement;
+      const p = new DOMPoint(x, y).matrixTransform(el.getScreenCTM()!);
+      return { x: p.x, y: p.y };
+    }, [mx, my] as [number, number]);
+  const drag = async (a: [number, number], b: [number, number], during?: () => Promise<void>) => {
+    const p = await toScreen(...a), q = await toScreen(...b);
+    await page.mouse.move(p.x, p.y);
+    await page.mouse.down();
+    await page.mouse.move(q.x, q.y, { steps: 10 });
+    if (during) await during();
+    await page.mouse.up();
+    await page.waitForTimeout(250);
+  };
+  const svg = page.locator('[data-panel-canvas]');
+  await svg.hover();
+
+  await page.keyboard.press('r');
+  await page.waitForTimeout(150);
+  let shown = '';
+  await drag([8, 30], [28, 40], async () => {
+    shown = (await page.locator('[data-draw-preview] text').textContent()) ?? '';
+  });
+  if (shown.includes('20 × 10 mm')) pass('R and a drag show the rectangle and its size while drawing');
+  else fail(`while drawing a rectangle the preview said "${shown}"`);
+  if (await page.locator('[data-panel-canvas] rect[x="8"][y="30"][width="20"][height="10"]').count() === 1) {
+    pass('and it is cut at the size dragged');
+  } else fail('the drawn rectangle was not 20 × 10 mm where it was drawn');
+  if (await page.locator('[data-draw-layer]').count() === 0) pass('after which the tool is put away');
+  else fail('the tool stayed on after drawing one');
+
+  // A click with the tool still places the usual size.
+  await page.keyboard.press('c');
+  const c = await toScreen(20, 100);
+  await page.mouse.click(c.x, c.y);
+  await page.waitForTimeout(250);
+  if (await page.locator('[data-panel-canvas] circle[cx="20"][cy="100"][r="3"]').count() === 1) pass('a click instead of a drag places the usual 6 mm circle');
+  else fail('a click with the circle tool did not place a 6 mm circle');
+
+  // Over an existing cutout: a crosshair, and the drag draws rather than moves it.
+  await page.keyboard.press('c');
+  await page.waitForTimeout(150);
+  await page.mouse.move(c.x, c.y);
+  const cursor = await page.evaluate(([x, y]) => getComputedStyle(document.elementFromPoint(x, y)!).cursor, [c.x, c.y] as [number, number]);
+  if (cursor === 'crosshair') pass('with a tool, the cursor is a crosshair even over a cutout');
+  else fail(`with a tool, the cursor over a cutout is "${cursor}"`);
+  await drag([20, 100], [27, 103]);
+  const old = await page.locator('[data-panel-canvas] circle[cx="20"][cy="100"][r="3"]').count();
+  const drawn = await page.locator('[data-panel-canvas] circle[cx="23.5"][cy="103.5"][r="3.5"]').count();
+  if (old === 1 && drawn === 1) pass('a drag that starts on a cutout draws a new one and leaves that one put');
+  else fail(`drawing from a cutout: original still there ${old}, new 7 mm circle ${drawn}`);
+
+  // Esc mid-drag draws nothing. Counted from the readout, since selection
+  // handles are circles too.
+  const cutouts = () => page.evaluate(() => +(document.body.innerText.match(/· (\d+) cutouts/)?.[1] ?? -1));
+  const count = await cutouts();
+  await page.keyboard.press('c');
+  await drag([10, 60], [16, 66], async () => { await page.keyboard.press('Escape'); });
+  if ((await cutouts()) === count && count > 0) pass('Esc while drawing draws nothing');
+  else fail(`Esc while drawing: ${count} cutouts before, ${await cutouts()} after`);
+
+  if (problems.length === 0) pass('no uncaught errors drawing cutouts');
+  else fail(`drawing cutouts: ${[...new Set(problems)].join(' | ')}`);
+  await page.close();
+}
+
 // --- alignment guides ---
 {
   const { page, problems } = await open();

@@ -111,7 +111,8 @@ interface State {
   runDetection: () => void;
   loadFromUrl: (url: string, label?: string, kind?: SourceKind, knownHp?: number) => Promise<void>;
 
-  addFeature: (shape: CutoutShapeId, x: number, y: number) => void;
+  /** A cutout at a spot, at its usual size or at a size drawn by dragging. */
+  addFeature: (shape: CutoutShapeId, x: number, y: number, size?: { w: number; h: number }) => void;
   updateFeature: (id: string, patch: Partial<Feature>) => void;
   /** Change several cutouts, each by its own patch, as one step for undo. */
   updateFeatures: (ids: string[], patch: (f: Feature) => Partial<Feature>) => void;
@@ -387,8 +388,16 @@ export const useStore = create<State>((set, get) => ({
     }
   },
 
-  addFeature: (shape, x, y) => {
+  addFeature: (shape, x, y, size) => {
     const preset = CUTOUT_PRESETS.find((p) => p.id === shape) ?? CUTOUT_PRESETS[0];
+    const w = size?.w ?? preset.w;
+    const h = preset.shape === 'circle' ? w : size?.h ?? preset.h;
+    // Corners follow the shape drawn: a circle is all corner, a slot has
+    // round ends at any length, and a rounded rectangle keeps its rounding
+    // unless it is drawn too small to hold it.
+    const radius = preset.shape === 'circle' ? w / 2
+      : shape === 'slot' ? Math.min(w, h) / 2
+      : Math.min(preset.radius, Math.min(w, h) / 2);
     const f: Feature = {
       id: uid(),
       // Hand-placed cutouts start as plain shapes. Naming the component is a
@@ -397,9 +406,9 @@ export const useStore = create<State>((set, get) => ({
       x,
       y,
       shape: preset.shape,
-      w: preset.w,
-      h: preset.h,
-      radius: preset.radius,
+      w,
+      h,
+      radius,
       rotation: 0,
       locked: true, // hand-placed, so a re-detect must not wipe it
     };

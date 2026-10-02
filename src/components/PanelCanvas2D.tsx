@@ -1,13 +1,14 @@
 'use client';
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { CUTOUT_PRESETS, MOUNT_SLOT, mountSlotPositions, panelHeightMm, panelWidthMm } from '@/lib/eurorack';
+import { CUTOUT_PRESETS, MOUNT_SLOT, type CutoutShapeId, mountSlotPositions, panelHeightMm, panelWidthMm } from '@/lib/eurorack';
 import {
   artExtent, artRings, type ArtElement, type DecorElement, type Feature, type TextElement,
 } from '@/lib/types';
 import { notePanelPointer, notePanelPress, useStore } from '@/lib/store';
 import { textToRings } from '@/lib/model/text';
 import { bbox, type Ring } from '@/lib/geom/poly';
+import { drawnCutout } from '@/lib/drawCutout';
 import { alignTo, snapToGrid, type AlignTarget, type Guide, type SpacingHint } from '@/lib/align';
 import { cutoutFill } from '@/lib/color';
 import type { Font as OpentypeFont } from 'opentype.js';
@@ -123,6 +124,11 @@ export function PanelCanvas2D() {
   const pointerOver = useRef(false);
   const [marquee, setMarquee] =
     useState<{ x0: number; y0: number; x1: number; y1: number; add: boolean } | null>(null);
+  /** A cutout being drawn with the tool: pressed at x0,y0, pointer at x1,y1. */
+  const [drawing, setDrawing] = useState<{
+    x0: number; y0: number; x1: number; y1: number;
+    square: boolean; fromCentre: boolean; free: boolean; keep: boolean;
+  } | null>(null);
   /**
    * An already-selected thing that was clicked with a modifier held.
    *
@@ -289,6 +295,14 @@ export function PanelCanvas2D() {
       setCamera((c) => clampCamera({ ...c, x: c.x - dx, y: c.y - dy }, W, H, pad));
       return;
     }
+    if (drawing) {
+      const p = toMm(e);
+      const free = e.metaKey || e.ctrlKey;
+      setDrawing((dr) => dr && {
+        ...dr, x1: snap(p.x, free), y1: snap(p.y, free), square: e.shiftKey, fromCentre: e.altKey, free,
+      });
+      return;
+    }
     const d = drag.current;
     if (d) {
       const now = toMm(e);
@@ -347,6 +361,19 @@ export function PanelCanvas2D() {
       setPanning(false);
       return;
     }
+    if (drawing && tool) {
+      const drawn = drawnCutout(tool, { x: drawing.x0, y: drawing.y0 }, { x: drawing.x1, y: drawing.y1 }, {
+        square: drawing.square, fromCentre: drawing.fromCentre, minDragMm: DRAW_CLICK_PX * mmPerPx,
+      });
+      // Too short a drag to be a size is a click: the shape at its usual size.
+      if (drawn) addFeature(tool, drawn.x, drawn.y, { w: drawn.w, h: drawn.h });
+      else addFeature(tool, drawing.x0, drawing.y0);
+      // Shift keeps the tool for drawing a run of them in one go.
+      if (!drawing.keep && !drawing.square) setTool(null);
+      setDrawing(null);
+      return;
+    }
+    setDrawing(null);
     if (marquee) {
       const x0 = Math.min(marquee.x0, marquee.x1);
       const x1 = Math.max(marquee.x0, marquee.x1);
@@ -398,18 +425,28 @@ export function PanelCanvas2D() {
     if (spaceHeld || e.button === 1) beginPan(e);
   };
 
+  /**
+   * With a cutout tool, a press starts drawing one. Pressed anywhere, over a
+   * part or a label as much as over empty panel: the tool is what was asked
+   * for, and grabbing what lay underneath instead was a surprise.
+   */
+  const beginDraw = (e: React.PointerEvent) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    svgRef.current?.setPointerCapture?.(e.pointerId);
+    const p = toMm(e);
+    const free = e.metaKey || e.ctrlKey;
+    const x = snap(p.x, free), y = snap(p.y, free);
+    setDrawing({ x0: x, y0: y, x1: x, y1: y, square: false, fromCentre: e.altKey, free, keep: e.shiftKey });
+  };
+
   const onBackgroundPointerDown = (e: React.PointerEvent) => {
     // Cmd/Ctrl-drag on anything that is not a part moves the view. On a part
     // it still means "ignore the grid", and adding to a sweep is Shift's job.
     if (!tool && (e.metaKey || e.ctrlKey)) { beginPan(e); return; }
     const p = toMm(e);
-    if (tool) {
-      const free = e.metaKey || e.ctrlKey;
-      addFeature(tool, snap(p.x, free), snap(p.y, free));
-      // Shift keeps the tool active for placing a run of jacks in one go.
-      if (!e.shiftKey) setTool(null);
-      return;
-    }
+    if (tool) { beginDraw(e); return; }
     // Holding Shift adds to the selection rather than replacing it, so a
     // second sweep can pick up another row.
     setMarquee({ x0: p.x, y0: p.y, x1: p.x, y1: p.y, add: e.shiftKey });
@@ -421,7 +458,7 @@ export function PanelCanvas2D() {
       const el = document.activeElement;
       if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT')) return;
 
-      if (e.key === 'Escape') { setTool(null); select([]); return; }
+      if (e.key === 'Escape') { setTool(null); setDrawing(null); select([]); return; }
       if (!selectedIds.length) return;
 
       if (e.key === 'Delete' || e.key === 'Backspace') {
@@ -713,6 +750,21 @@ export function PanelCanvas2D() {
           <DecorHandles el={soleDecor} handleMm={handleMm} />
         )}
 
+        {/* With a cutout tool, the whole canvas is for drawing: a crosshair
+            everywhere, and nothing underneath picked up by mistake. */}
+        {tool && (
+          <rect
+            data-draw-layer=""
+            x={-W * 5} y={-H * 5} width={W * 11} height={H * 11}
+            fill="transparent"
+            style={{ cursor: 'crosshair' }}
+            onPointerDown={beginDraw}
+          />
+        )}
+        {drawing && tool && (
+          <DrawPreview tool={tool} drawing={drawing} mmPerPx={mmPerPx} handleMm={handleMm} />
+        )}
+
         {marquee && (
           <rect
             x={Math.min(marquee.x0, marquee.x1)}
@@ -743,7 +795,7 @@ export function PanelCanvas2D() {
               + `${spacing.map((h) => ` · equal spacing ${trim(h.mm)} mm`).join('')}`
               + `${gapSummary(guides)} · ⌘/Ctrl to ignore`
             : tool
-            ? `Click to place a ${(CUTOUT_PRESETS.find((p) => p.id === tool)?.label ?? 'cutout').toLowerCase()} · Shift-click to keep placing · Esc to stop`
+            ? `Drag to draw a ${(CUTOUT_PRESETS.find((p) => p.id === tool)?.label ?? 'cutout').toLowerCase()}, or click for the usual size · Alt from the centre · Shift to keep drawing · Esc to stop`
             : 'Scroll or Space drag to move · ⌘/Ctrl scroll to zoom · Alt drag to duplicate · ⌘/Ctrl drag a part to ignore grid'}
         </span>
       </div>
@@ -1283,6 +1335,53 @@ function GuideGap({
         style={{ fontWeight: 600, paintOrder: 'stroke' }}
       >
         {text}
+      </text>
+    </g>
+  );
+}
+
+/** Below this many screen pixels, a press with a cutout tool is a click. */
+const DRAW_CLICK_PX = 4;
+
+/** The cutout being drawn, outlined, with its size beside it. */
+function DrawPreview({
+  tool, drawing, mmPerPx, handleMm,
+}: {
+  tool: CutoutShapeId;
+  drawing: { x0: number; y0: number; x1: number; y1: number; square: boolean; fromCentre: boolean };
+  mmPerPx: number;
+  handleMm: number;
+}) {
+  const r = drawnCutout(tool, { x: drawing.x0, y: drawing.y0 }, { x: drawing.x1, y: drawing.y1 }, {
+    square: drawing.square, fromCentre: drawing.fromCentre, minDragMm: DRAW_CLICK_PX * mmPerPx,
+  });
+  if (!r) return null;
+  const preset = CUTOUT_PRESETS.find((p) => p.id === tool);
+  const circle = preset?.shape === 'circle';
+  const rx = circle ? r.w / 2 : tool === 'slot' ? Math.min(r.w, r.h) / 2 : Math.min(preset?.radius ?? 0, Math.min(r.w, r.h) / 2);
+  const font = handleMm * 1.2;
+  return (
+    <g pointerEvents="none" data-draw-preview="">
+      <rect
+        x={r.x - r.w / 2} y={r.y - r.h / 2} width={r.w} height={r.h} rx={rx}
+        fill="#ffb45430"
+        stroke="var(--color-accent)"
+        strokeWidth={mmPerPx * 1.5}
+        strokeDasharray={`${mmPerPx * 4} ${mmPerPx * 3}`}
+      />
+      <text
+        x={r.x}
+        y={r.y + r.h / 2 + font * 1.1}
+        fontSize={font}
+        textAnchor="middle"
+        dominantBaseline="central"
+        fill="var(--color-accent)"
+        stroke="var(--color-ink-950)"
+        strokeWidth={font * 0.3}
+        strokeLinejoin="round"
+        style={{ fontWeight: 600, paintOrder: 'stroke' }}
+      >
+        {circle ? `⌀ ${trim(r.w)} mm` : `${trim(r.w)} × ${trim(r.h)} mm`}
       </text>
     </g>
   );
