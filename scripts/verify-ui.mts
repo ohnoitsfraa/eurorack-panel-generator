@@ -1049,6 +1049,17 @@ async function open(colorScheme: 'light' | 'dark' = 'dark') {
   await page.close();
 }
 
+// --- a new panel starts dark ---
+{
+  const { page, problems } = await open();
+  const fill = await page.locator('[data-panel-canvas] rect[fill="#121418"]').count();
+  if (fill > 0) pass('a new panel starts on the dark colour');
+  else fail('a new panel did not start dark');
+  if (problems.length === 0) pass('no uncaught errors opening a new panel');
+  else fail(`new panel: ${[...new Set(problems)].join(' | ')}`);
+  await page.close();
+}
+
 // --- putting a panel in the rack shows you the rack ---
 {
   const { page, problems } = await open();

@@ -206,7 +206,7 @@ export const DEFAULT_DESIGN: PanelDesign = {
   format: '3U',
   thicknessMm: 2,
   cornerRadiusMm: 1.5,
-  backgroundColor: '#e8e6df',   // Brushed Alu, so a new panel starts on-brand
+  backgroundColor: '#121418',   // Dark, so a new panel starts with the light lettering showing
   includeMountSlots: true,
   holeClearanceMm: HOLE_CLEARANCE.default,
   features: [],

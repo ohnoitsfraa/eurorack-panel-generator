@@ -385,7 +385,7 @@ export function PanelTab() {
           <ColorInput value={design.backgroundColor} onChange={(backgroundColor) => setDesign({ backgroundColor })} />
         </Field>
         <div className="flex flex-wrap gap-1">
-          {['#e8e6df', '#121418', '#23262b', '#c9ccd1', '#1f3b57', '#57351f', '#7d1f2b', '#1f5740'].map((c) => (
+          {['#121418', '#e8e6df', '#23262b', '#c9ccd1', '#1f3b57', '#57351f', '#7d1f2b', '#1f5740'].map((c) => (
             <button
               key={c}
               type="button"
