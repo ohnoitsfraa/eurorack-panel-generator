@@ -1098,13 +1098,63 @@ async function open(colorScheme: 'light' | 'dark' = 'dark') {
         };
       });
   });
-  if (controls.length === 2) pass('a panel in the rack offers edit and remove');
-  else fail(`found ${controls.length} controls on the panel, expected 2`);
+  if (controls.length === 3) pass('a panel in the rack offers zoom, edit and remove');
+  else fail(`found ${controls.length} controls on the panel, expected 3`);
   if (controls.every((c) => c.w >= 24 && c.h >= 24)) pass('and they are big enough to hit');
   else fail(`controls measure ${controls.map((c) => `${c.w}x${c.h}`).join(', ')}`);
   // They must not hang over the neighbouring panel, whose controls they are not.
   if (controls.every((c) => c.inside)) pass('and stay on the panel they belong to');
   else fail('a control overhangs its panel');
+
+  // Z over a panel shows it large, to read it without opening it.
+  const peek = page.locator('[data-rack-peek="Rack me"]');
+  await page.keyboard.press('z');
+  await page.waitForTimeout(200);
+  const small = (await panel.boundingBox())!;
+  const big = await peek.locator('svg').boundingBox();
+  if (big && big.height > small.height * 1.5) {
+    pass(`Z over a rack panel shows it zoomed in (${Math.round(small.height)} → ${Math.round(big.height)} px tall)`);
+  } else fail(`Z did not zoom in on the panel (${big ? Math.round(big.height) : 'nothing'} shown)`);
+  await page.keyboard.press('z');
+  await page.waitForTimeout(150);
+  if ((await peek.count()) === 0) pass('and Z again closes it');
+  else fail('a second Z left the zoomed view open');
+  // Without moving the mouse: the large view covered the panel, and it must
+  // still count as under the pointer once the view has gone.
+  await page.keyboard.press('z');
+  await page.waitForTimeout(150);
+  if ((await peek.count()) === 1) pass('Z opens it again without moving the mouse');
+  else fail('after closing, Z did nothing until the mouse moved');
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(150);
+  if ((await peek.count()) === 0) pass('Esc closes it too');
+  else fail('Esc left the zoomed view open');
+  // Held, it is a magnifier: open while held, gone on release.
+  await page.keyboard.down('z');
+  await page.waitForTimeout(500);
+  const whileHeld = await peek.count();
+  await page.keyboard.up('z');
+  await page.waitForTimeout(150);
+  if (whileHeld === 1 && (await peek.count()) === 0) pass('holding Z shows it only while held');
+  else fail(`holding Z: ${whileHeld} open while held, ${await peek.count()} after release`);
+  await page.mouse.move(5, 5);
+  await page.keyboard.press('z');
+  await page.waitForTimeout(150);
+  if ((await page.locator('[data-rack-peek]').count()) === 0) pass('Z away from any panel does nothing');
+  else { fail('Z away from a panel opened a zoomed view'); await page.keyboard.press('Escape'); }
+  await panel.hover();
+
+  // The zoom button does the same as Z, for anyone who does not know the key.
+  await page.waitForTimeout(250);
+  await page.locator('button[aria-label^="Zoom in on Rack me"]').click();
+  await page.waitForTimeout(200);
+  if ((await peek.count()) === 1) pass('the zoom button on the panel shows it zoomed in');
+  else fail('the zoom button did not open the zoomed view');
+  await page.mouse.click(5, 5);
+  await page.waitForTimeout(150);
+  if ((await peek.count()) === 0) pass('and a click closes it');
+  else { fail('a click left the zoomed view open'); await page.keyboard.press('Escape'); }
+  await panel.hover();
 
   // Double-clicking a panel opens it for editing; a single click must not,
   // since that is also how a drag starts.
