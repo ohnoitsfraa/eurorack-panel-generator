@@ -42,3 +42,23 @@ function round2(v: number): number {
   return Math.round(v * 100) / 100;
 }
 
+/**
+ * A line drawn by dragging from one end to the other.
+ *
+ * Shift holds it to 15° steps, which takes in level, plumb and the 45°s, the
+ * angles panel lines are nearly always drawn at. Null for a drag too short to
+ * be a line: a click, which lays down the usual rule instead.
+ */
+export function drawnLine(
+  from: { x: number; y: number },
+  to: { x: number; y: number },
+  opts: { snapAngle?: boolean; minDragMm?: number } = {},
+): { from: { x: number; y: number }; to: { x: number; y: number }; length: number; angle: number } | null {
+  const length = Math.hypot(to.x - from.x, to.y - from.y);
+  if (length < (opts.minDragMm ?? 1)) return null;
+  let angle = (Math.atan2(to.y - from.y, to.x - from.x) * 180) / Math.PI;
+  if (opts.snapAngle) angle = Math.round(angle / 15) * 15;
+  const a = (angle * Math.PI) / 180;
+  const end = { x: round2(from.x + Math.cos(a) * length), y: round2(from.y + Math.sin(a) * length) };
+  return { from, to: end, length: round2(length), angle: Math.round(angle * 100) / 100 };
+}

@@ -21,7 +21,9 @@ export function DecorTab() {
   const decor = design.decor;
   const addDecor = useStore((s) => s.addDecor);
   const addTextLabel = useStore((s) => s.addTextLabel);
-  const addShapeElement = useStore((s) => s.addShapeElement);
+  const tool = useStore((s) => s.tool);
+  const setTool = useStore((s) => s.setTool);
+  const setView = useStore((s) => s.setView);
   const removeDecor = useStore((s) => s.removeDecor);
   const selectedIds = useStore((s) => s.selectedIds);
   const select = useStore((s) => s.select);
@@ -44,7 +46,10 @@ export function DecorTab() {
       <Section title="Add">
         <div className="grid grid-cols-2 gap-1">
           <Button onClick={addTextLabel}>Text label</Button>
-          <Button onClick={addShapeElement}>Line / shape</Button>
+          {/* Draws, like a cutout: drag from one end of the line to the other. */}
+          <Button onClick={() => { setView('2d'); setTool(tool === 'line' ? null : 'line'); }}>
+            {tool === 'line' ? 'Drawing a line…' : 'Line / shape'}
+          </Button>
         </div>
         <IconPicker />
         <ArtworkTracer />

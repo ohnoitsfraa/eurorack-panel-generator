@@ -110,7 +110,8 @@ export default function Page() {
         s.setView('2d');
         s.setTab('decor');
         if (k === 't') s.addTextLabel();
-        else s.addShapeElement();
+        // A line is drawn: drag from one end to the other.
+        else s.setTool('line');
       }
     };
     window.addEventListener('keydown', onKey);

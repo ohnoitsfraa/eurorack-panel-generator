@@ -1750,6 +1750,22 @@ console.log('\nDrawing cutouts');
   if (plain.w === 6 && plain.radius === 3) pass('a clicked circle is still the usual 6 mm');
   else fail(`clicked circle: ${JSON.stringify(plain)}`);
 
+  // Lines are drawn end to end.
+  const { drawnLine } = await import('../src/lib/drawCutout');
+  const level = drawnLine({ x: 5, y: 40 }, { x: 35, y: 40 });
+  if (level && level.length === 30 && level.angle === 0) pass('a line is drawn from one end to the other');
+  else fail(`level line: ${JSON.stringify(level)}`);
+  const slanted = drawnLine({ x: 0, y: 0 }, { x: 10, y: 9 }, { snapAngle: true });
+  if (slanted && slanted.angle === 45 && Math.abs(slanted.length - Math.hypot(10, 9)) < 0.01) pass('Shift holds a line to 15° steps, keeping its length');
+  else fail(`snapped line: ${JSON.stringify(slanted)}`);
+  if (drawnLine({ x: 0, y: 0 }, { x: 0.2, y: 0.1 }) === null) pass('a drag too short to be a line is a click');
+  else fail('a tiny drag was taken as a line');
+
+  const id = st().addShapeElement({ x: 10, y: 50 }, { x: 10, y: 80 });
+  const drawnRule = st().design.decor.find((d) => d.id === id)!;
+  if (drawnRule.type === 'shape' && drawnRule.x === 10 && drawnRule.y === 65 && drawnRule.w === 30 && drawnRule.rotation === 90) {
+    pass('a line added by its ends sits between them, as long as they are apart, turned to match');
+  } else fail(`line from its ends: ${JSON.stringify(drawnRule)}`);
   st().newDesign();
 }
 

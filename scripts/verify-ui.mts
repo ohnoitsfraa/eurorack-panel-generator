@@ -718,6 +718,53 @@ async function open(colorScheme: 'light' | 'dark' = 'dark') {
   await page.close();
 }
 
+// --- a line is drawn end to end ---
+{
+  const { page, problems } = await open();
+  const toScreen = (mx: number, my: number) =>
+    page.evaluate(([x, y]) => {
+      const el = document.querySelector('[data-panel-canvas]') as SVGSVGElement;
+      const p = new DOMPoint(x, y).matrixTransform(el.getScreenCTM()!);
+      return { x: p.x, y: p.y };
+    }, [mx, my] as [number, number]);
+  await page.locator('[data-panel-canvas]').hover();
+  await page.keyboard.press('l');
+  await page.waitForTimeout(150);
+  if (await page.locator('[data-draw-layer]').count() === 1) pass('L picks up the line tool rather than dropping a line');
+  else fail('L did not start drawing a line');
+
+  const a = await toScreen(8, 40), b = await toScreen(32, 40);
+  await page.mouse.move(a.x, a.y);
+  await page.mouse.down();
+  await page.mouse.move(b.x, b.y, { steps: 10 });
+  const shown = (await page.locator('[data-draw-preview] text').textContent()) ?? '';
+  await page.mouse.up();
+  await page.waitForTimeout(250);
+  if (shown.trim() === '24 mm') pass('the line shows its length while it is drawn');
+  else fail(`while drawing, the line was labelled "${shown}"`);
+  const line = await page.locator('[data-decor="shape"] path').first().boundingBox();
+  if (line && Math.abs(line.x - a.x) < 4 && Math.abs(line.x + line.width - b.x) < 4) pass('and runs from where the drag began to where it ended');
+  else fail(`the drawn line spans ${line ? `${Math.round(line.x)}–${Math.round(line.x + line.width)}` : 'nothing'}, the drag ${Math.round(a.x)}–${Math.round(b.x)}`);
+
+  // From the button, a click lays the usual rule where clicked.
+  await page.getByRole('button', { name: 'Text & art', exact: true }).click();
+  await page.getByRole('button', { name: 'Line / shape', exact: true }).click();
+  const c = await toScreen(20, 100);
+  await page.mouse.click(c.x, c.y);
+  await page.waitForTimeout(250);
+  const rules = await page.locator('[data-decor="shape"] path').count();
+  const rule = await page.locator('[data-decor="shape"] path').last().boundingBox();
+  if (rules === 2 && rule && Math.abs(rule.x + rule.width / 2 - c.x) < 4 && Math.abs(rule.y + rule.height / 2 - c.y) < 4) {
+    pass('the Line button draws too, and a click lays a rule centred where clicked');
+  } else fail(`after a click with the line tool: ${rules} lines, the last centred at ${rule ? `${Math.round(rule.x + rule.width / 2)},${Math.round(rule.y + rule.height / 2)}` : 'nowhere'}`);
+  if (await page.locator('[data-draw-layer]').count() === 0) pass('after which the tool is put away');
+  else fail('the line tool stayed on');
+
+  if (problems.length === 0) pass('no uncaught errors drawing lines');
+  else fail(`drawing lines: ${[...new Set(problems)].join(' | ')}`);
+  await page.close();
+}
+
 // --- alignment guides ---
 {
   const { page, problems } = await open();

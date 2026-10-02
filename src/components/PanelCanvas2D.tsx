@@ -8,7 +8,7 @@ import {
 import { notePanelPointer, notePanelPress, useStore } from '@/lib/store';
 import { textToRings } from '@/lib/model/text';
 import { bbox, type Ring } from '@/lib/geom/poly';
-import { drawnCutout } from '@/lib/drawCutout';
+import { drawnCutout, drawnLine } from '@/lib/drawCutout';
 import { alignTo, snapToGrid, type AlignTarget, type Guide, type SpacingHint } from '@/lib/align';
 import { cutoutFill } from '@/lib/color';
 import type { Font as OpentypeFont } from 'opentype.js';
@@ -97,6 +97,7 @@ export function PanelCanvas2D() {
   const select = useStore((s) => s.select);
   const updateFeature = useStore((s) => s.updateFeature);
   const addFeature = useStore((s) => s.addFeature);
+  const addShapeElement = useStore((s) => s.addShapeElement);
   const removeFeatures = useStore((s) => s.removeFeatures);
   const duplicateFeatures = useStore((s) => s.duplicateFeatures);
   const duplicateDecor = useStore((s) => s.duplicateDecor);
@@ -361,7 +362,22 @@ export function PanelCanvas2D() {
       setPanning(false);
       return;
     }
-    if (drawing && tool) {
+    if (drawing && tool === 'line') {
+      const from = { x: drawing.x0, y: drawing.y0 };
+      const line = drawnLine(from, { x: drawing.x1, y: drawing.y1 }, {
+        snapAngle: drawing.square, minDragMm: DRAW_CLICK_PX * mmPerPx,
+      });
+      // A click lays the usual rule across the panel, centred where clicked.
+      const half = (W * 0.6) / 2;
+      if (line) addShapeElement(line.from, line.to);
+      else addShapeElement({ x: from.x - half, y: from.y }, { x: from.x + half, y: from.y });
+      // Shift here turns lines to 15° steps, so only Shift at the press keeps
+      // the tool for another.
+      if (!drawing.keep) setTool(null);
+      setDrawing(null);
+      return;
+    }
+    if (drawing && tool && tool !== 'line') {
       const drawn = drawnCutout(tool, { x: drawing.x0, y: drawing.y0 }, { x: drawing.x1, y: drawing.y1 }, {
         square: drawing.square, fromCentre: drawing.fromCentre, minDragMm: DRAW_CLICK_PX * mmPerPx,
       });
@@ -761,7 +777,10 @@ export function PanelCanvas2D() {
             onPointerDown={beginDraw}
           />
         )}
-        {drawing && tool && (
+        {drawing && tool === 'line' && (
+          <LinePreview drawing={drawing} mmPerPx={mmPerPx} handleMm={handleMm} />
+        )}
+        {drawing && tool && tool !== 'line' && (
           <DrawPreview tool={tool} drawing={drawing} mmPerPx={mmPerPx} handleMm={handleMm} />
         )}
 
@@ -795,7 +814,9 @@ export function PanelCanvas2D() {
               + `${spacing.map((h) => ` · equal spacing ${trim(h.mm)} mm`).join('')}`
               + `${gapSummary(guides)} · ⌘/Ctrl to ignore`
             : tool
-            ? `Drag to draw a ${(CUTOUT_PRESETS.find((p) => p.id === tool)?.label ?? 'cutout').toLowerCase()}, or click for the usual size · Alt from the centre · Shift to keep drawing · Esc to stop`
+            ? tool === 'line'
+              ? 'Drag from one end of the line to the other, or click for a rule · Shift for 15° steps · Esc to stop'
+              : `Drag to draw a ${(CUTOUT_PRESETS.find((p) => p.id === tool)?.label ?? 'cutout').toLowerCase()}, or click for the usual size · Alt from the centre · Shift to keep drawing · Esc to stop`
             : 'Scroll or Space drag to move · ⌘/Ctrl scroll to zoom · Alt drag to duplicate · ⌘/Ctrl drag a part to ignore grid'}
         </span>
       </div>
@@ -1382,6 +1403,53 @@ function DrawPreview({
         style={{ fontWeight: 600, paintOrder: 'stroke' }}
       >
         {circle ? `⌀ ${trim(r.w)} mm` : `${trim(r.w)} × ${trim(r.h)} mm`}
+      </text>
+    </g>
+  );
+}
+
+/** The line being drawn, at its printed thickness, with its length and angle. */
+function LinePreview({
+  drawing, mmPerPx, handleMm,
+}: {
+  drawing: { x0: number; y0: number; x1: number; y1: number; square: boolean };
+  mmPerPx: number;
+  handleMm: number;
+}) {
+  const line = drawnLine({ x: drawing.x0, y: drawing.y0 }, { x: drawing.x1, y: drawing.y1 }, {
+    snapAngle: drawing.square, minDragMm: DRAW_CLICK_PX * mmPerPx,
+  });
+  if (!line) return null;
+  const font = handleMm * 1.2;
+  // Level and plumb are the usual, so the angle is only worth giving when
+  // it is something else.
+  const angle = ((line.angle % 180) + 180) % 180;
+  const text = `${trim(line.length)} mm${angle === 0 || angle === 90 ? '' : ` · ${trim(angle)}°`}`;
+  return (
+    <g pointerEvents="none" data-draw-preview="">
+      <line
+        x1={line.from.x} y1={line.from.y} x2={line.to.x} y2={line.to.y}
+        stroke="var(--color-accent)"
+        strokeWidth={0.8}
+        strokeLinecap="round"
+        opacity={0.8}
+      />
+      {[line.from, line.to].map((p, i) => (
+        <circle key={i} cx={p.x} cy={p.y} r={mmPerPx * 3} fill="var(--color-accent)" />
+      ))}
+      <text
+        x={(line.from.x + line.to.x) / 2}
+        y={(line.from.y + line.to.y) / 2 - font * 1.1}
+        fontSize={font}
+        textAnchor="middle"
+        dominantBaseline="central"
+        fill="var(--color-accent)"
+        stroke="var(--color-ink-950)"
+        strokeWidth={font * 0.3}
+        strokeLinejoin="round"
+        style={{ fontWeight: 600, paintOrder: 'stroke' }}
+      >
+        {text}
       </text>
     </g>
   );

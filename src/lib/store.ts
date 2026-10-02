@@ -38,7 +38,8 @@ import { snapToGrid } from './align';
 export type ViewMode = '2d' | '3d' | 'rack';
 export type InspectorTab = 'panel' | 'features' | 'decor' | 'export' | 'library';
 /** null = select/move; otherwise the shape the next canvas click will place. */
-export type Tool = null | CutoutShapeId;
+/** What a press on the canvas draws: a cutout, a line, or (null) nothing. */
+export type Tool = null | CutoutShapeId | 'line';
 
 export type { Crop } from './types';
 
@@ -125,8 +126,11 @@ interface State {
   addDecor: (el: DecorElement) => void;
   /** A label at the top of the panel, ready to be typed into. */
   addTextLabel: () => string;
-  /** A plain rule across the panel, the starting point for drawn decor. */
-  addShapeElement: () => string;
+  /**
+   * A line: from one point to another when drawn, otherwise a plain rule
+   * across the panel, the starting point for drawn decor.
+   */
+  addShapeElement: (from?: { x: number; y: number }, to?: { x: number; y: number }) => string;
   updateDecor: (id: string, patch: Partial<DecorElement>) => void;
   /** The same change to several elements, as one step for undo. */
   updateDecorMany: (ids: string[], patch: Partial<DecorElement>) => void;
@@ -541,14 +545,20 @@ export const useStore = create<State>((set, get) => ({
     return el.id;
   },
 
-  addShapeElement: () => {
+  addShapeElement: (from, to) => {
     const { design } = get();
     const W = panelWidthMm(design.hp);
-    const at = newElementAt({ x: W / 2, y: panelHeightMm(design.format) / 2 });
+    const at = from && to
+      ? { x: (from.x + to.x) / 2, y: (from.y + to.y) / 2 }
+      : newElementAt({ x: W / 2, y: panelHeightMm(design.format) / 2 });
+    // A line is a thin bar about its middle, turned to run from one end to
+    // the other.
+    const length = from && to ? Math.hypot(to.x - from.x, to.y - from.y) : W * 0.6;
+    const rotation = from && to ? (Math.atan2(to.y - from.y, to.x - from.x) * 180) / Math.PI : 0;
     const el: DecorElement = {
       id: uid('s'), type: 'shape', shape: 'line',
-      x: at.x, y: at.y, w: W * 0.6, h: 0.8,
-      radius: 0.4, rotation: 0,
+      x: round2(at.x), y: round2(at.y), w: round2(length), h: 0.8,
+      radius: 0.4, rotation: Math.round(rotation * 100) / 100,
       color: '#f2f2f0', mode: 'raised', reliefMm: 0.6,
     };
     get().addDecor(el);
