@@ -8,7 +8,7 @@ import {
 import { useStore } from '@/lib/store';
 import { textToRings } from '@/lib/model/text';
 import { bbox, type Ring } from '@/lib/geom/poly';
-import { alignTo, snapToGrid, type AlignTarget, type Guide } from '@/lib/align';
+import { alignTo, snapToGrid, type AlignTarget, type Guide, type SpacingHint } from '@/lib/align';
 import { cutoutFill } from '@/lib/color';
 import type { Font as OpentypeFont } from 'opentype.js';
 import { shapeRingsForPreview } from '@/lib/model/preview';
@@ -194,6 +194,7 @@ export function PanelCanvas2D() {
   } | null>(null);
 
   const [guides, setGuides] = useState<Guide[]>([]);
+  const [spacing, setSpacing] = useState<SpacingHint[]>([]);
   /** The text label being typed into on the canvas, and what it said before. */
   const [editing, setEditing] = useState<string | null>(null);
 
@@ -299,6 +300,7 @@ export function PanelCanvas2D() {
         const raw = { x: d.anchor.ox + dx, y: d.anchor.oy + dy };
         if (free) {
           setGuides([]);
+          setSpacing([]);
           dx = round2(raw.x) - d.anchor.ox;
           dy = round2(raw.y) - d.anchor.oy;
         } else {
@@ -310,8 +312,12 @@ export function PanelCanvas2D() {
           const self = selfExtent(features, decor, d.items);
           const res = alignTo(raw.x, raw.y, targets, { w: W, h: H }, HANDLE_PX * mmPerPx * 0.8, self);
           setGuides(res.guides);
-          const gx = res.guides.some((g) => g.axis === 'x') ? res.x : snapToGrid(raw.x, gridMm);
-          const gy = res.guides.some((g) => g.axis === 'y') ? res.y : snapToGrid(raw.y, gridMm);
+          setSpacing(res.spacing);
+          // A guide at x fixes x, and so does a spacing that runs along x.
+          const lockX = res.guides.some((g) => g.axis === 'x') || res.spacing.some((h) => h.axis === 'x');
+          const lockY = res.guides.some((g) => g.axis === 'y') || res.spacing.some((h) => h.axis === 'y');
+          const gx = lockX ? res.x : snapToGrid(raw.x, gridMm);
+          const gy = lockY ? res.y : snapToGrid(raw.y, gridMm);
           dx = gx - d.anchor.ox;
           dy = gy - d.anchor.oy;
         }
@@ -369,6 +375,7 @@ export function PanelCanvas2D() {
     drag.current = null;
     setDuplicating(null);
     setGuides([]);
+    setSpacing([]);
   };
 
   const beginPan = (e: React.PointerEvent) => {
@@ -651,6 +658,8 @@ export function PanelCanvas2D() {
           );
         })}
 
+        {spacing.map((h, i) => <SpacingMarks key={`s${i}`} hint={h} handleMm={handleMm} />)}
+
         {/* While an Alt-drag is in progress, ring what was left behind and
             what is being carried, so it is obvious a copy is being made rather
             than the original being moved. */}
@@ -719,8 +728,9 @@ export function PanelCanvas2D() {
         <span>
           {duplicating
             ? 'Duplicating — release to drop the copy'
-            : guides.length
-            ? `Aligned${guides.some((g) => g.source === 'panel') ? ' to the panel centre' : ''}`
+            : guides.length || spacing.length
+            ? `${guides.length ? `Aligned${guides.some((g) => g.source === 'panel') ? ' to the panel centre' : ''}` : 'Spaced'}`
+              + `${spacing.map((h) => ` · equal spacing ${trim(h.mm)} mm`).join('')}`
               + `${gapSummary(guides)} · ⌘/Ctrl to ignore`
             : tool
             ? `Click to place a ${(CUTOUT_PRESETS.find((p) => p.id === tool)?.label ?? 'cutout').toLowerCase()} · Shift-click to keep placing · Esc to stop`
@@ -1210,6 +1220,56 @@ function GuideGap({
       >
         {text}
       </text>
+    </g>
+  );
+}
+
+/** Colour for equal spacing, apart from the alignment guides it sits beside. */
+const SPACING_COLOR = '#ff5fa2';
+
+/**
+ * Equal intervals along a row or column, each marked and labelled, so the
+ * spacing being repeated is visible on the panel and not only in the readout.
+ *
+ * Set below the row (or beside the column), clear of the biggest thing on
+ * it, so the marks sit neither on the alignment guide drawn along the same
+ * line nor across the parts themselves.
+ */
+function SpacingMarks({ hint, handleMm }: { hint: SpacingHint; handleMm: number }) {
+  const along = hint.axis === 'x';
+  const off = hint.at + hint.clearance + handleMm * 0.9;
+  const tick = handleMm * 0.4;
+  const font = handleMm * 1.1;
+  const pt = (u: number, v: number) => (along ? { x: u, y: v } : { x: v, y: u });
+  return (
+    <g pointerEvents="none" data-spacing-hint={trim(hint.mm)}>
+      {hint.spans.map((sp, i) => {
+        const a = pt(sp.from, off), b = pt(sp.to, off);
+        const label = pt((sp.from + sp.to) / 2, off + (along ? font * 0.9 : font * 0.6));
+        return (
+          <g key={i}>
+            <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke={SPACING_COLOR} strokeWidth={handleMm * 0.1} />
+            {[sp.from, sp.to].map((u, k) => {
+              const p = pt(u, off - tick), q = pt(u, off + tick);
+              return <line key={k} x1={p.x} y1={p.y} x2={q.x} y2={q.y} stroke={SPACING_COLOR} strokeWidth={handleMm * 0.12} />;
+            })}
+            <text
+              x={label.x}
+              y={label.y}
+              fontSize={font}
+              textAnchor={along ? 'middle' : 'start'}
+              dominantBaseline="central"
+              fill={SPACING_COLOR}
+              stroke="var(--color-ink-950)"
+              strokeWidth={font * 0.3}
+              strokeLinejoin="round"
+              style={{ fontWeight: 600, paintOrder: 'stroke' }}
+            >
+              {trim(hint.mm)}
+            </text>
+          </g>
+        );
+      })}
     </g>
   );
 }

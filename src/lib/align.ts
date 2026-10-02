@@ -46,10 +46,33 @@ export interface Guide {
   gap?: { from: number; to: number; mm: number };
 }
 
+/**
+ * Equal spacing along a row or a column.
+ *
+ * Once two things in a row are a certain distance apart, the third is nearly
+ * always meant to be the same distance on: jacks at 15 mm, knobs evenly
+ * spread. So the spacings already on the line are offered as snaps, and so is
+ * the point halfway between two neighbours. Every interval of that size on
+ * the line is marked, so it is plain which spacing is being repeated.
+ */
+export interface SpacingHint {
+  /** The direction the spacing runs: 'x' along a row, 'y' down a column. */
+  axis: 'x' | 'y';
+  /** Where the row or column sits across that direction, in mm. */
+  at: number;
+  /** The spacing, centre to centre, in mm. */
+  mm: number;
+  /** Half the size of the biggest thing on the line, so marks can clear it. */
+  clearance: number;
+  /** Each interval of that spacing on the line, the new one included. */
+  spans: Array<{ from: number; to: number }>;
+}
+
 export interface AlignResult {
   x: number;
   y: number;
   guides: Guide[];
+  spacing: SpacingHint[];
 }
 
 /**
@@ -95,10 +118,30 @@ export function alignTo(
     return { at, matches, source };
   };
 
-  const vx = best(px, 'x');
-  const vy = best(py, 'y');
-  const x = vx ? vx.at : px;
-  const y = vy ? vy.at : py;
+  let vx = best(px, 'x');
+  let vy = best(py, 'y');
+  let x = vx ? vx.at : px;
+  let y = vy ? vy.at : py;
+
+  // Equal spacing, along a row the item has lined up with and then down a
+  // column. Lining up exactly with something wins a tie: it is the more
+  // specific intention, and the same spacing is often exactly there anyway.
+  const spacing: SpacingHint[] = [];
+  const row = vy && vy.matches.length >= 2 ? equalSpacing(px, vy.matches.map((t) => t.x), toleranceMm) : null;
+  if (row && (!vx || Math.abs(row.at - px) < Math.abs(vx.at - px))) {
+    x = row.at;
+    vx = null;
+    spacing.push({ axis: 'x', at: y, mm: row.mm, spans: row.spans, clearance: Math.max(self.ry, ...vy!.matches.map((t) => t.ry)) });
+  } else {
+    const col = vx && vx.matches.length >= 2 ? equalSpacing(py, vx.matches.map((t) => t.y), toleranceMm) : null;
+    if (col && (!vy || Math.abs(col.at - py) < Math.abs(vy.at - py))) {
+      y = col.at;
+      vy = null;
+      spacing.push({ axis: 'y', at: x, mm: col.mm, spans: col.spans, clearance: Math.max(self.rx, ...vx!.matches.map((t) => t.rx)) });
+    }
+  }
+  // A line whose spacing is drawn interval by interval needs no second figure.
+  const spaced = (axis: 'x' | 'y') => spacing.some((s) => s.axis === axis);
 
   if (vx) {
     // Span from the highest to the lowest thing sharing this column,
@@ -110,7 +153,7 @@ export function alignTo(
       from: vx.source === 'panel' && vx.matches.length === 0 ? 0 : Math.min(...ys),
       to: vx.source === 'panel' && vx.matches.length === 0 ? panel.h : Math.max(...ys),
       source: vx.source,
-      gap: gapTo(y, vx.matches.map((t) => t.y)),
+      gap: spaced('y') ? undefined : gapTo(y, vx.matches.map((t) => t.y)),
     });
   }
   if (vy) {
@@ -121,11 +164,65 @@ export function alignTo(
       from: vy.source === 'panel' && vy.matches.length === 0 ? 0 : Math.min(...xs),
       to: vy.source === 'panel' && vy.matches.length === 0 ? panel.w : Math.max(...xs),
       source: vy.source,
-      gap: gapTo(x, vy.matches.map((t) => t.x)),
+      gap: spaced('x') ? undefined : gapTo(x, vy.matches.map((t) => t.x)),
     });
   }
 
-  return { x, y, guides };
+  return { x, y, guides, spacing };
+}
+
+/**
+ * The nearest place on a line that repeats a spacing already on it, or that
+ * sits halfway between two neighbours.
+ *
+ * A spacing is offered on from any item, as long as nothing else on the line
+ * sits in between: the next jack in a row goes after the last one, not on
+ * top of the second.
+ */
+export function equalSpacing(
+  value: number,
+  others: number[],
+  toleranceMm: number,
+): { at: number; mm: number; spans: Array<{ from: number; to: number }> } | null {
+  const ps = [...others].sort((a, b) => a - b);
+  const pairs: Array<{ from: number; to: number; mm: number }> = [];
+  for (let i = 0; i + 1 < ps.length; i++) {
+    const mm = ps[i + 1] - ps[i];
+    if (mm > 0.05) pairs.push({ from: ps[i], to: ps[i + 1], mm });
+  }
+  if (!pairs.length) return null;
+
+  // Nothing else between an item and the place a spacing on from it lands,
+  // or already at that place.
+  const clear = (from: number, at: number) => {
+    const lo = Math.min(from, at), hi = Math.max(from, at);
+    return !ps.some((p) => p !== from && p > lo - 1e-6 && p < hi + 1e-6);
+  };
+  const same = (a: number, b: number) => Math.abs(a - b) < 0.01;
+
+  let best: { at: number; mm: number; spans: Array<{ from: number; to: number }> } | null = null;
+  let bestDist = toleranceMm;
+  const consider = (at: number, mm: number, spans: Array<{ from: number; to: number }>) => {
+    const d = Math.abs(at - value);
+    if (d < bestDist) { bestDist = d; best = { at, mm, spans }; }
+  };
+
+  const gaps = pairs.map((p) => p.mm).filter((g, i, all) => all.findIndex((h) => same(g, h)) === i);
+  for (const mm of gaps) {
+    const existing = pairs.filter((p) => same(p.mm, mm)).map(({ from, to }) => ({ from, to }));
+    for (const q of ps) {
+      for (const at of [q + mm, q - mm]) {
+        if (!clear(q, at)) continue;
+        consider(at, mm, [...existing, { from: Math.min(q, at), to: Math.max(q, at) }]);
+      }
+    }
+  }
+  // Halfway between two neighbours: two equal intervals of its own.
+  for (const p of pairs) {
+    const at = (p.from + p.to) / 2;
+    consider(at, p.mm / 2, [{ from: p.from, to: at }, { from: at, to: p.to }]);
+  }
+  return best;
 }
 
 /**

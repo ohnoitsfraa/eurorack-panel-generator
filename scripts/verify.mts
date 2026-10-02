@@ -1594,6 +1594,57 @@ console.log('\nAlignment guides');
     if (gap && Math.abs(gap.mm - 5.08) < 1e-9) pass('a one-HP step is reported as 5.08, not rounded away');
     else fail(`a 5.08 mm step came out as ${gap?.mm}`);
   }
+
+  // Equal spacing: two in a row 15 mm apart offer 15 mm again for the third.
+  const near = (a: number, b: number) => Math.abs(a - b) < 1e-9;
+  {
+    const r = alignTo(40.6, 100.3, [t('a', 10, 100), t('b', 25, 100)], panel, 1);
+    const h = r.spacing[0];
+    if (near(r.x, 40) && near(r.y, 100) && h?.axis === 'x' && near(h.mm, 15) && h.spans.length === 2) {
+      pass('the next in a row snaps to the spacing of the two before it, and both intervals are marked');
+    } else fail(`row spacing: x ${r.x}, ${JSON.stringify(r.spacing)}`);
+    if (!r.guides.some((g) => g.gap)) pass('and the row guide does not repeat the figure');
+    else fail('the row guide carried its own gap as well as the spacing marks');
+
+    const left = alignTo(15.4, 100, [t('a', 30, 100), t('b', 45, 100)], panel, 1);
+    if (near(left.x, 15) && near(left.spacing[0]?.mm ?? 0, 15)) pass('and the same on the other end of the row');
+    else fail(`row spacing leftwards: x ${left.x}`);
+
+    const down = alignTo(20.3, 50.4, [t('a', 20, 20), t('b', 20, 35)], panel, 1);
+    if (near(down.x, 20) && near(down.y, 50) && down.spacing[0]?.axis === 'y') pass('a column offers its spacing downwards');
+    else fail(`column spacing: ${down.x},${down.y} ${JSON.stringify(down.spacing)}`);
+
+    const mid = alignTo(20.4, 100, [t('a', 10, 100), t('b', 30, 100)], panel, 1);
+    if (near(mid.x, 20) && near(mid.spacing[0]?.mm ?? 0, 10) && mid.spacing[0].spans.length === 2) {
+      pass('halfway between two neighbours is offered, as two equal intervals');
+    } else fail(`midpoint: x ${mid.x}, ${JSON.stringify(mid.spacing)}`);
+
+    const three = alignTo(55.3, 100, [t('a', 10, 100), t('b', 25, 100), t('c', 40, 100)], panel, 1);
+    if (near(three.x, 55) && three.spacing[0]?.spans.length === 3) pass('a longer row marks every interval it repeats');
+    else fail(`three in a row: x ${three.x}, ${JSON.stringify(three.spacing)}`);
+
+    // Uneven rows offer each spacing they have, measured from the end.
+    const uneven = [t('a', 10, 100), t('b', 25, 100), t('c', 45, 100)];
+    const u15 = alignTo(60.2, 100, uneven, panel, 1), u20 = alignTo(65.3, 100, uneven, panel, 1);
+    if (near(u15.x, 60) && near(u20.x, 65)) pass('a row with two spacings offers both');
+    else fail(`uneven row: ${u15.x}, ${u20.x}`);
+
+    // Off the row, there is no row to space along.
+    const off = alignTo(40.2, 110, [t('a', 10, 100), t('b', 25, 100)], panel, 1);
+    if (off.spacing.length === 0 && off.x === 40.2) pass('spacing is only offered along a row the item is on');
+    else fail(`off the row: ${JSON.stringify(off.spacing)}`);
+
+    // Lining up with something wins a tie with spacing.
+    const tie = alignTo(40.3, 100, [t('a', 10, 100), t('b', 25, 100), t('c', 40, 20)], panel, 1);
+    if (near(tie.x, 40) && tie.spacing.length === 0 && tie.guides.some((g) => g.axis === 'x')) {
+      pass('lining up with something wins a tie with spacing');
+    } else fail(`tie: ${JSON.stringify(tie)}`);
+
+    // An item already sitting where a spacing lands blocks it.
+    const blocked = alignTo(25.6, 100.4, [t('a', 10, 100), t('b', 25, 100), t('c', 40, 100)], panel, 0.5);
+    if (blocked.spacing.length === 0) pass('a spacing that lands on another item is not offered');
+    else fail(`blocked: ${JSON.stringify(blocked.spacing)}`);
+  }
 }
 
 // ------------------------------------------------------------ 6c2. hole colour

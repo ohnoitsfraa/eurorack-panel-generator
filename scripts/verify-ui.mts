@@ -717,6 +717,55 @@ async function open(colorScheme: 'light' | 'dark' = 'dark') {
   await page.close();
 }
 
+// --- the next in a row is offered the same spacing ---
+{
+  const { page, problems } = await open();
+  await page.getByRole('button', { name: 'Cutouts', exact: true }).click();
+  const toScreen = (mx: number, my: number) =>
+    page.evaluate(([x, y]) => {
+      const el = document.querySelector('[data-panel-canvas]') as SVGSVGElement;
+      const p = new DOMPoint(x, y).matrixTransform(el.getScreenCTM()!);
+      return { x: p.x, y: p.y };
+    }, [mx, my] as [number, number]);
+  const place = async (mx: number, my: number) => {
+    await page.getByRole('button', { name: 'Circle', exact: true }).click();
+    const p = await toScreen(mx, my);
+    await page.mouse.click(p.x, p.y);
+    await page.waitForTimeout(200);
+  };
+
+  // Two 8 mm apart, and a third to bring in after them.
+  await place(6, 80);
+  await place(14, 80);
+  await place(30, 100);
+
+  const from = await toScreen(30, 100);
+  const to = await toScreen(22.3, 80.2);
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  await page.mouse.move(to.x, to.y, { steps: 12 });
+  await page.waitForTimeout(300);
+  const marks = await page.locator('[data-spacing-hint="8"]').count();
+  const status = await page.locator('body').innerText();
+  if (marks === 1) pass('dragging the third into the row marks the 8 mm spacing of the first two');
+  else fail(`spacing marks while dragging: ${marks}`);
+  if (/equal spacing 8 mm/.test(status)) pass('and the status line names it');
+  else fail('the status line did not mention the spacing');
+  await page.mouse.up();
+  await page.waitForTimeout(300);
+
+  const xs = await page.locator('[data-panel-canvas] circle').evaluateAll((els) =>
+    [...new Set(els.map((e) => +(e.getAttribute('cx') ?? 0)))].sort((a, b) => a - b));
+  if (xs.some((v) => Math.abs(v - 22) < 0.01)) pass('and it lands 8 mm on from the second');
+  else fail(`after the drag the circles sit at x ${xs.join(', ')}`);
+  if ((await page.locator('[data-spacing-hint]').count()) === 0) pass('the marks go when the drag ends');
+  else fail('spacing marks were left on screen');
+
+  if (problems.length === 0) pass('no uncaught errors spacing');
+  else fail(`spacing: ${[...new Set(problems)].join(' | ')}`);
+  await page.close();
+}
+
 // --- dragging a big icon over flush labels keeps up with the pointer ---
 {
   const { page, problems } = await open();
