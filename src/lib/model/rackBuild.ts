@@ -1,6 +1,6 @@
 import type { Font } from 'opentype.js';
 import { HP_MM, PANEL_HEIGHTS, panelWidthMm } from '../eurorack';
-import type { Mesh } from '../types';
+import type { Mesh, PanelDesign } from '../types';
 import type { Rack } from '../rack';
 import type { SavedDesign } from '../storage';
 import { buildPanelSafe } from './build';
@@ -23,7 +23,11 @@ export interface RackBuildResult {
  * row is 427 mm wide, so the caller should say as much.
  *
  * Each design is built once and reused across its placements, because the same
- * panel appearing four times in a rack should cost one triangulation.
+ * panel appearing four times in a rack should cost one triangulation. Builds
+ * are also kept between calls, for as long as the design and the loaded fonts
+ * are the same objects: moving a panel along the rack changes where it sits,
+ * not its shape, and rebuilding every panel on every step of the drag made
+ * the drag crawl.
  */
 export function buildRack(
   rack: Rack,
@@ -31,7 +35,7 @@ export function buildRack(
   fonts: Map<string, Font>,
 ): RackBuildResult {
   const byId = new Map(library.map((d) => [d.id, d]));
-  const cache = new Map<string, ReturnType<typeof buildPanelSafe>>();
+  const cache = new Map<string, BuildResult>();
   const meshes: Mesh[] = [];
   const warnings: string[] = [];
   const pending: string[] = [];
@@ -62,7 +66,7 @@ export function buildRack(
 
       let built = cache.get(p.designId);
       if (!built) {
-        built = buildPanelSafe(saved.design, { fonts });
+        built = builtPanel(saved.design, fonts);
         cache.set(p.designId, built);
         for (const w of built.warnings) warnings.push(`${saved.name}: ${w}`);
         // Not prefixed with the panel: which panel is waiting on Inter is of
@@ -85,6 +89,18 @@ export function buildRack(
 
   const triangles = meshes.reduce((n, m) => n + m.positions.length / 9, 0);
   return { meshes, warnings, pending: [...new Set(pending)], stats: { panels, triangles, widthMm: totalW, heightMm: totalH } };
+}
+
+type BuildResult = ReturnType<typeof buildPanelSafe>;
+
+const panelBuilds = new WeakMap<PanelDesign, { fonts: Map<string, Font>; result: BuildResult }>();
+
+function builtPanel(design: PanelDesign, fonts: Map<string, Font>): BuildResult {
+  const hit = panelBuilds.get(design);
+  if (hit && hit.fonts === fonts) return hit.result;
+  const result = buildPanelSafe(design, { fonts });
+  panelBuilds.set(design, { fonts, result });
+  return result;
 }
 
 /** Width in millimetres of a saved design, for layout maths. */

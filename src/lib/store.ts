@@ -990,7 +990,12 @@ export const useStore = create<State>((set, get) => ({
       }),
     }));
     if (!moved) return;
-    const placed: Placement = { ...(moved as Placement), hp: Math.max(0, Math.round(hp)) };
+    const at = Math.max(0, Math.round(hp));
+    // A drag reports every pointer move, and most land on the same whole HP;
+    // only an actual move is worth a new rack, a save and a redraw.
+    const from = rack.rows.find((r) => r.placements.some((p) => p.id === placementId));
+    if (from?.id === toRowId && (moved as Placement).hp === at) return;
+    const placed: Placement = { ...(moved as Placement), hp: at };
     const next = touchRack({
       ...rack,
       rows: stripped.map((r) => (r.id === toRowId ? { ...r, placements: [...r.placements, placed] } : r)),

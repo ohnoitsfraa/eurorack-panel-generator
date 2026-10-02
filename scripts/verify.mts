@@ -1019,6 +1019,50 @@ console.log('\nRack layout and export');
   );
   if (orphan.warnings.length === 1 && orphan.stats.panels === 0) pass('a missing design warns instead of crashing');
   else fail(`orphan placement: ${orphan.stats.panels} panels, ${orphan.warnings.length} warnings`);
+
+  // Dragging a panel along the rack rebuilds the rack for every step, so the
+  // panels themselves are kept: a move changes where a panel sits, not its
+  // shape. A busy panel makes a rebuild easy to tell from a reuse.
+  {
+    const busy = {
+      id: 'busy', name: 'Busy', updatedAt: 0, design: {
+        ...BASE, hp: 20,
+        features: Array.from({ length: 48 }, (_, i) => ({
+          id: `f${i}`, kind: 'jack' as const, x: 8 + (i % 8) * 11, y: 15 + Math.floor(i / 8) * 18,
+          shape: 'circle' as const, w: 6, h: 6, radius: 3, rotation: 0,
+        })),
+      },
+    };
+    const lib = [busy, ...saved];
+    const at = (hp: number) => ({
+      name: 'drag', rows: [{ id: 'r', widthHp: 84, format: '3U' as const, placements: [
+        { id: 'pb', designId: 'busy', hp }, { id: 'pa', designId: 'a', hp: 40 },
+      ] }],
+    });
+    const minX = (m: { positions: Float32Array | number[] }) => {
+      let v = Infinity;
+      for (let i = 0; i < m.positions.length; i += 3) v = Math.min(v, m.positions[i]);
+      return v;
+    };
+    let t = performance.now();
+    const first = buildRack(at(0), lib, noFonts);
+    const fresh = performance.now() - t;
+    t = performance.now();
+    const moved = buildRack(at(12), lib, noFonts);
+    const reused = performance.now() - t;
+    const shift = minX(moved.meshes[0]) - minX(first.meshes[0]);
+    if (Math.abs(shift - 12 * 5.08) < 1e-3 && Math.abs(minX(moved.meshes.at(-1)!) - minX(first.meshes.at(-1)!)) < 1e-9) {
+      pass('a panel moved along the rack moves by its HP, and the others stay put');
+    } else fail(`moving a panel 12 HP shifted it ${shift.toFixed(2)} mm`);
+    if (reused < fresh / 3) pass(`and its build is reused rather than redone (${fresh.toFixed(0)} ms, then ${reused.toFixed(1)} ms)`);
+    else fail(`moving a panel rebuilt it: ${fresh.toFixed(0)} ms, then ${reused.toFixed(0)} ms`);
+
+    // An edited panel is a new design object, and is built afresh.
+    const edited = [{ ...busy, design: { ...busy.design, features: busy.design.features.slice(0, 10) } }, ...saved];
+    const after = buildRack(at(12), edited, noFonts);
+    if (after.stats.triangles < moved.stats.triangles) pass('an edited panel is rebuilt');
+    else fail(`an edited panel kept its old build (${after.stats.triangles} triangles)`);
+  }
 }
 
 // ------------------------------------------------------------ 6. editor state
@@ -1285,6 +1329,24 @@ console.log('\nEditor actions');
   const placed = st().rack.rows.reduce((n, r) => n + r.placements.length, 0);
   if (placed === 1) pass('adding to the rack places the panel');
   else fail(`rack has ${placed} placements, expected 1`);
+
+  // A drag reports every pointer move; one that lands on the same HP must not
+  // make a new rack, which would be saved and redrawn for nothing.
+  {
+    const row = st().rack.rows.find((r) => r.placements.length);
+    const p = row?.placements[0];
+    if (row && p) {
+      const before = st().rack;
+      st().movePlacement(p.id, row.id, p.hp + 0.3);
+      if (st().rack === before) pass('a drag step that stays on the same HP leaves the rack alone');
+      else fail('a drag step on the same HP made a new rack');
+      st().movePlacement(p.id, row.id, p.hp + 1);
+      const now = st().rack.rows.find((r) => r.id === row.id)?.placements.find((q) => q.id === p.id);
+      if (st().rack !== before && now?.hp === p.hp + 1) pass('and a step to the next HP moves it');
+      else fail(`a step to the next HP left it at ${now?.hp}`);
+      st().movePlacement(p.id, row.id, p.hp);
+    }
+  }
 
   // A panel with nowhere to go must say so rather than silently doing nothing,
   // since the view only follows when something actually moved.
