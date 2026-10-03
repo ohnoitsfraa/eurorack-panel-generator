@@ -10,6 +10,7 @@ import { Button, ColorInput, Field, NumberInput, ROTATION_DETENTS, Section, Sele
 import { IconPicker } from './IconPicker';
 import { iconLabel } from '@/lib/icons';
 import { combineSvgShapes, fitRings, isSvgFile, readSvg } from '@/lib/svgImport';
+import { pickInList } from '@/lib/listSelect';
 
 const RELIEF_OPTIONS: Array<{ value: ReliefMode; label: string }> = [
   { value: 'raised', label: 'Raised — sits on the surface' },
@@ -36,10 +37,13 @@ export function DecorTab() {
   const selectedDecor = decor.filter((d) => selectedIds.includes(d.id));
   const textIds = decor.filter((d) => d.type === 'text').map((d) => d.id);
 
-  /** Shift or Cmd adds to the selection or takes back out, as on the canvas. */
+  /** Cmd adds or takes out one; Shift takes the whole run from the last one picked. */
+  const listAnchor = useRef<string | null>(null);
   const pick = (e: React.MouseEvent, id: string) => {
-    if (!(e.shiftKey || e.metaKey || e.ctrlKey)) { select([id]); return; }
-    select(selectedIds.includes(id) ? selectedIds.filter((i) => i !== id) : [...selectedIds, id]);
+    const r = pickInList(decor.map((d) => d.id), selectedIds, listAnchor.current, id,
+      { shift: e.shiftKey, toggle: e.metaKey || e.ctrlKey });
+    listAnchor.current = r.anchor;
+    select(r.selection);
   };
 
   return (

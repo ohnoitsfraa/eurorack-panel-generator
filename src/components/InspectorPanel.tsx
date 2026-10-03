@@ -1,11 +1,13 @@
 'use client';
 
+import { useRef } from 'react';
 import {
   COMPONENT_SPECS, CUTOUT_PRESETS, HOLE_CLEARANCE, STANDARD_KINDS, THICKNESS,
   hasStandardSize, panelWidthMm,
 } from '@/lib/eurorack';
 import { describeFeature, isStadium, type Feature, type FeatureKind, type PanelFormat } from '@/lib/types';
 import { featureForKind, useStore } from '@/lib/store';
+import { pickInList } from '@/lib/listSelect';
 import { Button, ColorInput, Field, NumberInput, ROTATION_DETENTS, Section, Select, shared, Slider, Toggle } from './ui';
 
 /**
@@ -430,6 +432,8 @@ export function FeaturesTab() {
   const select = useStore((s) => s.select);
   const tool = useStore((s) => s.tool);
   const setTool = useStore((s) => s.setTool);
+  /** Where a Shift-click run in the cutout list starts. */
+  const listAnchor = useRef<string | null>(null);
   const updateFeature = useStore((s) => s.updateFeature);
   const removeFeatures = useStore((s) => s.removeFeatures);
   const duplicateFeatures = useStore((s) => s.duplicateFeatures);
@@ -480,9 +484,11 @@ export function FeaturesTab() {
                 <button
                   type="button"
                   onClick={(e) => {
-                    // Shift or Cmd adds to the selection or takes back out, as on the canvas.
-                    if (!(e.shiftKey || e.metaKey || e.ctrlKey)) { select([f.id]); return; }
-                    select(selectedIds.includes(f.id) ? selectedIds.filter((i) => i !== f.id) : [...selectedIds, f.id]);
+                    // Cmd adds or takes out one; Shift takes the whole run from the last one picked.
+                    const r = pickInList(features.map((x) => x.id), selectedIds, listAnchor.current, f.id,
+                      { shift: e.shiftKey, toggle: e.metaKey || e.ctrlKey });
+                    listAnchor.current = r.anchor;
+                    select(r.selection);
                   }}
                   className={`flex w-full items-center justify-between gap-2 rounded px-2 py-1 text-left text-[12.5px]
                     ${selectedIds.includes(f.id) ? 'bg-accent/15 text-accent' : 'text-ink-300 hover:bg-ink-800'}`}

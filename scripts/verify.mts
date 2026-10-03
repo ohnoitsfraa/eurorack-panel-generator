@@ -2467,6 +2467,34 @@ console.log('\nEvery edit leaves the panel unsaved');
   else fail('clearing everything left an empty panel looking unsaved');
 }
 
+// ----------------------------------------------------- 7a0. picking in lists
+console.log('\nPicking in lists');
+{
+  const { pickInList } = await import('../src/lib/listSelect');
+  const list = ['a', 'b', 'c', 'd', 'e'];
+  const plain = { shift: false, toggle: false }, shift = { shift: true, toggle: false };
+  const cmd = { shift: false, toggle: true }, both = { shift: true, toggle: true };
+
+  let r = pickInList(list, [], null, 'b', plain);
+  r = pickInList(list, r.selection, r.anchor, 'e', shift);
+  if (r.selection.join() === 'b,c,d,e') pass('Shift-click picks everything from the first to the last');
+  else fail(`range b..e gave ${r.selection.join()}`);
+  r = pickInList(list, r.selection, r.anchor, 'a', shift);
+  if (r.selection.join() === 'a,b') pass('and a second Shift-click redraws the run from the same start');
+  else fail(`re-ranging to a gave ${r.selection.join()}`);
+
+  r = pickInList(list, ['b'], 'b', 'd', cmd);
+  r = pickInList(list, r.selection, r.anchor, 'e', both);
+  if (r.selection.join() === 'b,d,e') pass('Cmd-click adds one, and Cmd-Shift adds a run from it');
+  else fail(`cmd then cmd-shift gave ${r.selection.join()}`);
+
+  // Things picked elsewhere stay picked; the run starts from the last one
+  // picked in this list when it has no start of its own.
+  r = pickInList(list, ['label', 'c'], null, 'e', shift);
+  if (r.selection.join() === 'label,c,d,e') pass('a run starts from what was picked last, and leaves other lists alone');
+  else fail(`range with no anchor gave ${r.selection.join()}`);
+}
+
 // --------------------------------------------------- 7a1. where new things go
 console.log('\nNew elements at the pointer');
 {

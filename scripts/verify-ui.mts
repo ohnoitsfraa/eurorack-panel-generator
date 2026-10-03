@@ -844,6 +844,40 @@ async function open(colorScheme: 'light' | 'dark' = 'dark') {
   await page.close();
 }
 
+// --- Shift-click in a list picks the whole run ---
+{
+  const { page, problems } = await open();
+  const toScreen = (mx: number, my: number) =>
+    page.evaluate(([x, y]) => {
+      const el = document.querySelector('[data-panel-canvas]') as SVGSVGElement;
+      const p = new DOMPoint(x, y).matrixTransform(el.getScreenCTM()!);
+      return { x: p.x, y: p.y };
+    }, [mx, my] as [number, number]);
+  await page.getByRole('button', { name: 'Cutouts', exact: true }).click();
+  for (const y of [20, 40, 60, 80, 100]) {
+    await page.getByRole('button', { name: 'Circle', exact: true }).click();
+    const at = await toScreen(20, y);
+    await page.mouse.click(at.x, at.y);
+    await page.waitForTimeout(150);
+  }
+  const rows = page.locator('aside:last-of-type li button');
+  const picked = () => rows.evaluateAll((els) => els.map((e, i) => (e.className.includes('bg-accent/15') ? i : -1)).filter((i) => i >= 0).join(','));
+  await rows.nth(0).click();
+  await rows.nth(3).click({ modifiers: ['Shift'] });
+  await page.waitForTimeout(150);
+  if ((await picked()) === '0,1,2,3') pass('Shift-clicking the last picks every cutout from the first to it');
+  else fail(`after clicking the first and Shift-clicking the fourth, picked: ${await picked()}`);
+  await rows.nth(4).click({ modifiers: ['Meta'] });
+  await rows.nth(1).click({ modifiers: ['Meta'] });
+  await page.waitForTimeout(150);
+  if ((await picked()) === '0,2,3,4') pass('Cmd-click still adds or takes out one');
+  else fail(`after Cmd-clicks, picked: ${await picked()}`);
+
+  if (problems.length === 0) pass('no uncaught errors picking in lists');
+  else fail(`picking in lists: ${[...new Set(problems)].join(' | ')}`);
+  await page.close();
+}
+
 // --- alignment guides ---
 {
   const { page, problems } = await open();
