@@ -2,8 +2,8 @@
 
 import { useRef } from 'react';
 import {
-  COMPONENT_SPECS, CUTOUT_PRESETS, HOLE_CLEARANCE, STANDARD_KINDS, THICKNESS,
-  hasStandardSize, panelWidthMm,
+  COMPONENT_SPECS, CUTOUT_PRESETS, DECOR_KEEPOUT, HOLE_CLEARANCE, STANDARD_KINDS, THICKNESS,
+  decorKeepoutMm, hasStandardSize, panelWidthMm,
 } from '@/lib/eurorack';
 import { describeFeature, isStadium, type Feature, type FeatureKind, type PanelFormat } from '@/lib/types';
 import { featureForKind, useStore } from '@/lib/store';
@@ -297,6 +297,7 @@ function ShapeGlyph({ preset }: { preset: (typeof CUTOUT_PRESETS)[number] }) {
 /** Panel-level settings: format, size, colour, background. */
 export function PanelTab() {
   const design = useStore((s) => s.design);
+  const keepout = decorKeepoutMm(design);
   const setDesign = useStore((s) => s.setDesign);
   const gridMm = useStore((s) => s.gridMm);
   const setGrid = useStore((s) => s.setGrid);
@@ -381,6 +382,26 @@ export function PanelTab() {
           slightly under size as the plastic cools, so cutouts are drawn at the
           manufacturer's figure and opened up here to suit your printer. Print a
           test strip and adjust once.
+        </p>
+
+        <Toggle
+          checked={keepout > 0}
+          onChange={(on) => setDesign({ decorKeepoutMm: on ? DECOR_KEEPOUT.default : 0 })}
+          label="Keep raised art clear of cutouts"
+        />
+        {keepout > 0 && (
+          <Field label="Gap around cutouts" hint={`${keepout.toFixed(1)} mm`}>
+            <Slider
+              min={0.5} max={DECOR_KEEPOUT.max} step={0.1}
+              value={keepout}
+              onChange={(decorKeepoutMm) => setDesign({ decorKeepoutMm })}
+            />
+          </Field>
+        )}
+        <p className="-mt-1 text-[12.5px] leading-relaxed text-ink-400">
+          Raised lettering and artwork are trimmed back this far from every
+          cutout, so the nut of a jack or pot can tighten down flat on the
+          panel. Flush and engraved art sit level, so they are left as they are.
         </p>
       </Section>
 

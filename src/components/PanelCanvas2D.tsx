@@ -1,7 +1,8 @@
 'use client';
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { CUTOUT_PRESETS, MOUNT_SLOT, type CutoutShapeId, mountSlotPositions, panelHeightMm, panelWidthMm } from '@/lib/eurorack';
+import { CUTOUT_PRESETS, MOUNT_SLOT, type CutoutShapeId, decorKeepoutMm, mountSlotPositions, panelHeightMm, panelWidthMm } from '@/lib/eurorack';
+import { featureRing } from '@/lib/model/build';
 import {
   artExtent, artRings, type ArtElement, type DecorElement, type Feature, type TextElement,
 } from '@/lib/types';
@@ -712,6 +713,8 @@ export function PanelCanvas2D() {
           />
         ))}
 
+        <KeepoutRings />
+
         <SelectedDecorGrab onGrab={beginDrag} onEditText={onEditText} />
 
         {/* Alignment guides. Drawn over everything, since their whole job is
@@ -1129,6 +1132,56 @@ function DecorLayer({
           handleMm={handleMm}
           onPointerDown={(e) => onGrab(e, d.id, true)}
           onEdit={d.type === 'text' ? () => onEditText(d.id) : undefined}
+        />
+      ))}
+    </g>
+  );
+}
+
+/**
+ * The gap raised art keeps around a cutout, shown where it matters.
+ *
+ * The 2D view draws decor as designed, untrimmed; the model trims raised art
+ * back from every cutout so a nut can seat. A dashed ring around each cutout
+ * that raised art comes near shows where that happens, rather than leaving
+ * the trim to be found in the 3D view.
+ */
+function KeepoutRings() {
+  const design = useStore((s) => s.design);
+  const fonts = useStore((s) => s.fonts);
+  const fontVersion = useStore((s) => s.fontVersion);
+  const rings = useMemo(() => {
+    const keepout = decorKeepoutMm(design);
+    if (keepout <= 0) return [];
+    const raised = design.decor
+      .filter((d) => d.mode === 'raised')
+      .map((d) => decorOutline(d, fonts))
+      .filter((r) => r.length > 0)
+      .map((r) => bbox(r));
+    if (!raised.length) return [];
+    const clearance = Math.max(0, design.holeClearanceMm ?? 0) / 2;
+    const out: Array<{ id: string; d: string }> = [];
+    for (const f of design.features) {
+      const ring = featureRing(f, clearance + keepout);
+      if (!ring) continue;
+      const b = bbox([ring]);
+      if (raised.some((r) => r.x0 < b.x1 && r.x1 > b.x0 && r.y0 < b.y1 && r.y1 > b.y0)) out.push({ id: f.id, d: ringToPath(ring) });
+    }
+    return out;
+    // fontVersion is what changes when a font finishes loading.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [design, fonts, fontVersion]);
+  return (
+    <g pointerEvents="none" data-keepout="">
+      {rings.map((r) => (
+        <path
+          key={r.id}
+          d={r.d}
+          fill="none"
+          stroke="var(--color-accent)"
+          strokeOpacity={0.55}
+          strokeWidth={0.15}
+          strokeDasharray="0.6 0.45"
         />
       ))}
     </g>

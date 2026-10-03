@@ -278,6 +278,11 @@ export interface PanelDesign {
   includeMountSlots: boolean;
   /** Added to every cutout when the model is built, to suit your printer. */
   holeClearanceMm: number;
+  /**
+   * Gap raised decor keeps around every cutout, so nuts seat on the panel;
+   * 0 for none. Absent on older designs, which get the default.
+   */
+  decorKeepoutMm?: number;
   features: Feature[];
   decor: DecorElement[];
 }

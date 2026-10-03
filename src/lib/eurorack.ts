@@ -175,6 +175,21 @@ export const COMPONENT_SPECS: Record<FeatureKind, ComponentSpec> = {
  */
 export const HOLE_CLEARANCE = { min: 0, max: 0.6, default: 0.2 } as const;
 
+/**
+ * Room left around every cutout by raised lettering and artwork, mm beyond
+ * the hole's edge.
+ *
+ * A jack or pot is held by a nut tightened down onto the panel face; raised
+ * art under it stops the nut seating, and the part wobbles. 2 mm clears the
+ * nut of a Thonkiconn jack and of a 9 mm pot. Zero turns it off.
+ */
+export const DECOR_KEEPOUT = { min: 0, max: 5, default: 2 } as const;
+
+/** The keep-out a design asks for; a design from before the setting gets the default. */
+export function decorKeepoutMm(design: { decorKeepoutMm?: number }): number {
+  return Math.max(0, design.decorKeepoutMm ?? DECOR_KEEPOUT.default);
+}
+
 /** Whether a component's size is fixed by its hardware or genuinely varies. */
 export function hasStandardSize(kind: FeatureKind): boolean {
   return kind !== 'custom' && kind !== 'display' && kind !== 'slider';

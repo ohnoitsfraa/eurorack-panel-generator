@@ -1,5 +1,5 @@
 import type { Font } from 'opentype.js';
-import { COMPONENT_SPECS, mountSlotPositions, panelHeightMm, panelWidthMm, MOUNT_SLOT } from '../eurorack';
+import { COMPONENT_SPECS, decorKeepoutMm, mountSlotPositions, panelHeightMm, panelWidthMm, MOUNT_SLOT } from '../eurorack';
 import { artRings, type DecorElement, type Feature, type Mesh, type PanelDesign, type ReliefMode } from '../types';
 import {
   circleRing, ensureWinding, nestRings, pointInRing, ringsOverlap,
@@ -120,6 +120,29 @@ export function buildPanel(design: PanelDesign, opts: BuildOptions): BuildResult
     grownHoles.map((r) => ({ outer: r, holes: [] })),
   );
 
+  // Raised decor keeps a ring of bare panel around every cutout and mounting
+  // slot, where a nut or a screw head sits down on the face. With no gap
+  // asked for it is still kept off the holes themselves, which raised art
+  // would otherwise bridge.
+  const keepout = decorKeepoutMm(design);
+  const keptClear: Ring[] = [];
+  for (const f of design.features) {
+    const ring = featureRing(f, clearance + keepout);
+    if (ring) keptClear.push(ensureWinding(up(ring), false));
+  }
+  if (design.includeMountSlots) {
+    for (const p of mountSlotPositions(W, H)) {
+      keptClear.push(ensureWinding(
+        up(slotRing(p.x, p.y, MOUNT_SLOT.heightMm + 2 * keepout, MOUNT_SLOT.lengthMm + 2 * keepout, 0)),
+        false,
+      ));
+    }
+  }
+  const raisedProfile = subtractRegions(
+    [{ outer: outlineUp, holes: [] }],
+    keptClear.map((r) => ({ outer: r, holes: [] })),
+  );
+
   const decor = resolveDecor(design, opts, warnings, pending);
   const engravedGroups: Array<{ regions: Region[]; depth: number; color: string; fill: boolean }> = [];
   const raisedMeshes: Mesh[] = [];
@@ -137,8 +160,13 @@ export function buildPanel(design: PanelDesign, opts: BuildOptions): BuildResult
     if (regions.length === 0) continue;
 
     if (d.mode === 'raised') {
+      const kept = intersectRegions(regions, raisedProfile);
+      if (kept.length === 0) {
+        warnings.push(`"${d.label}" lies entirely over or around a cutout, where a nut sits, so it was skipped.`);
+        continue;
+      }
       const mb = new MeshBuilder();
-      addPrism(mb, regions, t - EMBED_MM, t + d.reliefMm);
+      addPrism(mb, kept, t - EMBED_MM, t + d.reliefMm);
       if (mb.triangleCount > 0) raisedMeshes.push(mb.build(d.label, d.color));
       continue;
     }

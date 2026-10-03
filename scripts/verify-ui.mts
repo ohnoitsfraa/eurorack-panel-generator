@@ -878,6 +878,49 @@ async function open(colorScheme: 'light' | 'dark' = 'dark') {
   await page.close();
 }
 
+// --- raised art keeps clear of cutouts ---
+{
+  const { page, problems } = await open();
+  const toScreen = (mx: number, my: number) =>
+    page.evaluate(([x, y]) => {
+      const el = document.querySelector('[data-panel-canvas]') as SVGSVGElement;
+      const p = new DOMPoint(x, y).matrixTransform(el.getScreenCTM()!);
+      return { x: p.x, y: p.y };
+    }, [mx, my] as [number, number]);
+  await page.getByRole('button', { name: 'Panel', exact: true }).click();
+  const toggle = page.getByRole('switch', { name: 'Keep raised art clear of cutouts' });
+  if ((await toggle.getAttribute('aria-checked')) === 'true' && /2\.0 mm/.test(await page.locator('body').innerText())) {
+    pass('raised art keeps a 2 mm gap round cutouts unless told otherwise');
+  } else fail('the keep-clear gap is not on at 2 mm for a new panel');
+
+  // A jack, and a raised label right beside it.
+  await page.getByRole('button', { name: 'Cutouts', exact: true }).click();
+  await page.getByRole('button', { name: 'Circle', exact: true }).click();
+  const jack = await toScreen(20, 60);
+  await page.mouse.click(jack.x, jack.y);
+  await page.waitForTimeout(200);
+  const beside = await toScreen(20, 56);
+  await page.mouse.move(beside.x, beside.y);
+  await page.keyboard.press('t');
+  await page.waitForTimeout(300);
+  await page.locator('select').filter({ has: page.locator('option[value="raised"]') }).first().selectOption('raised');
+  // The label's outline comes with its font.
+  await page.waitForFunction(() => document.querySelector('[data-decor="text"] path'), undefined, { timeout: 20000 }).catch(() => {});
+  await page.waitForTimeout(300);
+  if (await page.locator('[data-keepout] path').count() === 1) pass('a raised label beside a jack shows the gap kept round it');
+  else fail(`with raised art beside a jack, ${await page.locator('[data-keepout] path').count()} gaps were shown`);
+
+  await page.getByRole('button', { name: 'Panel', exact: true }).click();
+  await toggle.click();
+  await page.waitForTimeout(200);
+  if (await page.locator('[data-keepout] path').count() === 0) pass('and switching it off takes the gap away');
+  else fail('the gap was still shown with keeping clear switched off');
+
+  if (problems.length === 0) pass('no uncaught errors keeping clear of cutouts');
+  else fail(`keep clear: ${[...new Set(problems)].join(' | ')}`);
+  await page.close();
+}
+
 // --- alignment guides ---
 {
   const { page, problems } = await open();

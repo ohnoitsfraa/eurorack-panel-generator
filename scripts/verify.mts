@@ -879,6 +879,50 @@ console.log('\nIcons');
   }
 }
 
+// ------------------------------------------------- 4b2. room for the nuts
+console.log('\nRaised art keeps clear of cutouts');
+{
+  // A raised plate laid right over a 6 mm jack, as a careless label might be.
+  const jack = { id: 'j', kind: 'jack' as const, x: 20, y: 60, shape: 'circle' as const, w: 6, h: 6, radius: 3, rotation: 0 };
+  const plate = {
+    id: 'p', type: 'shape' as const, shape: 'rect' as const, x: 20, y: 60, w: 30, h: 20, radius: 0, rotation: 0,
+    color: '#ffffff', mode: 'raised' as const, reliefMm: 0.6,
+  };
+  const base = { ...BASE, holeClearanceMm: 0, includeMountSlots: false, features: [jack], decor: [plate] };
+  // The build is y-up: the jack sits at 128.5 - 60.
+  const nearest = (keepout: number | undefined, mode: 'raised' | 'flush' = 'raised') => {
+    const design = { ...base, decor: [{ ...plate, mode }], ...(keepout === undefined ? {} : { decorKeepoutMm: keepout }) };
+    const built = buildPanel(design, { fonts: noFonts });
+    const m = built.meshes.find((x) => x.name.startsWith('shape'))!;
+    let near = Infinity;
+    for (let i = 0; i < m.positions.length; i += 3) {
+      near = Math.min(near, Math.hypot(m.positions[i] - 20, m.positions[i + 1] - (128.5 - 60)));
+    }
+    return { near, mesh: m };
+  };
+
+  const kept = nearest(2);
+  if (kept.near >= 3 + 2 - 0.05) pass(`raised art stops 2 mm short of the jack hole's edge (${(kept.near - 3).toFixed(2)} mm)`);
+  else fail(`raised art comes within ${(kept.near - 3).toFixed(2)} mm of the jack hole`);
+  checkSolid(kept.mesh, 'raised art trimmed round a jack');
+
+  const none = nearest(0);
+  if (none.near >= 3 - 0.05 && none.near < 3 + 0.5) pass('with the gap off it reaches the hole, but never covers it');
+  else fail(`with no gap, raised art's nearest point is ${(none.near - 3).toFixed(2)} mm from the hole`);
+
+  const older = nearest(undefined);
+  if (Math.abs(older.near - kept.near) < 1e-6) pass('a panel from before the setting gets the gap by default');
+  else fail(`an older panel kept ${(older.near - 3).toFixed(2)} mm`);
+
+  // Flush art is level with the face: nothing for a nut to sit on, so no gap.
+  const flushBuilt = buildPanel({ ...base, decor: [{ ...plate, mode: 'flush' as const }], decorKeepoutMm: 2 }, { fonts: noFonts });
+  const inlay = flushBuilt.meshes.find((x) => x.name === 'inlay')!;
+  let flushNear = Infinity;
+  for (let i = 0; i < inlay.positions.length; i += 3) flushNear = Math.min(flushNear, Math.hypot(inlay.positions[i] - 20, inlay.positions[i + 1] - 68.5));
+  if (flushNear < 3 + 1) pass('flush art is left reaching up to the hole');
+  else fail(`flush art was held ${(flushNear - 3).toFixed(2)} mm back`);
+}
+
 // ------------------------------------------------------------- 4c. SVG files
 console.log('\nSVG files');
 {

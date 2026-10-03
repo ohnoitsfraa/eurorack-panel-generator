@@ -3,7 +3,7 @@
 import { create } from 'zustand';
 import type { Font } from 'opentype.js';
 import {
-  COMPONENT_SPECS, CUTOUT_PRESETS, HOLE_CLEARANCE, STANDARD_KINDS,
+  COMPONENT_SPECS, CUTOUT_PRESETS, HOLE_CLEARANCE, DECOR_KEEPOUT, STANDARD_KINDS,
   hpFromWidthMm, panelHeightMm, panelWidthMm,
   type CutoutShapeId, type FeatureKind, type PanelFormat, type SourceKind,
 } from './eurorack';
@@ -258,6 +258,7 @@ export const DEFAULT_DESIGN: PanelDesign = {
   backgroundColor: '#121418',   // Dark, so a new panel starts with the light lettering showing
   includeMountSlots: true,
   holeClearanceMm: HOLE_CLEARANCE.default,
+  decorKeepoutMm: DECOR_KEEPOUT.default,
   features: [],
   decor: [],
 };
