@@ -2121,6 +2121,17 @@ console.log('\nExport, import and local storage');
       fail(`uploadedFontName gave ${uploadedFontName('Inter', [])} and ${uploadedFontName('X', ['X', 'X (2)'])}`);
     }
 
+    // Only weights a family comes in are offered, and a missing one is drawn
+    // in the nearest it does have.
+    const { weightsFor, nearestWeight } = await import('../src/lib/fonts');
+    if (weightsFor('Space Mono').join() === '400,700' && weightsFor('Inter').length === 7 && weightsFor('My Upload').length === 7) {
+      pass('each family offers only the weights it comes in; Inter and uploads all of them');
+    } else fail(`weights: Space Mono ${weightsFor('Space Mono')}, Inter ${weightsFor('Inter')}`);
+    if (nearestWeight('Space Mono', 900) === 700 && nearestWeight('Space Mono', 300) === 400 && nearestWeight('Lato', 500) === 400
+      && nearestWeight('Lato', 800) === 900 && nearestWeight('Inter', 600) === 600) {
+      pass('a weight a family lacks falls to the nearest it has, the heavier on a tie');
+    } else fail(`nearest: ${nearestWeight('Space Mono', 900)}, ${nearestWeight('Space Mono', 300)}, ${nearestWeight('Lato', 500)}, ${nearestWeight('Lato', 800)}`);
+
     // Fonts stored before the hash existed are given one on load, and it is
     // written back.
     const rawFonts = async (put?: unknown[]) => {

@@ -5,7 +5,7 @@ import { panelHeightMm, panelWidthMm } from '@/lib/eurorack';
 import { uid, type ArtElement, type ReliefMode, type ShapeElement, type TextElement } from '@/lib/types';
 import { newElementAt, useStore } from '@/lib/store';
 import { traceArtwork } from '@/lib/model/trace';
-import { FONT_FAMILIES, FONT_WEIGHTS } from '@/lib/fonts';
+import { FONT_FAMILIES, nearestWeight, weightsFor } from '@/lib/fonts';
 import { Button, ColorInput, Field, NumberInput, ROTATION_DETENTS, Section, Select, Slider, shared } from './ui';
 import { IconPicker } from './IconPicker';
 import { iconLabel } from '@/lib/icons';
@@ -133,15 +133,20 @@ function DecorEditor({ id }: { id: string }) {
             <Field label="Font">
               <Select
                 value={el.fontFamily}
-                onChange={(fontFamily) => { update(id, { fontFamily }); ensureFont(fontFamily, el.fontWeight); }}
+                onChange={(fontFamily) => {
+                  // Onto the nearest weight the new family comes in.
+                  const fontWeight = nearestWeight(fontFamily, el.fontWeight);
+                  update(id, { fontFamily, fontWeight });
+                  ensureFont(fontFamily, fontWeight);
+                }}
                 options={fontOptions(customFonts, el.type === 'text' ? el.fontFamily : '')}
               />
             </Field>
             <Field label="Weight">
               <Select
-                value={String(el.fontWeight)}
+                value={String(nearestWeight(el.fontFamily, el.fontWeight))}
                 onChange={(w) => { update(id, { fontWeight: Number(w) }); ensureFont(el.fontFamily, Number(w)); }}
-                options={FONT_WEIGHTS.map((w) => ({ value: String(w), label: String(w) }))}
+                options={weightsFor(el.fontFamily).map((w) => ({ value: String(w), label: String(w) }))}
               />
             </Field>
           </div>
@@ -309,9 +314,21 @@ function BatchDecorEditor({ ids }: { ids: string[] }) {
 
   const setFamily = (fontFamily: string) => {
     if (!fontFamily) return;
-    updateMany(textIds, { fontFamily });
-    for (const w of new Set(texts.map((t) => t.fontWeight))) ensureFont(fontFamily, w);
+    // Each label onto the nearest weight the new family comes in: grouped by
+    // where they land, and close enough together to undo as one step.
+    const byWeight = new Map<number, string[]>();
+    for (const t of texts) {
+      const w = nearestWeight(fontFamily, t.fontWeight);
+      byWeight.set(w, [...(byWeight.get(w) ?? []), t.id]);
+    }
+    for (const [fontWeight, ids] of byWeight) {
+      updateMany(ids, { fontFamily, fontWeight });
+      ensureFont(fontFamily, fontWeight);
+    }
   };
+  // Only weights every selected family comes in.
+  const families = [...new Set(texts.map((t) => t.fontFamily))];
+  const commonWeights = weightsFor(families[0] ?? '').filter((w) => families.every((f) => weightsFor(f).includes(w)));
   const setWeight = (fontWeight: number) => {
     updateMany(textIds, { fontWeight });
     for (const f of new Set(texts.map((t) => t.fontFamily))) ensureFont(f, fontWeight);
@@ -344,7 +361,7 @@ function BatchDecorEditor({ ids }: { ids: string[] }) {
                 value={weight === undefined ? '' : String(weight)}
                 onChange={(w) => { if (w) setWeight(Number(w)); }}
                 options={withMixed(weight === undefined ? undefined : String(weight),
-                  FONT_WEIGHTS.map((w) => ({ value: String(w), label: String(w) })))}
+                  commonWeights.map((w) => ({ value: String(w), label: String(w) })))}
               />
             </Field>
           </div>

@@ -16,6 +16,45 @@ export const FONT_FAMILIES = [
 export const FONT_WEIGHTS = [300, 400, 500, 600, 700, 800, 900] as const;
 
 /**
+ * The weights a family actually comes in, where that is not all of them.
+ *
+ * Google Fonts answers a weight a family does not have with an error, so
+ * offering 900 for Space Mono offered a label that would never draw. Taken
+ * from what the font service serves; a family not listed has every weight.
+ */
+const FAMILY_WEIGHTS: Partial<Record<string, readonly number[]>> = {
+  'Archivo Narrow': [400, 500, 600, 700],
+  'DM Mono': [300, 400, 500],
+  'Fira Code': [300, 400, 500, 600, 700],
+  'IBM Plex Mono': [300, 400, 500, 600, 700],
+  'IBM Plex Sans': [300, 400, 500, 600, 700],
+  'JetBrains Mono': [300, 400, 500, 600, 700, 800],
+  Lato: [300, 400, 700, 900],
+  Manrope: [300, 400, 500, 600, 700, 800],
+  'Open Sans': [300, 400, 500, 600, 700, 800],
+  Oswald: [300, 400, 500, 600, 700],
+  'Roboto Mono': [300, 400, 500, 600, 700],
+  'Space Mono': [400, 700],
+};
+
+/** The weights to offer for a family. An uploaded font answers for all of them. */
+export function weightsFor(family: string): readonly number[] {
+  return FAMILY_WEIGHTS[family] ?? FONT_WEIGHTS;
+}
+
+/**
+ * The weight a family can actually draw nearest to the one asked for: the
+ * heavier of two equally near, since lettering on a panel errs bold.
+ */
+export function nearestWeight(family: string, weight: number): number {
+  const ws = weightsFor(family);
+  return ws.reduce((best, w) => {
+    const d = Math.abs(w - weight), bd = Math.abs(best - weight);
+    return d < bd || (d === bd && w > best) ? w : best;
+  });
+}
+
+/**
  * The family name an uploaded font is stored under.
  *
  * A file named after a built-in family gets " (uploaded)", so Inter.ttf cannot

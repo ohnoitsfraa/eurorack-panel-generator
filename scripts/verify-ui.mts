@@ -817,6 +817,33 @@ async function open(colorScheme: 'light' | 'dark' = 'dark') {
   await page.close();
 }
 
+// --- only weights a font comes in are offered ---
+{
+  const { page, problems } = await open();
+  const fontErrors: string[] = [];
+  page.on('response', (r) => { if (r.url().includes('/api/font') && !r.ok()) fontErrors.push(`${r.status()} ${r.url()}`); });
+  await page.getByRole('button', { name: 'Text & art', exact: true }).click();
+  await page.getByRole('button', { name: 'Text label', exact: true }).click();
+  await page.waitForTimeout(300);
+  const weight = page.locator('label:has-text("Weight") select, select').filter({ has: page.locator('option[value="700"]') }).first();
+  await weight.selectOption('900');
+  const fontSelect = page.locator('select').filter({ has: page.locator('option[value="Space Mono"]') }).first();
+  await fontSelect.selectOption('Space Mono');
+  await page.waitForTimeout(300);
+  const offered = await weight.locator('option').allTextContents();
+  if (offered.join() === '400,700') pass('Space Mono offers only its own 400 and 700');
+  else fail(`Space Mono offered weights ${offered.join(', ')}`);
+  if ((await weight.inputValue()) === '700') pass('a 900 label moved to Space Mono lands on its nearest, 700');
+  else fail(`after switching to Space Mono the weight is ${await weight.inputValue()}`);
+  await page.waitForFunction(() => document.querySelector('[data-decor="text"] path'), undefined, { timeout: 20000 }).catch(() => {});
+  if (await page.locator('[data-decor="text"] path').count() > 0 && fontErrors.length === 0) pass('and the label draws, with no font request refused');
+  else fail(`the Space Mono label: ${await page.locator('[data-decor="text"] path').count()} outlines, refused: ${fontErrors.join(' | ')}`);
+
+  if (problems.length === 0) pass('no uncaught errors switching fonts');
+  else fail(`switching fonts: ${[...new Set(problems)].join(' | ')}`);
+  await page.close();
+}
+
 // --- alignment guides ---
 {
   const { page, problems } = await open();

@@ -1,7 +1,7 @@
 import { parse, type Font, type Path } from 'opentype.js';
 import type { DecorElement, Pt, TextElement } from '../types';
 import type { Ring } from '../geom/poly';
-import { FONT_WEIGHTS } from '../fonts';
+import { FONT_WEIGHTS, nearestWeight } from '../fonts';
 
 /**
  * Text -> outline rings.
@@ -32,7 +32,9 @@ export function loadFont(family: string, weight: number): Promise<Font> {
   if (hit) return hit;
 
   const p = (async () => {
-    const res = await fetch(`/api/font?family=${encodeURIComponent(family)}&weight=${weight}`);
+    // A weight the family does not come in is drawn in the nearest it does,
+    // so a label set before the weights were checked still draws.
+    const res = await fetch(`/api/font?family=${encodeURIComponent(family)}&weight=${nearestWeight(family, weight)}`);
     if (!res.ok) throw new Error(`Could not load font "${family}" (${res.status})`);
     return parse(await res.arrayBuffer());
   })();
