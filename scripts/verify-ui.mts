@@ -765,6 +765,58 @@ async function open(colorScheme: 'light' | 'dark' = 'dark') {
   await page.close();
 }
 
+// --- the rotation slider catches on the right angles ---
+{
+  const { page, problems } = await open();
+  await page.getByRole('button', { name: 'Text & art', exact: true }).click();
+  await page.getByRole('button', { name: 'Text label', exact: true }).click();
+  await page.waitForTimeout(300);
+  const field = page.locator('[data-detents]').first();
+  const slider = field.locator('input[type="range"]');
+  const value = async () => Number(await slider.inputValue());
+  const labels = await field.locator('button').allTextContents();
+  if (['-180', '-90', '0', '90', '180'].every((v) => labels.includes(v))) pass('the rotation slider has notches at -180, -90, 0, 90 and 180');
+  else fail(`rotation notches: ${JSON.stringify(labels)}`);
+
+  await field.getByRole('button', { name: 'Set to 90', exact: true }).click();
+  if ((await value()) === 90) pass('clicking a notch turns it straight there');
+  else fail(`clicking 90 left the rotation at ${await value()}`);
+
+  // Dragged to 87°: caught at 90. With Alt: left at 87.
+  const box = (await slider.boundingBox())!;
+  const xFor = (v: number) => box.x + 6.5 + ((v + 180) / 360) * (box.width - 13);
+  const y = box.y + box.height / 2;
+  const dragTo = async (v: number, alt = false) => {
+    await page.mouse.move(xFor(await value()), y);
+    if (alt) await page.keyboard.down('Alt');
+    await page.mouse.down();
+    await page.mouse.move(xFor(v), y, { steps: 8 });
+    await page.mouse.up();
+    if (alt) await page.keyboard.up('Alt');
+    await page.waitForTimeout(100);
+  };
+  await field.getByRole('button', { name: 'Set to 0', exact: true }).click();
+  await dragTo(87);
+  if ((await value()) === 90) pass('dragged near 90°, it catches there');
+  else fail(`dragged to about 87°, the rotation is ${await value()}`);
+  await field.getByRole('button', { name: 'Set to 0', exact: true }).click();
+  await dragTo(87, true);
+  const free = await value();
+  if (free >= 85 && free <= 89) pass(`with Alt held it goes where it is put (${free}°)`);
+  else fail(`Alt-dragging to about 87° gave ${free}`);
+
+  // Arrow keys step out of a notch rather than being pulled back into it.
+  await field.getByRole('button', { name: 'Set to 0', exact: true }).click();
+  await slider.focus();
+  await page.keyboard.press('ArrowRight');
+  if ((await value()) === 1) pass('arrow keys still step one degree at a time');
+  else fail(`an arrow key from 0 gave ${await value()}`);
+
+  if (problems.length === 0) pass('no uncaught errors turning things');
+  else fail(`rotation slider: ${[...new Set(problems)].join(' | ')}`);
+  await page.close();
+}
+
 // --- alignment guides ---
 {
   const { page, problems } = await open();

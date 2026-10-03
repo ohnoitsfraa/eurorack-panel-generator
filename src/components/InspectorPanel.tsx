@@ -6,7 +6,7 @@ import {
 } from '@/lib/eurorack';
 import { describeFeature, isStadium, type Feature, type FeatureKind, type PanelFormat } from '@/lib/types';
 import { featureForKind, useStore } from '@/lib/store';
-import { Button, ColorInput, Field, NumberInput, Section, Select, Slider, Toggle, shared } from './ui';
+import { Button, ColorInput, Field, NumberInput, ROTATION_DETENTS, Section, Select, shared, Slider, Toggle } from './ui';
 
 /**
  * Everything about one cutout.
@@ -113,6 +113,7 @@ function FeatureEditor({ feature: f }: { feature: Feature }) {
             min={-90} max={90} step={1}
             value={f.rotation}
             onChange={(rotation) => updateFeature(f.id, { rotation })}
+            detents={ROTATION_DETENTS.half} labelled={ROTATION_DETENTS.labelled}
           />
         </Field>
       )}
@@ -262,6 +263,7 @@ function BatchFeatureSize({ features }: { features: Feature[] }) {
               min={-90} max={90} step={1}
               value={rotation ?? rects[0].rotation}
               onChange={(r) => updateFeatures(rects.map((f) => f.id), () => ({ rotation: r }))}
+              detents={ROTATION_DETENTS.half} labelled={ROTATION_DETENTS.labelled}
             />
           </Field>
         </>

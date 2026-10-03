@@ -6,7 +6,7 @@ import { uid, type ArtElement, type ReliefMode, type ShapeElement, type TextElem
 import { newElementAt, useStore } from '@/lib/store';
 import { traceArtwork } from '@/lib/model/trace';
 import { FONT_FAMILIES, FONT_WEIGHTS } from '@/lib/fonts';
-import { Button, ColorInput, Field, NumberInput, Section, Select, Slider, shared } from './ui';
+import { Button, ColorInput, Field, NumberInput, ROTATION_DETENTS, Section, Select, Slider, shared } from './ui';
 import { IconPicker } from './IconPicker';
 import { iconLabel } from '@/lib/icons';
 import { combineSvgShapes, fitRings, isSvgFile, readSvg } from '@/lib/svgImport';
@@ -231,7 +231,10 @@ function DecorEditor({ id }: { id: string }) {
       </div>
 
       <Field label="Rotation" hint={`${el.rotation.toFixed(0)}°`}>
-        <Slider min={-180} max={180} step={1} value={el.rotation} onChange={(rotation) => update(id, { rotation })} />
+        <Slider
+          min={-180} max={180} step={1} value={el.rotation} onChange={(rotation) => update(id, { rotation })}
+          detents={ROTATION_DETENTS.full} labelled={ROTATION_DETENTS.labelled}
+        />
       </Field>
 
       <div className="border-t border-ink-800 pt-3">

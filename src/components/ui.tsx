@@ -86,19 +86,90 @@ export function NumberInput({
 }
 
 export function Slider({
-  value, onChange, min, max, step = 1,
-}: { value: number; onChange: (v: number) => void; min: number; max: number; step?: number }) {
-  return (
+  value, onChange, min, max, step = 1, detents, snap = 4, labelled,
+}: {
+  value: number;
+  onChange: (v: number) => void;
+  min: number;
+  max: number;
+  step?: number;
+  /**
+   * Values the slider catches on when dragged near them, marked with a notch
+   * under the track that can be clicked to jump straight there.
+   */
+  detents?: number[];
+  /** How near a drag has to come to a detent to catch on it. */
+  snap?: number;
+  /** Which detents get a figure under their notch; all of them if absent. */
+  labelled?: (v: number) => boolean;
+}) {
+  // Caught only while dragging, and not with Alt held: arrow keys step one
+  // at a time, and a detent that pulled them back would trap them there.
+  const dragging = useRef<{ free: boolean } | null>(null);
+  const change = (raw: number) => {
+    let v = raw;
+    if (detents && dragging.current && !dragging.current.free) {
+      const near = detents.reduce((a, b) => (Math.abs(b - raw) < Math.abs(a - raw) ? b : a));
+      if (Math.abs(near - raw) <= snap) v = near;
+    }
+    onChange(v);
+  };
+  // The thumb's centre runs from half a thumb in at one end to half a thumb
+  // in at the other, so a notch has to be placed on that same run.
+  const at = (v: number) => {
+    const f = (v - min) / (max - min);
+    return `calc(${f * 100}% + ${(0.5 - f) * SLIDER_THUMB_PX}px)`;
+  };
+  const input = (
     <input
       type="range"
       min={min}
       max={max}
       step={step}
       value={value}
-      onChange={(e) => onChange(Number(e.target.value))}
+      onPointerDown={(e) => { dragging.current = { free: e.altKey }; }}
+      onPointerUp={() => { dragging.current = null; }}
+      onPointerCancel={() => { dragging.current = null; }}
+      onChange={(e) => change(Number(e.target.value))}
     />
   );
+  if (!detents?.length) return input;
+  return (
+    <div data-detents="">
+      {input}
+      <div className="relative h-5">
+        {detents.map((d) => {
+          const label = labelled ? labelled(d) : true;
+          return (
+            <button
+              key={d}
+              type="button"
+              onClick={() => onChange(d)}
+              title={`Set to ${d}`}
+              aria-label={`Set to ${d}`}
+              className={`group absolute top-0 flex -translate-x-1/2 flex-col items-center px-1
+                ${value === d ? 'text-accent' : 'text-ink-400 hover:text-ink-100'}`}
+              style={{ left: at(d) }}
+            >
+              <span className={`block w-px bg-current ${label ? 'h-1.5' : 'h-1'}`} />
+              {label && <span className="text-[10.5px] leading-tight tabular-nums">{d}</span>}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
 }
+
+/** The slider thumb's width, as set in globals.css, for placing notches under it. */
+const SLIDER_THUMB_PX = 13;
+
+/** Every 45°, a notch at each; a figure at the right angles. */
+export const ROTATION_DETENTS = {
+  half: [-90, -45, 0, 45, 90],
+  full: [-180, -135, -90, -45, 0, 45, 90, 135, 180],
+  labelled: (v: number) => v % 90 === 0,
+};
 
 export function Button({
   children, onClick, variant = 'default', disabled, title, className = '',
