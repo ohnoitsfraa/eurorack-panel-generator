@@ -1064,6 +1064,26 @@ async function open(colorScheme: 'light' | 'dark' = 'dark') {
   if (/Left out 1 stroked line, 1 piece of live text/.test(body)) pass('and says what it left out: the stroke and the text');
   else fail('nothing said the stroke and text were left out');
 
+  // Cropped to its left half: the rectangle's left half, with the hole in it.
+  const picker = page.locator('[data-crop-picker]');
+  const pb = (await picker.boundingBox())!;
+  const ib = (await picker.locator('img').boundingBox())!;
+  if (Math.abs(pb.width - ib.width) < 3 && Math.abs(pb.height - ib.height) < 3 && Math.abs(pb.width / pb.height - 2) < 0.05) {
+    pass('the crop box sits exactly over the picture, with no letterboxing around it');
+  } else fail(`crop picker ${Math.round(pb.width)}×${Math.round(pb.height)}, picture ${Math.round(ib.width)}×${Math.round(ib.height)}`);
+  await page.mouse.move(pb.x + 1, pb.y + 1);
+  await page.mouse.down();
+  await page.mouse.move(pb.x + pb.width / 2, pb.y + pb.height - 1, { steps: 8 });
+  await page.mouse.up();
+  await use.click();
+  await page.waitForTimeout(500);
+  const half = page.locator('[data-decor="art"] path').last();
+  const hd = (await half.getAttribute('d')) ?? '';
+  const hb = await half.boundingBox();
+  if ((hd.match(/M/g) ?? []).length === 2 && hb && Math.abs(hb.width / hb.height - 1) < 0.06) {
+    pass('a crop over half the SVG brings in just that half, square, with its hole');
+  } else fail(`cropped SVG: ${(hd.match(/M/g) ?? []).length} rings, ${hb ? (hb.width / hb.height).toFixed(2) : '?'} to 1`);
+
   // Tracing is still there for an SVG that is really a picture.
   await page.getByRole('button', { name: 'Trace it as a picture instead', exact: true }).click();
   if (await page.getByRole('button', { name: /Trace to relief/ }).count() === 1) pass('and it can still be traced as a picture instead');

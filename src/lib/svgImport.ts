@@ -1,6 +1,6 @@
 import type { Pt } from './types';
 import { bbox, nestRings, type Ring } from './geom/poly';
-import { cleanRegions, subtractRegions } from './geom/boolean';
+import { cleanRegions, intersectRegions, subtractRegions } from './geom/boolean';
 import { nonzeroRings, shapeRings } from './icons';
 
 /**
@@ -37,7 +37,11 @@ export interface SvgSkipped { strokes: number; text: number; other: number }
  * cut away. Art that is all light, meant for a dark background, would cut
  * everything away, so it is taken as all fill instead.
  */
-export function combineSvgShapes(shapes: SvgShape[]): Ring[] {
+export function combineSvgShapes(
+  shapes: SvgShape[],
+  /** Keep only what lies inside this box, cut off at its edges. */
+  clip?: { x: number; y: number; w: number; h: number },
+): Ring[] {
   const own = (s: SvgShape) => nestRings(s.evenOdd ? s.rings : nonzeroRings(s.rings));
   const allLight = shapes.length > 0 && shapes.every((s) => s.knockout);
 
@@ -58,6 +62,10 @@ export function combineSvgShapes(shapes: SvgShape[]): Ring[] {
     }
   }
   flush();
+  if (clip) {
+    const { x, y, w, h } = clip;
+    regions = intersectRegions(regions, [{ outer: [{ x, y }, { x: x + w, y }, { x: x + w, y: y + h }, { x, y: y + h }], holes: [] }]);
+  }
   return regions.flatMap((r) => [r.outer, ...r.holes]);
 }
 
@@ -96,7 +104,15 @@ export function isLight(color: string): boolean {
  * transforms nested several deep, a viewBox. Then each shape is read with
  * the transform that places it.
  */
-export function readSvg(text: string): { shapes: SvgShape[]; skipped: SvgSkipped } {
+export function readSvg(
+  text: string,
+  /**
+   * The size to lay the drawing out at, which is what its coordinates come
+   * back in. Given the size of a preview of the same file, a box drawn over
+   * the preview lands on the same part of the drawing.
+   */
+  size?: { width: number; height: number },
+): { shapes: SvgShape[]; skipped: SvgSkipped } {
   const doc = new DOMParser().parseFromString(text, 'image/svg+xml');
   const root = doc.documentElement;
   if (doc.querySelector('parsererror') || root.tagName.toLowerCase() !== 'svg') {
@@ -109,6 +125,11 @@ export function readSvg(text: string): { shapes: SvgShape[]; skipped: SvgSkipped
   const svg = document.importNode(root, true) as unknown as SVGSVGElement;
   // Scripts in an imported file have no business running.
   svg.querySelectorAll('script, foreignObject').forEach((n) => n.remove());
+  if (size) {
+    svg.setAttribute('width', String(size.width));
+    svg.setAttribute('height', String(size.height));
+    svg.style.display = 'block';
+  }
   host.appendChild(svg);
   document.body.appendChild(host);
 

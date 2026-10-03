@@ -523,9 +523,18 @@ function ArtworkTracer() {
     if (!file) return;
     setBusy(true);
     try {
-      const { shapes, skipped } = readSvg(await file.text());
+      // Laid out at the preview's own size, so a crop drawn over the
+      // preview lands on the same part of the drawing.
+      const img = new Image();
+      img.src = preview!;
+      await img.decode();
+      const size = { width: img.naturalWidth || 300, height: img.naturalHeight || 150 };
+      const { shapes, skipped } = readSvg(await file.text(), size);
       const W = panelWidthMm(design.hp), H = panelHeightMm(design.format);
-      const rings = fitRings(combineSvgShapes(shapes), W * 0.8, H * 0.8);
+      const clip = crop
+        ? { x: crop.x * size.width, y: crop.y * size.height, w: crop.w * size.width, h: crop.h * size.height }
+        : undefined;
+      const rings = fitRings(combineSvgShapes(shapes, clip), W * 0.8, H * 0.8);
       const left = [
         skipped.strokes ? `${skipped.strokes} stroked line${skipped.strokes === 1 ? '' : 's'}` : '',
         skipped.text ? `${skipped.text} piece${skipped.text === 1 ? '' : 's'} of live text` : '',
@@ -533,7 +542,9 @@ function ArtworkTracer() {
       ].filter(Boolean).join(', ');
       const fix = 'convert strokes and text to outlines in your editor';
       if (!rings.length) {
-        setError(left
+        setError(crop
+          ? 'Nothing filled inside that crop — draw the box over part of the drawing.'
+          : left
           ? `Nothing filled to use in that SVG — it has ${left}. Try: ${fix}.`
           : 'Nothing filled to use in that SVG.');
         return;
@@ -569,14 +580,13 @@ function ArtworkTracer() {
 
       {svg && preview && !traceSvg && (
         <>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={preview} alt="" className="max-h-40 w-full rounded border border-ink-700 bg-[#e8e6df] object-contain p-2" />
+          <CropPicker src={preview} crop={crop} onChange={setCrop} light />
           <Button variant="primary" onClick={() => void addOutlines()} disabled={busy} className="w-full">
             {busy ? 'Reading…' : 'Use its outlines'}
           </Button>
           <p className="text-[12.5px] leading-relaxed text-ink-400">
             An SVG already is outlines, so its shapes are used exactly as
-            drawn rather than traced. White shapes cut away what is beneath
+            drawn rather than traced; drag across it to use only part. White shapes cut away what is beneath
             them, as in most logos. Strokes and live text are left out until
             converted to outlines.{' '}
             <button type="button" onClick={() => setTraceSvg(true)} className="underline hover:text-ink-200">
@@ -626,10 +636,17 @@ interface Box { x: number; y: number; w: number; h: number }
  * and the file behind it may be four thousand.
  */
 function CropPicker({
-  src, crop, onChange,
-}: { src: string; crop: Box | null; onChange: (b: Box | null) => void }) {
+  src, crop, onChange, light,
+}: {
+  src: string;
+  crop: Box | null;
+  onChange: (b: Box | null) => void;
+  /** A panel-coloured backdrop, for drawings that are dark on nothing. */
+  light?: boolean;
+}) {
   const ref = useRef<HTMLDivElement>(null);
   const from = useRef<{ x: number; y: number } | null>(null);
+  const [aspect, setAspect] = useState(1.5);
 
   const place = (e: React.PointerEvent) => {
     const box = ref.current?.getBoundingClientRect();
@@ -689,11 +706,25 @@ function CropPicker({
         onPointerMove={onMove}
         onPointerUp={onUp}
         onPointerCancel={onUp}
-        className="relative select-none overflow-hidden rounded-md border border-ink-700 bg-ink-950"
+        // Exactly the picture's size, so the box is a fraction of the picture
+        // and not of letterboxing around it.
+        className={`relative mx-auto w-fit max-w-full select-none overflow-hidden rounded-md border border-ink-700
+          ${light ? 'bg-[#e8e6df]' : 'bg-ink-950'}`}
         style={{ cursor: 'crosshair', touchAction: 'none' }}
+        data-crop-picker=""
       >
+        {/* As wide as there is room for, up to 12rem tall, in proportion,
+            however small or large the picture is in its own pixels. */}
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={src} alt="" draggable={false} className="block max-h-48 w-full object-contain" />
+        <img
+          src={src} alt="" draggable={false}
+          onLoad={(e) => {
+            const im = e.currentTarget;
+            if (im.naturalWidth && im.naturalHeight) setAspect(im.naturalWidth / im.naturalHeight);
+          }}
+          className="block h-auto max-w-full"
+          style={{ width: `min(100%, ${12 * aspect}rem)` }}
+        />
         {crop && (
           <>
             {/* The part that will not be traced, dimmed rather than hidden, so

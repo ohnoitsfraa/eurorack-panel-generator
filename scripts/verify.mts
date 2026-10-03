@@ -917,6 +917,17 @@ console.log('\nSVG files');
   if (order.length === 1 && Math.abs(Math.abs(area(order)) - 100) < 1e-6) pass('shapes are painted in order: white only cuts what lies beneath');
   else fail(`paint order: ${order.length} rings, area ${area(order)}`);
 
+  // A crop keeps what lies inside the box, cut off at its edges, holes and all.
+  const cropped = combineSvgShapes([
+    { rings: [sq(0, 0, 10)], evenOdd: false, knockout: false },
+    { rings: [sq(1, 3, 2)], evenOdd: false, knockout: true },
+    { rings: [sq(7, 3, 2)], evenOdd: false, knockout: true },
+  ], { x: 0, y: 0, w: 5, h: 10 });
+  const cb = bbox(cropped);
+  if (cropped.length === 2 && Math.abs(Math.abs(area(cropped)) - 46) < 1e-6 && Math.abs(cb.x1 - 5) < 1e-9) {
+    pass('a crop keeps only what is inside it, cut at its edge, with the holes inside it');
+  } else fail(`crop: ${cropped.length} rings, area ${area(cropped)}, right edge ${cb.x1}`);
+
   const fitted = fitRings([sq(100, 100, 50).map((p) => ({ x: p.x * 2, y: p.y }))], 30, 100);
   const fb = bbox(fitted);
   if (Math.abs(fb.x1 - fb.x0 - 30) < 1e-9 && Math.abs(fb.y1 - fb.y0 - 15) < 1e-9 && Math.abs(fb.x0 + 15) < 1e-9) pass('it is scaled to fit, keeping its proportions, about its centre');
