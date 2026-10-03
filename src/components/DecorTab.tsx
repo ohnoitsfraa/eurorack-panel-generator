@@ -3,12 +3,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { panelHeightMm, panelWidthMm } from '@/lib/eurorack';
 import { uid, type ArtElement, type ReliefMode, type ShapeElement, type TextElement } from '@/lib/types';
-import { useStore } from '@/lib/store';
+import { newElementAt, useStore } from '@/lib/store';
 import { traceArtwork } from '@/lib/model/trace';
 import { FONT_FAMILIES, FONT_WEIGHTS } from '@/lib/fonts';
 import { Button, ColorInput, Field, NumberInput, Section, Select, Slider, shared } from './ui';
 import { IconPicker } from './IconPicker';
 import { iconLabel } from '@/lib/icons';
+import { combineSvgShapes, fitRings, isSvgFile, readSvg } from '@/lib/svgImport';
 
 const RELIEF_OPTIONS: Array<{ value: ReliefMode; label: string }> = [
   { value: 'raised', label: 'Raised — sits on the surface' },
@@ -469,6 +470,9 @@ function ArtworkTracer() {
   const [file, setFile] = useState<File | null>(null);
   const [crop, setCrop] = useState<Box | null>(null);
   const [busy, setBusy] = useState(false);
+  // An SVG is used for its own outlines unless asked to be traced like a picture.
+  const svg = file !== null && isSvgFile(file);
+  const [traceSvg, setTraceSvg] = useState(false);
 
   // Revoked when the file changes or the tracer goes away, or every pick
   // leaks a blob for the life of the page.
@@ -515,19 +519,74 @@ function ArtworkTracer() {
     }
   };
 
+  const addOutlines = async () => {
+    if (!file) return;
+    setBusy(true);
+    try {
+      const { shapes, skipped } = readSvg(await file.text());
+      const W = panelWidthMm(design.hp), H = panelHeightMm(design.format);
+      const rings = fitRings(combineSvgShapes(shapes), W * 0.8, H * 0.8);
+      const left = [
+        skipped.strokes ? `${skipped.strokes} stroked line${skipped.strokes === 1 ? '' : 's'}` : '',
+        skipped.text ? `${skipped.text} piece${skipped.text === 1 ? '' : 's'} of live text` : '',
+        skipped.other ? `${skipped.other} linked or embedded part${skipped.other === 1 ? '' : 's'}` : '',
+      ].filter(Boolean).join(', ');
+      const fix = 'convert strokes and text to outlines in your editor';
+      if (!rings.length) {
+        setError(left
+          ? `Nothing filled to use in that SVG — it has ${left}. Try: ${fix}.`
+          : 'Nothing filled to use in that SVG.');
+        return;
+      }
+      const at = newElementAt({ x: W / 2, y: H / 2 });
+      addDecor({
+        id: uid('a'),
+        type: 'art',
+        rings,
+        x: at.x, y: at.y, scale: 1, rotation: 0,
+        // Flush by default, like a new label.
+        color: '#f2f2f0', mode: 'flush', reliefMm: 0.6,
+      });
+      if (left) setError(`Added the filled shapes. Left out ${left}: ${fix}.`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not read that SVG');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <div className="space-y-2 border-t border-ink-800 pt-3">
       <Field label="Trace an image into relief">
         <input
           type="file"
           accept="image/*"
-          onChange={(e) => { setFile(e.target.files?.[0] ?? null); setCrop(null); }}
+          onChange={(e) => { setFile(e.target.files?.[0] ?? null); setCrop(null); setTraceSvg(false); }}
           className="w-full text-[12.5px] text-ink-400 file:mr-2 file:rounded file:border-0
                      file:bg-ink-700 file:px-2 file:py-1 file:text-[12.5px] file:text-ink-100"
         />
       </Field>
 
-      {file && preview && (
+      {svg && preview && !traceSvg && (
+        <>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={preview} alt="" className="max-h-40 w-full rounded border border-ink-700 bg-[#e8e6df] object-contain p-2" />
+          <Button variant="primary" onClick={() => void addOutlines()} disabled={busy} className="w-full">
+            {busy ? 'Reading…' : 'Use its outlines'}
+          </Button>
+          <p className="text-[12.5px] leading-relaxed text-ink-400">
+            An SVG already is outlines, so its shapes are used exactly as
+            drawn rather than traced. White shapes cut away what is beneath
+            them, as in most logos. Strokes and live text are left out until
+            converted to outlines.{' '}
+            <button type="button" onClick={() => setTraceSvg(true)} className="underline hover:text-ink-200">
+              Trace it as a picture instead
+            </button>
+          </p>
+        </>
+      )}
+
+      {file && preview && (!svg || traceSvg) && (
         <>
           <CropPicker src={preview} crop={crop} onChange={setCrop} />
           <Field label="Threshold" hint={String(threshold)}>

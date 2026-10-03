@@ -879,6 +879,63 @@ console.log('\nIcons');
   }
 }
 
+// ------------------------------------------------------------- 4c. SVG files
+console.log('\nSVG files');
+{
+  const { combineSvgShapes, fitRings, isLight } = await import('../src/lib/svgImport');
+  const { shapeRings } = await import('../src/lib/icons');
+  const { signedArea, bbox } = await import('../src/lib/geom/poly');
+  const sq = (x: number, y: number, s: number) => [{ x, y }, { x: x + s, y }, { x: x + s, y: y + s }, { x, y: y + s }];
+  const area = (rings: { x: number; y: number }[][]) => rings.reduce((a, r) => a + signedArea(r), 0);
+
+  // A dark square with a white one laid over it: the white one is a hole.
+  const knocked = combineSvgShapes([
+    { rings: [sq(0, 0, 10)], evenOdd: false, knockout: false },
+    { rings: [sq(3, 3, 4)], evenOdd: false, knockout: true },
+  ]);
+  if (knocked.length === 2 && Math.abs(Math.abs(area(knocked)) - 84) < 1e-6) pass('a white shape over a dark one cuts a hole in it');
+  else fail(`knockout: ${knocked.length} rings, area ${area(knocked)}`);
+
+  // Two dark shapes overlapping are one outline.
+  const joined = combineSvgShapes([
+    { rings: [sq(0, 0, 10)], evenOdd: false, knockout: false },
+    { rings: [sq(5, 5, 10)], evenOdd: false, knockout: false },
+  ]);
+  if (joined.length === 1 && Math.abs(Math.abs(area(joined)) - 175) < 1e-6) pass('overlapping shapes join into one outline');
+  else fail(`join: ${joined.length} rings, area ${area(joined)}`);
+
+  // Art that is all white, made for a dark background, is all fill.
+  const light = combineSvgShapes([{ rings: [sq(0, 0, 10)], evenOdd: false, knockout: true }]);
+  if (light.length === 1) pass('art that is all white is used whole, not cut away to nothing');
+  else fail(`all-light art gave ${light.length} rings`);
+
+  // A white shape with nothing under it takes nothing away.
+  const order = combineSvgShapes([
+    { rings: [sq(20, 0, 5)], evenOdd: false, knockout: true },
+    { rings: [sq(0, 0, 10)], evenOdd: false, knockout: false },
+  ]);
+  if (order.length === 1 && Math.abs(Math.abs(area(order)) - 100) < 1e-6) pass('shapes are painted in order: white only cuts what lies beneath');
+  else fail(`paint order: ${order.length} rings, area ${area(order)}`);
+
+  const fitted = fitRings([sq(100, 100, 50).map((p) => ({ x: p.x * 2, y: p.y }))], 30, 100);
+  const fb = bbox(fitted);
+  if (Math.abs(fb.x1 - fb.x0 - 30) < 1e-9 && Math.abs(fb.y1 - fb.y0 - 15) < 1e-9 && Math.abs(fb.x0 + 15) < 1e-9) pass('it is scaled to fit, keeping its proportions, about its centre');
+  else fail(`fitted to ${JSON.stringify(fb)}`);
+  const tall = bbox(fitRings([sq(0, 0, 10)], 30, 12));
+  if (Math.abs(tall.y1 - tall.y0 - 12) < 1e-9) pass('and no taller than allowed');
+  else fail(`fitted height ${tall.y1 - tall.y0}`);
+
+  if (isLight('rgb(255, 255, 255)') && isLight('#fafafa') && isLight('white') && !isLight('rgb(34, 34, 34)') && !isLight('#d00')) {
+    pass('white and near-white count as light, colours and darks do not');
+  } else fail('light colour test is wrong');
+
+  const poly = shapeRings('polyline', (n) => (n === 'points' ? '0,0 10,0 10,10' : undefined), 0.1);
+  if (poly.length === 1 && poly[0].length === 3) pass('a filled polyline is closed, as SVG fills it');
+  else fail(`polyline: ${JSON.stringify(poly)}`);
+  if (shapeRings('line', () => '1', 0.1).length === 0) pass('a line has no inside to fill');
+  else fail('a line came back with an outline');
+}
+
 // ------------------------------------------------------------------- 5. rack
 console.log('\nRack layout and export');
 {

@@ -1025,6 +1025,55 @@ async function open(colorScheme: 'light' | 'dark' = 'dark') {
   await page.close();
 }
 
+// --- an SVG is used as its own outlines, not traced ---
+{
+  const { page, problems } = await open();
+  await page.getByRole('button', { name: 'Text & art', exact: true }).click();
+  // A stylesheet class for the fill, a group transform, a white knockout,
+  // and the two things a panel cannot use: a stroke and live text.
+  const svgText = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 50">
+    <style>.dark { fill: #222 }</style>
+    <g transform="translate(10 5)">
+      <rect class="dark" width="80" height="40"/>
+      <circle cx="20" cy="20" r="10" fill="#fff"/>
+    </g>
+    <line x1="0" y1="0" x2="100" y2="50" stroke="#000"/>
+    <text x="5" y="45">Hi</text>
+  </svg>`;
+  await page.locator('input[type="file"][accept="image/*"]').last().setInputFiles({
+    name: 'logo.svg', mimeType: 'image/svg+xml', buffer: Buffer.from(svgText),
+  });
+  await page.waitForTimeout(300);
+  const use = page.getByRole('button', { name: 'Use its outlines', exact: true });
+  if (await use.count() === 1) pass('an SVG offers its own outlines instead of tracing');
+  else fail('picking an SVG did not offer to use its outlines');
+  if (await page.getByRole('button', { name: /Trace to relief/ }).count() === 0) pass('without the tracing controls in the way');
+  else fail('the tracing controls showed for an SVG');
+
+  await use.click();
+  await page.waitForTimeout(500);
+  const art = page.locator('[data-decor="art"] path').first();
+  const d = (await art.getAttribute('d')) ?? '';
+  const rings = (d.match(/M/g) ?? []).length;
+  if (rings === 2) pass('its filled shapes become the outline, the white circle a hole in it');
+  else fail(`the SVG came in as ${rings} rings, expected the rectangle and its hole`);
+  const b = await art.boundingBox();
+  if (b && Math.abs(b.width / b.height - 2) < 0.05) pass('in its own proportions, through the group transform');
+  else fail(`the imported art is ${b ? (b.width / b.height).toFixed(2) : '?'} to 1, expected 2 to 1`);
+  const body = await page.locator('body').innerText();
+  if (/Left out 1 stroked line, 1 piece of live text/.test(body)) pass('and says what it left out: the stroke and the text');
+  else fail('nothing said the stroke and text were left out');
+
+  // Tracing is still there for an SVG that is really a picture.
+  await page.getByRole('button', { name: 'Trace it as a picture instead', exact: true }).click();
+  if (await page.getByRole('button', { name: /Trace to relief/ }).count() === 1) pass('and it can still be traced as a picture instead');
+  else fail('could not switch to tracing the SVG');
+
+  if (problems.length === 0) pass('no uncaught errors importing an SVG');
+  else fail(`importing an SVG: ${[...new Set(problems)].join(' | ')}`);
+  await page.close();
+}
+
 // --- an icon picked from the list lands on the panel ---
 {
   const { page, problems } = await open();

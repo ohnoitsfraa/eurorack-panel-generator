@@ -203,44 +203,58 @@ export function bodyToShapes(body: string, tolerance: number): Shape[] {
 
   const shapes: Shape[] = [];
   const groupEvenOdd = /<g\b[^>]*fill-rule="evenodd"/.test(body);
-  const re = /<(path|circle|ellipse|rect|polygon)\b([^>]*)\/?>/g;
+  const re = /<(path|circle|ellipse|rect|polygon|polyline)\b([^>]*)\/?>/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(body))) {
     const [, tag, attrText] = m;
     const attr = (name: string) => new RegExp(`\\b${name}="([^"]*)"`).exec(attrText)?.[1];
     if (attr('fill') === 'none') continue;
     const evenOdd = (attr('fill-rule') ?? (groupEvenOdd ? 'evenodd' : 'nonzero')) === 'evenodd';
-    const n = (name: string, fallback = 0) => {
-      const v = attr(name);
-      return v === undefined ? fallback : Number(v);
-    };
-    let rings: Ring[] = [];
-    if (tag === 'path') {
-      const d = attr('d');
-      if (d) rings = svgPathToRings(d, tolerance);
-    } else if (tag === 'circle') {
-      if (n('r') > 0) rings = [circleRing(n('cx'), n('cy'), 2 * n('r'), tolerance)];
-    } else if (tag === 'ellipse') {
-      const rx = n('rx'), ry = n('ry');
-      if (rx > 0 && ry > 0) {
-        const c = circleRing(0, 0, 2, tolerance / Math.max(rx, ry));
-        rings = [c.map((p) => ({ x: n('cx') + p.x * rx, y: n('cy') + p.y * ry }))];
-      }
-    } else if (tag === 'rect') {
-      const w = n('width'), h = n('height');
-      if (w > 0 && h > 0) {
-        const r = Math.min(n('rx', n('ry')), w / 2, h / 2);
-        rings = [roundedRectRing(n('x') + w / 2, n('y') + h / 2, w, h, r)];
-      }
-    } else if (tag === 'polygon') {
-      const v = (attr('points') ?? '').trim().split(/[\s,]+/).map(Number);
-      const pts: Pt[] = [];
-      for (let i = 0; i + 1 < v.length; i += 2) pts.push({ x: v[i], y: v[i + 1] });
-      if (pts.length >= 3) rings = [pts];
-    }
+    const rings = shapeRings(tag, attr, tolerance);
     if (rings.length) shapes.push({ rings, evenOdd });
   }
   return shapes;
+}
+
+/**
+ * The outline of one SVG shape element, in its own user units, before any
+ * transform. Shared by icons and imported SVG files.
+ *
+ * A polyline is filled as if closed, which is what SVG does with a fill; a
+ * line has no inside, and so has no outline here.
+ */
+export function shapeRings(tag: string, attr: (name: string) => string | undefined, tolerance: number): Ring[] {
+  const n = (name: string, fallback = 0) => {
+    const v = attr(name);
+    const num = v === undefined ? NaN : parseFloat(v);
+    return Number.isFinite(num) ? num : fallback;
+  };
+  if (tag === 'path') {
+    const d = attr('d');
+    return d ? svgPathToRings(d, tolerance) : [];
+  }
+  if (tag === 'circle') {
+    return n('r') > 0 ? [circleRing(n('cx'), n('cy'), 2 * n('r'), tolerance)] : [];
+  }
+  if (tag === 'ellipse') {
+    const rx = n('rx'), ry = n('ry');
+    if (!(rx > 0 && ry > 0)) return [];
+    const c = circleRing(0, 0, 2, tolerance / Math.max(rx, ry));
+    return [c.map((p) => ({ x: n('cx') + p.x * rx, y: n('cy') + p.y * ry }))];
+  }
+  if (tag === 'rect') {
+    const w = n('width'), h = n('height');
+    if (!(w > 0 && h > 0)) return [];
+    const r = Math.min(n('rx', n('ry')), w / 2, h / 2);
+    return [roundedRectRing(n('x') + w / 2, n('y') + h / 2, w, h, r)];
+  }
+  if (tag === 'polygon' || tag === 'polyline') {
+    const v = (attr('points') ?? '').trim().split(/[\s,]+/).map(Number);
+    const pts: Pt[] = [];
+    for (let i = 0; i + 1 < v.length; i += 2) pts.push({ x: v[i], y: v[i + 1] });
+    return pts.length >= 3 ? [pts] : [];
+  }
+  return [];
 }
 
 /**
