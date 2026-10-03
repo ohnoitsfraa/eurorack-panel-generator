@@ -45,6 +45,12 @@ export interface Feature {
   /** Detector confidence 0..1. Undefined for hand-placed features. */
   confidence?: number;
   locked?: boolean;
+  /**
+   * This cutout's own gap for raised decor, mm beyond its edge, where its
+   * nut needs more or less room than the panel's setting gives. Undefined to
+   * follow the panel.
+   */
+  keepoutMm?: number;
 }
 
 /**

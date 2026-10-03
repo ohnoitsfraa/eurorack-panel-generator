@@ -1,7 +1,7 @@
 'use client';
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { CUTOUT_PRESETS, MOUNT_SLOT, type CutoutShapeId, decorKeepoutMm, mountSlotPositions, panelHeightMm, panelWidthMm } from '@/lib/eurorack';
+import { CUTOUT_PRESETS, DECOR_KEEPOUT, MOUNT_SLOT, type CutoutShapeId, decorKeepoutMm, featureKeepoutMm, mountSlotPositions, panelHeightMm, panelWidthMm } from '@/lib/eurorack';
 import { featureRing } from '@/lib/model/build';
 import {
   artExtent, artRings, type ArtElement, type DecorElement, type Feature, type TextElement,
@@ -713,7 +713,7 @@ export function PanelCanvas2D() {
           />
         ))}
 
-        <KeepoutRings />
+        <KeepoutRings handleMm={handleMm} />
 
         <SelectedDecorGrab onGrab={beginDrag} onEditText={onEditText} />
 
@@ -1139,51 +1139,149 @@ function DecorLayer({
 }
 
 /**
- * The gap raised art keeps around a cutout, shown where it matters.
+ * The gap raised art keeps around a cutout, shown where it matters, and
+ * set by dragging.
  *
  * The 2D view draws decor as designed, untrimmed; the model trims raised art
  * back from every cutout so a nut can seat. A dashed ring around each cutout
- * that raised art comes near shows where that happens, rather than leaving
- * the trim to be found in the 3D view.
+ * that raised art comes near shows where that happens. A selected cutout
+ * shows its ring whatever is near it, with a handle: dragged, it sets that
+ * cutout's own gap (every selected cutout's, when several are), since a pot
+ * nut wants more room than an LED.
  */
-function KeepoutRings() {
+function KeepoutRings({ handleMm }: { handleMm: number }) {
   const design = useStore((s) => s.design);
   const fonts = useStore((s) => s.fonts);
   const fontVersion = useStore((s) => s.fontVersion);
+  const selectedIds = useStore((s) => s.selectedIds);
+  const updateFeatures = useStore((s) => s.updateFeatures);
+  const svgRef = useContext(CanvasFrame);
+  const [dragging, setDragging] = useState<{ id: string; ids: string[] } | null>(null);
+  const clearance = Math.max(0, design.holeClearanceMm ?? 0) / 2;
+
   const rings = useMemo(() => {
-    const keepout = decorKeepoutMm(design);
-    if (keepout <= 0) return [];
+    if (decorKeepoutMm(design) <= 0) return [];
     const raised = design.decor
       .filter((d) => d.mode === 'raised')
       .map((d) => decorOutline(d, fonts))
       .filter((r) => r.length > 0)
       .map((r) => bbox(r));
-    if (!raised.length) return [];
-    const clearance = Math.max(0, design.holeClearanceMm ?? 0) / 2;
-    const out: Array<{ id: string; d: string }> = [];
+    const out: Array<{ f: Feature; gap: number; d: string; selected: boolean }> = [];
     for (const f of design.features) {
-      const ring = featureRing(f, clearance + keepout);
+      const gap = featureKeepoutMm(design, f);
+      const ring = featureRing(f, clearance + gap);
       if (!ring) continue;
+      const selected = selectedIds.includes(f.id);
       const b = bbox([ring]);
-      if (raised.some((r) => r.x0 < b.x1 && r.x1 > b.x0 && r.y0 < b.y1 && r.y1 > b.y0)) out.push({ id: f.id, d: ringToPath(ring) });
+      const near = raised.some((r) => r.x0 < b.x1 && r.x1 > b.x0 && r.y0 < b.y1 && r.y1 > b.y0);
+      if (selected || near) out.push({ f, gap, d: ringToPath(ring), selected });
     }
     return out;
     // fontVersion is what changes when a font finishes loading.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [design, fonts, fontVersion]);
+  }, [design, fonts, fontVersion, selectedIds, clearance]);
+
+  /** The gap that puts the ring under the pointer: its distance outside the cutout's edge. */
+  const gapAt = (f: Feature, e: React.PointerEvent) => {
+    const svg = svgRef?.current;
+    if (!svg) return 0;
+    const p = new DOMPoint(e.clientX, e.clientY).matrixTransform(svg.getScreenCTM()!.inverse());
+    const a = (-f.rotation * Math.PI) / 180;
+    const dx0 = p.x - f.x, dy0 = p.y - f.y;
+    const lx = dx0 * Math.cos(a) - dy0 * Math.sin(a), ly = dx0 * Math.sin(a) + dy0 * Math.cos(a);
+    let out: number;
+    if (f.shape === 'circle') out = Math.hypot(lx, ly) - f.w / 2;
+    else {
+      const ex = Math.abs(lx) - f.w / 2, ey = Math.abs(ly) - f.h / 2;
+      out = ex > 0 && ey > 0 ? Math.hypot(ex, ey) : Math.max(ex, ey);
+    }
+    return Math.min(DECOR_KEEPOUT.max, Math.max(0, Math.round((out - clearance) * 10) / 10));
+  };
+
+  const begin = (f: Feature) => (e: React.PointerEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    (e.currentTarget as Element).setPointerCapture?.(e.pointerId);
+    const ids = selectedIds.includes(f.id)
+      ? design.features.filter((x) => selectedIds.includes(x.id)).map((x) => x.id)
+      : [f.id];
+    setDragging({ id: f.id, ids });
+  };
+  const move = (f: Feature) => (e: React.PointerEvent) => {
+    if (dragging?.id !== f.id) return;
+    const keepoutMm = gapAt(f, e);
+    updateFeatures(dragging.ids, () => ({ keepoutMm }));
+  };
+  const end = () => setDragging(null);
+
   return (
-    <g pointerEvents="none" data-keepout="">
-      {rings.map((r) => (
-        <path
-          key={r.id}
-          d={r.d}
-          fill="none"
-          stroke="var(--color-accent)"
-          strokeOpacity={0.55}
-          strokeWidth={0.15}
-          strokeDasharray="0.6 0.45"
-        />
-      ))}
+    <g data-keepout="">
+      {rings.map(({ f, gap, d, selected }) => {
+        // The handle sits on the ring, straight out from the cutout's right side.
+        const reach = (f.shape === 'circle' ? f.w / 2 : f.w / 2) + clearance + gap;
+        const a = (f.rotation * Math.PI) / 180;
+        const hx = f.x + reach * Math.cos(a), hy = f.y + reach * Math.sin(a);
+        return (
+          <g key={f.id}>
+            <path
+              d={d}
+              fill="none"
+              stroke="var(--color-accent)"
+              strokeOpacity={selected ? 0.9 : 0.55}
+              strokeWidth={0.15}
+              strokeDasharray="0.6 0.45"
+              pointerEvents="none"
+              data-keepout-ring={f.id}
+            />
+            {selected && (
+              <>
+                {/* A wide, invisible stroke, so the ring is easy to catch. */}
+                <path
+                  d={d}
+                  fill="none"
+                  stroke="transparent"
+                  strokeWidth={handleMm * 0.8}
+                  style={{ cursor: 'ew-resize' }}
+                  onPointerDown={begin(f)}
+                  onPointerMove={move(f)}
+                  onPointerUp={end}
+                  onPointerCancel={end}
+                />
+                {/* A rect drawn round rather than a circle: everything else
+                    round on the canvas is a cutout, and this is not one. */}
+                <rect
+                  x={hx - handleMm * 0.38} y={hy - handleMm * 0.38}
+                  width={handleMm * 0.76} height={handleMm * 0.76} rx={handleMm * 0.38}
+                  fill="var(--color-ink-950)"
+                  stroke="var(--color-accent)"
+                  strokeWidth={handleMm * 0.14}
+                  style={{ cursor: 'ew-resize' }}
+                  data-keepout-handle={f.id}
+                  onPointerDown={begin(f)}
+                  onPointerMove={move(f)}
+                  onPointerUp={end}
+                  onPointerCancel={end}
+                />
+                {dragging?.id === f.id && (
+                  <text
+                    x={hx + handleMm * 0.8} y={hy}
+                    fontSize={handleMm * 1.1}
+                    dominantBaseline="central"
+                    fill="var(--color-accent)"
+                    stroke="var(--color-ink-950)"
+                    strokeWidth={handleMm * 0.3}
+                    strokeLinejoin="round"
+                    pointerEvents="none"
+                    style={{ fontWeight: 600, paintOrder: 'stroke' }}
+                  >
+                    {`gap ${trim(gap)} mm`}
+                  </text>
+                )}
+              </>
+            )}
+          </g>
+        );
+      })}
     </g>
   );
 }

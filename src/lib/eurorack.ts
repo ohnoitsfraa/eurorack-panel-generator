@@ -190,6 +190,16 @@ export function decorKeepoutMm(design: { decorKeepoutMm?: number }): number {
   return Math.max(0, design.decorKeepoutMm ?? DECOR_KEEPOUT.default);
 }
 
+/**
+ * The gap one cutout keeps: its own if it has one, else the panel's. With
+ * keeping clear switched off for the panel, none at all.
+ */
+export function featureKeepoutMm(design: { decorKeepoutMm?: number }, f: { keepoutMm?: number }): number {
+  const panel = decorKeepoutMm(design);
+  if (panel <= 0) return 0;
+  return Math.min(DECOR_KEEPOUT.max, Math.max(0, f.keepoutMm ?? panel));
+}
+
 /** Whether a component's size is fixed by its hardware or genuinely varies. */
 export function hasStandardSize(kind: FeatureKind): boolean {
   return kind !== 'custom' && kind !== 'display' && kind !== 'slider';

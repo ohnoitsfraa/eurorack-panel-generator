@@ -910,6 +910,58 @@ async function open(colorScheme: 'light' | 'dark' = 'dark') {
   if (await page.locator('[data-keepout] path').count() === 1) pass('a raised label beside a jack shows the gap kept round it');
   else fail(`with raised art beside a jack, ${await page.locator('[data-keepout] path').count()} gaps were shown`);
 
+  // The selected jack's gap is set by dragging its ring outwards.
+  await page.getByRole('button', { name: 'Cutouts', exact: true }).click();
+  await page.locator('aside:last-of-type li button').first().click();
+  await page.waitForTimeout(200);
+  const handle = page.locator('[data-keepout-handle]').first();
+  if (await handle.count() === 1) pass('a selected cutout shows its gap with a handle to drag');
+  else fail('no handle on the selected cutout\'s gap');
+  const hb = (await handle.boundingBox())!;
+  const outer = await toScreen(20 + 3 + 0.1 + 4, 60); // hole radius, half the allowance, 4 mm gap
+  await page.mouse.move(hb.x + hb.width / 2, hb.y + hb.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(outer.x, hb.y + hb.height / 2, { steps: 8 });
+  await page.mouse.up();
+  await page.waitForTimeout(200);
+  const body = await page.locator('body').innerText();
+  const set = /Gap for raised art\s*([\d.]+) mm/i.exec(body)?.[1];
+  if (set && Math.abs(Number(set) - 4) <= 0.2) pass(`dragging it out sets that cutout's gap (${set} mm)`);
+  else fail(`after dragging the gap out to about 4 mm the editor shows ${set ?? 'nothing'}`);
+  await page.getByRole('button', { name: 'Reset', exact: true }).click();
+  await page.waitForTimeout(150);
+  if (/Gap for raised art\s*2\.0 mm, panel default/i.test(await page.locator('body').innerText())) pass('and Reset hands it back to the panel\'s gap');
+  else fail('Reset did not return the cutout to the panel gap');
+
+  // Several cutouts at once: the shared editor sets the gap for all of them.
+  for (const y of [80, 100]) {
+    await page.getByRole('button', { name: 'Circle', exact: true }).click();
+    const at = await toScreen(20, y);
+    await page.mouse.click(at.x, at.y);
+    await page.waitForTimeout(150);
+  }
+  const list = page.locator('aside:last-of-type li button');
+  await list.nth(0).click();
+  await list.nth(2).click({ modifiers: ['Shift'] });
+  await page.waitForTimeout(150);
+  const batchGap = page.locator('[data-batch-cutouts] label', { hasText: 'Gap for raised art' });
+  await batchGap.locator('input[type="range"]').evaluate((el: HTMLInputElement) => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(el, '3.5');
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await page.waitForTimeout(150);
+  await list.nth(1).click();
+  await page.waitForTimeout(150);
+  if (/Gap for raised art\s*3\.5 mm/i.test(await page.locator('body').innerText())) pass('the gap can be set for several cutouts at once');
+  else fail('setting the gap for three cutouts did not reach the middle one');
+  await list.nth(0).click();
+  await list.nth(2).click({ modifiers: ['Shift'] });
+  await page.waitForTimeout(150);
+  await page.locator('[data-batch-cutouts]').getByRole('button', { name: 'Reset', exact: true }).click();
+  await page.waitForTimeout(150);
+  if (/Gap for raised art\s*2\.0 mm, panel default/i.test(await page.locator('[data-batch-cutouts]').innerText())) pass('and handed back to the panel\'s gap together');
+  else fail('Reset on several cutouts did not return them to the panel gap');
+
   await page.getByRole('button', { name: 'Panel', exact: true }).click();
   await toggle.click();
   await page.waitForTimeout(200);

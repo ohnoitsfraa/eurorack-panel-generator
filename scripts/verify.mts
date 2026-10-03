@@ -914,6 +914,18 @@ console.log('\nRaised art keeps clear of cutouts');
   if (Math.abs(older.near - kept.near) < 1e-6) pass('a panel from before the setting gets the gap by default');
   else fail(`an older panel kept ${(older.near - 3).toFixed(2)} mm`);
 
+  // One cutout can keep a gap of its own; switched off for the panel, none do.
+  const own = buildPanel({ ...base, features: [{ ...jack, keepoutMm: 4 }], decorKeepoutMm: 2 }, { fonts: noFonts });
+  const ownMesh = own.meshes.find((x) => x.name.startsWith('shape'))!;
+  let ownNear = Infinity;
+  for (let i = 0; i < ownMesh.positions.length; i += 3) ownNear = Math.min(ownNear, Math.hypot(ownMesh.positions[i] - 20, ownMesh.positions[i + 1] - 68.5));
+  if (ownNear >= 3 + 4 - 0.05 && ownNear < 3 + 4.5) pass('a cutout with its own gap keeps that, not the panel\'s');
+  else fail(`a cutout set to 4 mm kept ${(ownNear - 3).toFixed(2)} mm`);
+  const { featureKeepoutMm } = await import('../src/lib/eurorack');
+  if (featureKeepoutMm({ decorKeepoutMm: 0 }, { keepoutMm: 4 }) === 0 && featureKeepoutMm({}, {}) === 2) {
+    pass('and switching keeping clear off for the panel turns off every cutout\'s gap');
+  } else fail('per-cutout gaps ignored the panel switch');
+
   // Flush art is level with the face: nothing for a nut to sit on, so no gap.
   const flushBuilt = buildPanel({ ...base, decor: [{ ...plate, mode: 'flush' as const }], decorKeepoutMm: 2 }, { fonts: noFonts });
   const inlay = flushBuilt.meshes.find((x) => x.name === 'inlay')!;

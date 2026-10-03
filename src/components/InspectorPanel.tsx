@@ -3,7 +3,7 @@
 import { useRef } from 'react';
 import {
   COMPONENT_SPECS, CUTOUT_PRESETS, DECOR_KEEPOUT, HOLE_CLEARANCE, STANDARD_KINDS, THICKNESS,
-  decorKeepoutMm, hasStandardSize, panelWidthMm,
+  decorKeepoutMm, featureKeepoutMm, hasStandardSize, panelWidthMm,
 } from '@/lib/eurorack';
 import { describeFeature, isStadium, type Feature, type FeatureKind, type PanelFormat } from '@/lib/types';
 import { featureForKind, useStore } from '@/lib/store';
@@ -21,6 +21,8 @@ function FeatureEditor({ feature: f }: { feature: Feature }) {
   const updateFeature = useStore((s) => s.updateFeature);
   const removeFeatures = useStore((s) => s.removeFeatures);
   const duplicateFeatures = useStore((s) => s.duplicateFeatures);
+  const design = useStore((s) => s.design);
+  const panelKeepout = decorKeepoutMm(design);
   const spec = COMPONENT_SPECS[f.kind];
   const standard = hasStandardSize(f.kind);
   const offStandard = standard && f.shape === 'circle' && Math.abs(f.w - spec.holeMm) > 0.01;
@@ -120,6 +122,31 @@ function FeatureEditor({ feature: f }: { feature: Feature }) {
         </Field>
       )}
 
+      {panelKeepout > 0 && (
+        <Field
+          label="Gap for raised art"
+          hint={`${featureKeepoutMm(design, f).toFixed(1)} mm${f.keepoutMm === undefined ? ', panel default' : ''}`}
+        >
+          <div className="flex items-center gap-2">
+            <Slider
+              min={0} max={DECOR_KEEPOUT.max} step={0.1}
+              value={featureKeepoutMm(design, f)}
+              onChange={(keepoutMm) => updateFeature(f.id, { keepoutMm })}
+            />
+            {f.keepoutMm !== undefined && (
+              <button
+                type="button"
+                onClick={() => updateFeature(f.id, { keepoutMm: undefined })}
+                className="shrink-0 text-[12px] text-ink-400 hover:text-ink-100"
+                title="Use the panel's gap for this cutout again"
+              >
+                Reset
+              </button>
+            )}
+          </div>
+        </Field>
+      )}
+
       {offStandard && (
         <div className="rounded-md border border-ink-700 bg-ink-900 px-2.5 py-2">
           <p className="text-[12.5px] leading-relaxed text-ink-300">
@@ -166,6 +193,9 @@ function FeatureEditor({ feature: f }: { feature: Feature }) {
  */
 function BatchFeatureSize({ features }: { features: Feature[] }) {
   const updateFeatures = useStore((s) => s.updateFeatures);
+  const design = useStore((s) => s.design);
+  const panelKeepout = decorKeepoutMm(design);
+  const gap = shared(features.map((f) => featureKeepoutMm(design, f)));
   const circles = features.filter((f) => f.shape === 'circle');
   const rects = features.filter((f) => f.shape === 'rect');
   const ids = features.map((f) => f.id);
@@ -269,6 +299,31 @@ function BatchFeatureSize({ features }: { features: Feature[] }) {
             />
           </Field>
         </>
+      )}
+
+      {panelKeepout > 0 && (
+        <Field
+          label="Gap for raised art"
+          hint={gap === undefined ? 'mixed' : `${gap.toFixed(1)} mm${features.every((f) => f.keepoutMm === undefined) ? ', panel default' : ''}`}
+        >
+          <div className="flex items-center gap-2">
+            <Slider
+              min={0} max={DECOR_KEEPOUT.max} step={0.1}
+              value={gap ?? featureKeepoutMm(design, features[0])}
+              onChange={(keepoutMm) => updateFeatures(ids, () => ({ keepoutMm }))}
+            />
+            {features.some((f) => f.keepoutMm !== undefined) && (
+              <button
+                type="button"
+                onClick={() => updateFeatures(ids, () => ({ keepoutMm: undefined }))}
+                className="shrink-0 text-[12px] text-ink-400 hover:text-ink-100"
+                title="Use the panel's gap for all of these again"
+              >
+                Reset
+              </button>
+            )}
+          </div>
+        </Field>
       )}
     </div>
   );

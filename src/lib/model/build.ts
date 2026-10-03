@@ -1,5 +1,5 @@
 import type { Font } from 'opentype.js';
-import { COMPONENT_SPECS, decorKeepoutMm, mountSlotPositions, panelHeightMm, panelWidthMm, MOUNT_SLOT } from '../eurorack';
+import { COMPONENT_SPECS, decorKeepoutMm, featureKeepoutMm, mountSlotPositions, panelHeightMm, panelWidthMm, MOUNT_SLOT } from '../eurorack';
 import { artRings, type DecorElement, type Feature, type Mesh, type PanelDesign, type ReliefMode } from '../types';
 import {
   circleRing, ensureWinding, nestRings, pointInRing, ringsOverlap,
@@ -127,7 +127,7 @@ export function buildPanel(design: PanelDesign, opts: BuildOptions): BuildResult
   const keepout = decorKeepoutMm(design);
   const keptClear: Ring[] = [];
   for (const f of design.features) {
-    const ring = featureRing(f, clearance + keepout);
+    const ring = featureRing(f, clearance + featureKeepoutMm(design, f));
     if (ring) keptClear.push(ensureWinding(up(ring), false));
   }
   if (design.includeMountSlots) {
