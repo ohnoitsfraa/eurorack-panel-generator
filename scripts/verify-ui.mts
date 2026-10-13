@@ -1008,6 +1008,28 @@ async function open(colorScheme: 'light' | 'dark' = 'dark') {
   await page.close();
 }
 
+// --- thinner than a panel: an overlay ---
+{
+  const { page, problems } = await open();
+  await page.getByRole('button', { name: 'Panel', exact: true }).click();
+  const thickness = page.locator('label', { hasText: 'Thickness' }).locator('input[type="range"]');
+  if ((await thickness.getAttribute('min')) === '0.4') pass('the thickness goes down to 0.4 mm');
+  else fail(`the thinnest thickness offered is ${await thickness.getAttribute('min')} mm`);
+  if (await page.locator('[data-overlay-note]').count() === 0) pass('a normal panel says nothing about overlays');
+  else fail('a 2 mm panel was described as an overlay');
+  await thickness.evaluate((el: HTMLInputElement) => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(el, '0.6');
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await page.waitForTimeout(400);
+  const body = await page.locator('body').innerText();
+  if (await page.locator('[data-overlay-note]').count() === 1 && /0\.6 mm · overlay/.test(body)) pass('at 0.6 mm it is marked as an overlay, with what that means');
+  else fail('setting 0.6 mm did not mark the panel as an overlay');
+  if (problems.length === 0) pass('no uncaught errors making an overlay');
+  else fail(`overlay: ${[...new Set(problems)].join(' | ')}`);
+  await page.close();
+}
+
 // --- alignment guides ---
 {
   const { page, problems } = await open();

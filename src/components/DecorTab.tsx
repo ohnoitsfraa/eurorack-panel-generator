@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { panelHeightMm, panelWidthMm } from '@/lib/eurorack';
+import { maxEngraveDepthMm, panelHeightMm, panelWidthMm } from '@/lib/eurorack';
 import { uid, type ArtElement, type ReliefMode, type ShapeElement, type TextElement } from '@/lib/types';
 import { newElementAt, useStore } from '@/lib/store';
 import { traceArtwork } from '@/lib/model/trace';
@@ -259,7 +259,7 @@ function DecorEditor({ id }: { id: string }) {
       >
         <Slider
           min={0.1}
-          max={el.mode === 'raised' ? 3 : Math.max(0.2, design.thicknessMm - 0.4)}
+          max={el.mode === 'raised' ? 3 : Math.max(0.1, maxEngraveDepthMm(design.thicknessMm))}
           step={0.05}
           value={el.reliefMm}
           onChange={(reliefMm) => update(id, { reliefMm })}
@@ -418,7 +418,7 @@ function BatchDecorEditor({ ids }: { ids: string[] }) {
           // As for one element, except that a mix of raised and sunk takes
           // the tighter limit, since nothing may go through the panel.
           min={0.1}
-          max={mode === 'raised' ? 3 : Math.max(0.2, thicknessMm - 0.4)}
+          max={mode === 'raised' ? 3 : Math.max(0.1, maxEngraveDepthMm(thicknessMm))}
           step={0.05}
           value={depth ?? els[0].reliefMm}
           onChange={(reliefMm) => updateMany(ids, { reliefMm })}

@@ -80,7 +80,27 @@ export function mountSlotPositions(
 }
 
 /** Panel thickness range that is both printable and rack-legal. */
-export const THICKNESS = { min: 1.2, max: 4.0, default: 2.0 } as const;
+/**
+ * Panel thickness, mm. Below the 1.2 mm a panel needs to stay rigid on its
+ * own, it is an overlay: a printed face laid over the module's existing panel,
+ * for modules whose parts cannot come off it (a Bitbox micro's screen is
+ * fixed to its panel). 0.4 mm is two printed layers.
+ */
+export const THICKNESS = { min: 0.4, max: 4.0, default: 2.0, overlayBelow: 1.2 } as const;
+
+/**
+ * Material always left under engraved and flush art, so there is something
+ * to print the pocket on: 0.4 mm on a panel, half the thickness on an overlay
+ * too thin to spare that much.
+ */
+export function engraveFloorMm(thicknessMm: number): number {
+  return Math.min(0.4, thicknessMm / 2);
+}
+
+/** How deep engraved or flush art can go into a panel this thick. */
+export function maxEngraveDepthMm(thicknessMm: number): number {
+  return Math.max(0, Math.round((thicknessMm - engraveFloorMm(thicknessMm)) * 100) / 100);
+}
 
 /**
  * Catalogue of the through-holes a Eurorack panel actually needs, keyed by the

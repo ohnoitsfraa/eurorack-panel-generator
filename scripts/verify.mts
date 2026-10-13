@@ -935,6 +935,39 @@ console.log('\nRaised art keeps clear of cutouts');
   else fail(`flush art was held ${(flushNear - 3).toFixed(2)} mm back`);
 }
 
+// ------------------------------------------------------------ 4b4. overlays
+console.log('\nOverlays thinner than a panel');
+{
+  const { THICKNESS, maxEngraveDepthMm } = await import('../src/lib/eurorack');
+  if (THICKNESS.min <= 0.4) pass(`panels can be as thin as ${THICKNESS.min} mm, for an overlay`);
+  else fail(`the thinnest panel is still ${THICKNESS.min} mm`);
+  if (maxEngraveDepthMm(2) === 1.6 && maxEngraveDepthMm(0.6) === 0.3 && maxEngraveDepthMm(0.4) === 0.2) {
+    pass('a panel keeps its 0.4 mm floor under engraving; an overlay keeps half its thickness');
+  } else fail(`engrave depths: ${maxEngraveDepthMm(2)}, ${maxEngraveDepthMm(0.6)}, ${maxEngraveDepthMm(0.4)}`);
+
+  const plate = (mode: 'flush' | 'engraved') => ({
+    id: mode, type: 'shape' as const, shape: 'rect' as const, x: 20, y: 40, w: 20, h: 10, radius: 0, rotation: 0,
+    color: '#ff8800', mode, reliefMm: 0.6,
+  });
+  for (const t of [0.6, 0.4]) {
+    const overlay = {
+      ...BASE, thicknessMm: t,
+      features: [{ id: 'd', kind: 'display' as const, x: 20, y: 80, shape: 'rect' as const, w: 26, h: 15, radius: 1, rotation: 0 }],
+      decor: [plate('flush'), { ...plate('engraved'), y: 110 }],
+    };
+    const built = buildPanel(overlay, { fonts: noFonts });
+    const panel = built.meshes.find((m) => m.name === 'panel')!;
+    const inlay = built.meshes.find((m) => m.name === 'inlay');
+    let zMax = -Infinity, zMin = Infinity;
+    for (let i = 2; i < (inlay?.positions.length ?? 0); i += 3) { zMax = Math.max(zMax, inlay!.positions[i]); zMin = Math.min(zMin, inlay!.positions[i]); }
+    if (inlay && Math.abs(zMax - t) < 1e-4 && Math.abs(zMax - zMin - t / 2) < 1e-4 && !built.warnings.some((w) => /deeper/.test(w))) {
+      pass(`a ${t} mm overlay still takes flush art, ${t / 2} mm deep, and engraving`);
+    } else fail(`${t} mm overlay: inlay ${inlay ? `${zMin}–${zMax}` : 'missing'}, warnings ${built.warnings.join(' | ')}`);
+    checkSolid(panel, `${t} mm overlay / panel`);
+    if (inlay) checkSolid(inlay, `${t} mm overlay / inlay`);
+  }
+}
+
 // -------------------------------------------------------- 4b3. flipped panel
 console.log('\nFlipped panel');
 {

@@ -404,13 +404,27 @@ export function PanelTab() {
           bind against its neighbours.
         </p>
 
-        <Field label="Thickness" hint={`${design.thicknessMm.toFixed(1)} mm`}>
+        <Field
+          label="Thickness"
+          hint={`${design.thicknessMm.toFixed(1)} mm${design.thicknessMm < THICKNESS.overlayBelow ? ' · overlay' : ''}`}
+        >
           <Slider
             min={THICKNESS.min} max={THICKNESS.max} step={0.1}
             value={design.thicknessMm}
             onChange={(thicknessMm) => setDesign({ thicknessMm })}
+            detents={[THICKNESS.overlayBelow]}
+            snap={0.05}
+            labelled={() => false}
           />
         </Field>
+        {design.thicknessMm < THICKNESS.overlayBelow && (
+          <p className="-mt-1 text-[12.5px] leading-relaxed text-ink-400" data-overlay-note="">
+            Thinner than {THICKNESS.overlayBelow} mm, this is an overlay rather
+            than a panel: a printed face laid over the module's own panel, for
+            parts that cannot come off it, held by the same screws. Too thin to
+            stand on its own. Engraved and flush art go at most half way in.
+          </p>
+        )}
 
         <Field label="Corner radius" hint={`${design.cornerRadiusMm.toFixed(1)} mm`}>
           <Slider

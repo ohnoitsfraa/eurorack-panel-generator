@@ -1,5 +1,5 @@
 import type { Font } from 'opentype.js';
-import { COMPONENT_SPECS, decorKeepoutMm, featureKeepoutMm, mountSlotPositions, panelHeightMm, panelWidthMm, MOUNT_SLOT } from '../eurorack';
+import { COMPONENT_SPECS, decorKeepoutMm, featureKeepoutMm, maxEngraveDepthMm, mountSlotPositions, panelHeightMm, panelWidthMm, MOUNT_SLOT } from '../eurorack';
 import { artRings, type DecorElement, type Feature, type Mesh, type PanelDesign, type ReliefMode } from '../types';
 import {
   circleRing, ensureWinding, nestRings, pointInRing, ringsOverlap,
@@ -171,7 +171,7 @@ export function buildPanel(design: PanelDesign, opts: BuildOptions): BuildResult
       continue;
     }
 
-    const depth = Math.min(d.reliefMm, t - 0.4); // always leave a floor to print on
+    const depth = Math.min(d.reliefMm, maxEngraveDepthMm(t)); // always leave a floor to print on
     if (depth <= 0) {
       warnings.push(`"${d.label}" is deeper than the panel is thick, so it was skipped.`);
       continue;
