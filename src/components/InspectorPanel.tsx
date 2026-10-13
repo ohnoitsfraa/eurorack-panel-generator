@@ -352,6 +352,7 @@ function ShapeGlyph({ preset }: { preset: (typeof CUTOUT_PRESETS)[number] }) {
 /** Panel-level settings: format, size, colour, background. */
 export function PanelTab() {
   const design = useStore((s) => s.design);
+  const flipPanel = useStore((s) => s.flipPanel);
   const keepout = decorKeepoutMm(design);
   const setDesign = useStore((s) => s.setDesign);
   const gridMm = useStore((s) => s.gridMm);
@@ -424,6 +425,17 @@ export function PanelTab() {
           onChange={(includeMountSlots) => setDesign({ includeMountSlots })}
           label="Add M3 mounting slots"
         />
+
+        <Toggle
+          checked={!!design.flipped}
+          onChange={() => flipPanel()}
+          label="Flipped — module mounted upside down"
+        />
+        <p className="-mt-1 text-[12.5px] leading-relaxed text-ink-400">
+          For modules with a setting to be fitted the other way up. Every
+          cutout turns half a turn with the board behind it; labels and
+          artwork move with their parts but stay the right way up.
+        </p>
 
         <Field label="Hole allowance" hint={`+${design.holeClearanceMm.toFixed(2)} mm`}>
           <Slider

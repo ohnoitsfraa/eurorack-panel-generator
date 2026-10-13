@@ -935,6 +935,43 @@ console.log('\nRaised art keeps clear of cutouts');
   else fail(`flush art was held ${(flushNear - 3).toFixed(2)} mm back`);
 }
 
+// -------------------------------------------------------- 4b3. flipped panel
+console.log('\nFlipped panel');
+{
+  const { turnDesign } = await import('../src/lib/flip');
+  const W = panelWidthMm(8), H = panelHeightMm('3U');
+  const design = {
+    ...BASE,
+    features: [
+      { id: 'j', kind: 'jack' as const, x: 10, y: 20, shape: 'circle' as const, w: 6, h: 6, radius: 3, rotation: 0 },
+      { id: 's', kind: 'slider' as const, x: 30, y: 70, shape: 'rect' as const, w: 4, h: 30, radius: 2, rotation: 15 },
+    ],
+    decor: [
+      {
+        id: 't', type: 'text' as const, text: 'OUT', x: 7, y: 12, sizeMm: 3, fontFamily: 'Inter', fontWeight: 700,
+        letterSpacing: 0, align: 'left' as const, rotation: 0, color: '#fff', mode: 'raised' as const, reliefMm: 0.6,
+      },
+      { id: 'a', type: 'art' as const, rings: [[{ x: -1, y: -1 }, { x: 1, y: -1 }, { x: 0, y: 1 }]], x: 25, y: 100, scale: 1, rotation: 0, color: '#fff', mode: 'flush' as const, reliefMm: 0.6 },
+    ],
+  };
+  const turned = turnDesign(design);
+  const jack = turned.features[0], label = turned.decor[0], art = turned.decor[1];
+  if (Math.abs(jack.x - (W - 10)) < 0.01 && Math.abs(jack.y - (H - 20)) < 0.01 && turned.flipped) {
+    pass('flipping turns every cutout half a turn about the middle of the panel');
+  } else fail(`the jack at 10,20 went to ${jack.x},${jack.y}`);
+  if (label.type === 'text' && label.align === 'right' && label.rotation === 0 && Math.abs(label.y - (H - 12)) < 0.01) {
+    pass('a label moves with it, the right way up, its alignment swapped to keep its stretch');
+  } else fail(`the label became ${JSON.stringify(label)}`);
+  if (art.type === 'art' && JSON.stringify(art.rings) === JSON.stringify(design.decor[1].rings) && Math.abs(art.x - (W - 25)) < 0.01) {
+    pass('artwork moves, still upright');
+  } else fail(`artwork became ${JSON.stringify(art)}`);
+  const back = turnDesign(turned);
+  const same = (a: typeof design, b: typeof design) => JSON.stringify({ ...a, flipped: undefined }) === JSON.stringify({ ...b, flipped: undefined });
+  if (same(back, design) && !back.flipped) pass('flipping again puts everything back exactly');
+  else fail('flipping twice did not return the panel to how it was');
+  for (const m of buildPanel(turned, { fonts: noFonts }).meshes) checkSolid(m, `flipped / ${m.name}`);
+}
+
 // ------------------------------------------------------------- 4c. SVG files
 console.log('\nSVG files');
 {

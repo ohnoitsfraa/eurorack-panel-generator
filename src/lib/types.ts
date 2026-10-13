@@ -289,6 +289,12 @@ export interface PanelDesign {
    * 0 for none. Absent on older designs, which get the default.
    */
   decorKeepoutMm?: number;
+  /**
+   * Laid out for a module mounted upside down: everything was turned half a
+   * turn when this was set. Kept so a photo of the module, and parts found
+   * in it, are turned to match.
+   */
+  flipped?: boolean;
   features: Feature[];
   decor: DecorElement[];
 }

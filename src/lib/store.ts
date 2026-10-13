@@ -34,6 +34,7 @@ import { fetchImage, imageDataFromBlob } from './cv/image';
 import { fontsUsedBy, loadFont, registerFont } from './model/text';
 import { uploadedFontName } from './fonts';
 import { snapToGrid } from './align';
+import { turnDesign, turnFeature } from './flip';
 
 export type ViewMode = '2d' | '3d' | 'rack';
 export type InspectorTab = 'panel' | 'features' | 'decor' | 'export' | 'library';
@@ -114,6 +115,8 @@ interface State {
 
   /** A cutout at a spot, at its usual size or at a size drawn by dragging. */
   addFeature: (shape: CutoutShapeId, x: number, y: number, size?: { w: number; h: number }) => void;
+  /** Turn the whole layout half a turn, for a module mounted upside down; again to undo. */
+  flipPanel: () => void;
   updateFeature: (id: string, patch: Partial<Feature>) => void;
   /** Change several cutouts, each by its own patch, as one step for undo. */
   updateFeatures: (ids: string[], patch: (f: Feature) => Partial<Feature>) => void;
@@ -342,6 +345,8 @@ export const useStore = create<State>((set, get) => ({
       crop: null, mmPerPx: null, droppedAsMarkings: 0, droppedAsLettering: 0,
     }),
 
+  flipPanel: () => set((s) => ({ design: turnDesign(s.design) })),
+
   setCrop: (crop) => set({ crop }),
 
   setDetect: (patch) => set((s) => ({ detect: { ...s.detect, ...patch } })),
@@ -362,10 +367,17 @@ export const useStore = create<State>((set, get) => ({
         });
         set((s) => ({
           // Hand-placed and locked features survive a re-detect; only
-          // previously auto-detected ones are replaced.
+          // previously auto-detected ones are replaced. The photo is of the
+          // module the usual way up, so on a flipped panel what is found in
+          // it is turned to match.
           design: {
             ...s.design,
-            features: [...s.design.features.filter((f) => f.locked), ...res.features],
+            features: [
+              ...s.design.features.filter((f) => f.locked),
+              ...(s.design.flipped
+                ? res.features.map((f) => turnFeature(f, panelWidthMm(s.design.hp), panelHeightMm(s.design.format)))
+                : res.features),
+            ],
           },
           mmPerPx: res.mmPerPx,
           droppedAsMarkings: res.droppedAsMarkings ?? 0,

@@ -973,6 +973,41 @@ async function open(colorScheme: 'light' | 'dark' = 'dark') {
   await page.close();
 }
 
+// --- a panel flipped for a module mounted upside down ---
+{
+  const { page, problems } = await open();
+  const toScreen = (mx: number, my: number) =>
+    page.evaluate(([x, y]) => {
+      const el = document.querySelector('[data-panel-canvas]') as SVGSVGElement;
+      const p = new DOMPoint(x, y).matrixTransform(el.getScreenCTM()!);
+      return { x: p.x, y: p.y };
+    }, [mx, my] as [number, number]);
+  await page.getByRole('button', { name: 'Cutouts', exact: true }).click();
+  await page.getByRole('button', { name: 'Circle', exact: true }).click();
+  const at = await toScreen(10, 20);
+  await page.mouse.click(at.x, at.y);
+  await page.waitForTimeout(200);
+  const jack = page.locator('[data-panel-canvas] circle[r="3"]').first();
+  const pos = async () => `${await jack.getAttribute('cx')},${await jack.getAttribute('cy')}`;
+  const before = await pos();
+
+  await page.getByRole('button', { name: 'Panel', exact: true }).click();
+  const flip = page.getByRole('switch', { name: /Flipped/ });
+  await flip.click();
+  await page.waitForTimeout(200);
+  if ((await pos()) === `${Math.round((8 * 5.08 - 0.3 - 10) * 100) / 100},108.5` && (await flip.getAttribute('aria-checked')) === 'true') {
+    pass('Flipped turns the layout half a turn: a jack top left lands bottom right');
+  } else fail(`after flipping, the jack from ${before} is at ${await pos()}`);
+  await flip.click();
+  await page.waitForTimeout(200);
+  if ((await pos()) === before) pass('and switching it off turns it back');
+  else fail(`after flipping back the jack is at ${await pos()}, was ${before}`);
+
+  if (problems.length === 0) pass('no uncaught errors flipping a panel');
+  else fail(`flipping: ${[...new Set(problems)].join(' | ')}`);
+  await page.close();
+}
+
 // --- alignment guides ---
 {
   const { page, problems } = await open();

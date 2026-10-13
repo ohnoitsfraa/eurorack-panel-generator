@@ -674,6 +674,8 @@ export function PanelCanvas2D() {
               x={0} y={0} width={W} height={H}
               opacity={sourceOpacity}
               preserveAspectRatio="none"
+              // A flipped panel is turned half a turn; the photo turns with it.
+              transform={design.flipped ? `rotate(180 ${W / 2} ${H / 2})` : undefined}
             />
           )}
 
