@@ -23,7 +23,7 @@ import {
   parseBackup, renameFontFamilies, withNewIds, type Backup, type MergeReport,
 } from './backup';
 import {
-  conflicts, defaultRack, emptyRow, firstFreeHp, touchRack,
+  conflicts, defaultRack, emptyRow, firstFreeHp, makeRoom, packToSide, touchRack,
   type Placement, type Rack, type RackRow,
 } from './rack';
 import type { Ring } from './geom/poly';
@@ -168,8 +168,14 @@ interface State {
   removeRow: (id: string) => void;
   /** Returns false when there is nowhere for the panel to go. */
   addToRack: (designId: string, rowId?: string) => boolean;
-  movePlacement: (placementId: string, toRowId: string, hp: number) => void;
+  /**
+   * Put a panel at `hp` in a row. Given the rack as it stood when a drag
+   * began, the panels already there step aside to make room for it.
+   */
+  movePlacement: (placementId: string, toRowId: string, hp: number, origin?: Rack) => void;
   removePlacement: (placementId: string) => void;
+  /** A panel and everything beyond it on that side, packed against that rail. */
+  packPlacements: (placementId: string, side: 'left' | 'right') => void;
   /** Take every panel out of the rack, leaving the rows. */
   emptyRack: () => void;
   /** Remove every saved panel, the rack, and the panel being edited. */
@@ -187,6 +193,14 @@ interface State {
   ensureFont: (family: string, weight: number) => void;
   /** Read, register and keep a font file. Resolves to its family, or null if it is not a font. */
   addCustomFont: (file: File) => Promise<string | null>;
+}
+
+/**
+ * Where every panel in a rack sits, as one string: a drag reports every
+ * pointer move, and only one that changes this is worth a save and a redraw.
+ */
+function layoutKey(rows: RackRow[]): string {
+  return rows.map((r) => `${r.id}:${r.placements.map((p) => `${p.id}@${p.hp}`).sort().join(',')}`).join('|');
 }
 
 /** A panel as it stood, for stepping back to. */
@@ -1056,10 +1070,37 @@ export const useStore = create<State>((set, get) => ({
     await clearSession();
   },
 
-  movePlacement: (placementId, toRowId, hp) => {
+  movePlacement: (placementId, toRowId, hp, origin) => {
     const { rack } = get();
+    if (origin) {
+      // Laid out afresh from where everything began, so panels pushed aside
+      // by an earlier step slide back once the dragged one has moved on.
+      const moving = origin.rows.flatMap((r) => r.placements).find((p) => p.id === placementId);
+      const row = origin.rows.find((r) => r.id === toRowId);
+      if (moving && row) {
+        const widthOf = (p: Placement) => get().designWidthHp(p.designId);
+        const others = row.placements.filter((p) => p.id !== placementId);
+        const room = makeRoom(others.map((p) => ({ id: p.id, hp: p.hp, width: widthOf(p) })), widthOf(moving), hp, row.widthHp);
+        if (room) {
+          const rows = origin.rows.map((r) => ({
+            ...r,
+            placements: r.id === toRowId
+              ? [...others.map((p) => ({ ...p, hp: room.positions.get(p.id) ?? p.hp })), { ...moving, hp: room.at }]
+              : r.placements.filter((p) => p.id !== placementId),
+          }));
+          if (layoutKey(rows) === layoutKey(rack.rows)) return;
+          const next = touchRack({ ...rack, rows });
+          void dbSaveRack(next);
+          set({ rack: next });
+          return;
+        }
+      }
+      // No room to be made: placed as asked, and the overlap is flagged.
+    }
+    // From where the drag began, if there was one, so nothing stays pushed.
+    const base = origin ?? rack;
     let moved: Placement | null = null;
-    const stripped = rack.rows.map((r) => ({
+    const stripped = base.rows.map((r) => ({
       ...r,
       placements: r.placements.filter((p) => {
         if (p.id !== placementId) return true;
@@ -1072,12 +1113,29 @@ export const useStore = create<State>((set, get) => ({
     // A drag reports every pointer move, and most land on the same whole HP;
     // only an actual move is worth a new rack, a save and a redraw.
     const from = rack.rows.find((r) => r.placements.some((p) => p.id === placementId));
-    if (from?.id === toRowId && (moved as Placement).hp === at) return;
+    const current = from?.placements.find((p) => p.id === placementId);
+    if (!origin && from?.id === toRowId && current?.hp === at) return;
     const placed: Placement = { ...(moved as Placement), hp: at };
-    const next = touchRack({
-      ...rack,
-      rows: stripped.map((r) => (r.id === toRowId ? { ...r, placements: [...r.placements, placed] } : r)),
-    });
+    const rows = stripped.map((r) => (r.id === toRowId ? { ...r, placements: [...r.placements, placed] } : r));
+    if (layoutKey(rows) === layoutKey(rack.rows)) return;
+    const next = touchRack({ ...rack, rows });
+    void dbSaveRack(next);
+    set({ rack: next });
+  },
+
+  packPlacements: (placementId, side) => {
+    const { rack } = get();
+    const row = rack.rows.find((r) => r.placements.some((p) => p.id === placementId));
+    if (!row) return;
+    const moved = packToSide(
+      row.placements.map((p) => ({ id: p.id, hp: p.hp, width: get().designWidthHp(p.designId) })),
+      placementId, side, row.widthHp,
+    );
+    const rows = rack.rows.map((r) => (r.id !== row.id ? r : {
+      ...r, placements: r.placements.map((p) => ({ ...p, hp: moved.get(p.id) ?? p.hp })),
+    }));
+    if (layoutKey(rows) === layoutKey(rack.rows)) return;
+    const next = touchRack({ ...rack, rows });
     void dbSaveRack(next);
     set({ rack: next });
   },

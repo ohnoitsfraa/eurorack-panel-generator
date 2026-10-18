@@ -1726,6 +1726,73 @@ async function open(colorScheme: 'light' | 'dark' = 'dark') {
   await page.close();
 }
 
+// --- dragging a panel over others in the rack makes room for it ---
+{
+  const { page, problems } = await open();
+  for (const name of ['Room A', 'Room B', 'Room C']) {
+    if (name !== 'Room A') { await page.getByRole('button', { name: 'New blank panel' }).click(); await page.waitForTimeout(300); }
+    await page.getByLabel('Panel name').fill(name);
+    await page.getByRole('button', { name: 'Save to library' }).click();
+    await page.waitForTimeout(400);
+  }
+  await page.getByRole('button', { name: 'Library', exact: true }).click();
+  for (let i = 0; i < 3; i++) {
+    await page.getByRole('button', { name: 'To rack', exact: true }).nth(i).click();
+    await page.waitForTimeout(400);
+    if (i < 2) {
+      await page.getByRole('button', { name: 'Layout', exact: true }).click();
+      await page.waitForTimeout(200);
+      await page.getByRole('button', { name: 'Library', exact: true }).click();
+    }
+  }
+  await page.waitForTimeout(500);
+  const box = async (n: string) => (await page.locator(`[data-rack-panel="${n}"]`).boundingBox())!;
+  const order = async () => {
+    const xs = await Promise.all(['Room A', 'Room B', 'Room C'].map(async (n) => ({ n, x: (await box(n)).x })));
+    return xs.sort((a, b) => a.x - b.x).map((v) => v.n.slice(-1)).join('');
+  };
+  const before = await order();
+
+  // The last one dragged right over the first.
+  const first = await box(before === 'ABC' ? 'Room A' : `Room ${before[0]}`);
+  const last = await box(`Room ${before[2]}`);
+  await page.mouse.move(last.x + last.width / 2, last.y + last.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(first.x + first.width / 2 - 2, first.y + first.height / 2, { steps: 20 });
+  await page.waitForTimeout(400);
+  const during = await order();
+  const overlapping = /panels overlap/i.test(await page.locator('body').innerText());
+  const marked = await page.locator('[data-pushed]').count();
+  const hint = await page.locator('[data-rack-hint]').innerText();
+  await page.mouse.up();
+  await page.waitForTimeout(300);
+  if (during === `${before[2]}${before[0]}${before[1]}` && !overlapping) pass(`dragged over the others, a panel takes their place and they move aside (${before} → ${during})`);
+  else fail(`dragging the last panel over the first gave ${before} → ${during}${overlapping ? ', with panels overlapping' : ''}`);
+  if (marked === 2 && /Making room: 2 panels moved aside/.test(hint)) pass('while dragging, the panels it pushed are marked and counted');
+  else fail(`while dragging, ${marked} panels were marked as pushed; the hint said "${hint}"`);
+
+  // The arrows push a panel and everything beyond it against a rail.
+  const firstName = `Room ${during[0]}`;
+  await page.locator(`[data-rack-panel="${firstName}"]`).hover();
+  await page.waitForTimeout(200);
+  const leftArrow = page.locator(`button[aria-label^="Move ${firstName} and everything left"]`);
+  if (await leftArrow.isDisabled()) pass('the arrow that would move nothing is shown off');
+  else fail('the left arrow on the leftmost panel, already at the rail, was not disabled');
+  await page.locator(`button[aria-label^="Move ${firstName} and everything right"]`).click();
+  await page.waitForTimeout(400);
+  const rowBox = (await page.locator(`[data-rack-panel="${firstName}"]`).locator('xpath=..').boundingBox())!;
+  const lastBox = await box(`Room ${during[2]}`);
+  const firstBox = await box(firstName);
+  const span = lastBox.x + lastBox.width - firstBox.x;
+  if (Math.abs(rowBox.x + rowBox.width - (lastBox.x + lastBox.width)) < 4 && span < firstBox.width * 3 + 6) {
+    pass('the right arrow packs that panel and everything after it against the right rail');
+  } else fail(`after the right arrow, the panels end ${Math.round(rowBox.x + rowBox.width - (lastBox.x + lastBox.width))} px from the rail and span ${Math.round(span)} px`);
+
+  if (problems.length === 0) pass('no uncaught errors making room in the rack');
+  else fail(`making room: ${[...new Set(problems)].join(' | ')}`);
+  await page.close();
+}
+
 // --- putting a panel in the rack shows you the rack ---
 {
   const { page, problems } = await open();
@@ -1775,8 +1842,8 @@ async function open(colorScheme: 'light' | 'dark' = 'dark') {
         };
       });
   });
-  if (controls.length === 3) pass('a panel in the rack offers zoom, edit and remove');
-  else fail(`found ${controls.length} controls on the panel, expected 3`);
+  if (controls.length === 5) pass('a panel in the rack offers zoom, edit, remove and a push to either side');
+  else fail(`found ${controls.length} controls on the panel, expected 5`);
   if (controls.every((c) => c.w >= 24 && c.h >= 24)) pass('and they are big enough to hit');
   else fail(`controls measure ${controls.map((c) => `${c.w}x${c.h}`).join(', ')}`);
   // They must not hang over the neighbouring panel, whose controls they are not.

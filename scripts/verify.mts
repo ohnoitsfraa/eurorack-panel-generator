@@ -1524,6 +1524,31 @@ console.log('\nEditor actions');
   if (placed === 1) pass('adding to the rack places the panel');
   else fail(`rack has ${placed} placements, expected 1`);
 
+  // Dragged over other panels, they step aside to make room, and step back
+  // once the dragged one moves on.
+  if (savedId) {
+    const { conflicts } = await import('../src/lib/store');
+    const w = st().designWidthHp(savedId);
+    st().setRack({ name: 'room', rows: [{ id: 'r9', widthHp: 84, format: '3U', placements: [
+      { id: 'q1', designId: savedId, hp: 0 },
+      { id: 'q2', designId: savedId, hp: w },
+      { id: 'q3', designId: savedId, hp: 60 },
+    ] }] });
+    const origin = st().rack;
+    const where = () => Object.fromEntries(st().rack.rows[0].placements.map((p) => [p.id, p.hp]));
+    // Laid right over the first: it takes that place once its middle is past the other's.
+    st().movePlacement('q3', 'r9', 0, origin);
+    const shoved = where();
+    const clash = conflicts(st().rack.rows[0], st().designWidthHp);
+    if (clash.size === 0 && shoved.q3 === 0 && shoved.q1 === w && shoved.q2 === 2 * w) {
+      pass('a panel dragged over others takes their place, and they move aside');
+    } else fail(`after dragging onto the first: ${JSON.stringify(shoved)}, ${clash.size} overlapping`);
+    st().movePlacement('q3', 'r9', 40, origin);
+    const back = where();
+    if (back.q1 === 0 && back.q2 === w && back.q3 === 40) pass('and slide back once it has moved on');
+    else fail(`after dragging on to 40: ${JSON.stringify(back)}`);
+  }
+
   // A drag reports every pointer move; one that lands on the same HP must not
   // make a new rack, which would be saved and redrawn for nothing.
   {
@@ -2591,6 +2616,46 @@ console.log('\nEvery edit leaves the panel unsaved');
   await st().clearEverything();
   if (!st().dirty) pass('nor is clearing everything');
   else fail('clearing everything left an empty panel looking unsaved');
+}
+
+// ------------------------------------------------------ 6d. making room
+console.log('\nMaking room in a rack row');
+{
+  const { makeRoom } = await import('../src/lib/rack');
+  // In a fixed order, so equal layouts compare equal however they were built.
+  const at = (r: ReturnType<typeof makeRoom>) => (r
+    ? JSON.stringify({ at: r.at, A: r.positions.get('A'), B: r.positions.get('B'), C: r.positions.get('C') })
+    : 'null');
+  const row = [{ id: 'A', hp: 0, width: 8 }, { id: 'B', hp: 8, width: 8 }, { id: 'C', hp: 30, width: 4 }];
+
+  // Dropped over B: B and what follows step right only as far as needed.
+  const r1 = makeRoom(row, 6, 9, 84);
+  if (at(r1) === JSON.stringify({ at: 9, A: 0, B: 15, C: 30 })) pass('panels to the right step aside only as far as they must, keeping the gap after them');
+  else fail(`dropped over B: ${at(r1)}`);
+  // Over A's left half: A goes right with the rest, the dropped panel takes the rail's end.
+  const r2 = makeRoom(row, 6, 1, 84);
+  if (at(r2) === JSON.stringify({ at: 1, A: 7, B: 15, C: 30 })) pass('and a push carries on down the row when it reaches the next');
+  else fail(`dropped over A: ${at(r2)}`);
+  // In free space nothing moves.
+  const r3 = makeRoom(row, 6, 40, 84);
+  if (at(r3) === JSON.stringify({ at: 40, A: 0, B: 8, C: 30 })) pass('dropped in free space, nothing moves');
+  else fail(`dropped in free space: ${at(r3)}`);
+  // Near the end of a short row: the dropped panel shifts along so all fit.
+  const r4 = makeRoom([{ id: 'A', hp: 10, width: 8 }], 6, 15, 20);
+  if (r4 && r4.at + 6 <= 20 && (r4.positions.get('A')! + 8 <= r4.at || r4.positions.get('A')! >= r4.at + 6)) {
+    pass('at the end of the rail it moves along so everything still fits');
+  } else fail(`at the end of the rail: ${at(r4)}`);
+  if (makeRoom([{ id: 'A', hp: 0, width: 16 }], 6, 3, 20) === null) pass('a row with no room for it says so');
+  else fail('a full row made room anyway');
+
+  const { packToSide } = await import('../src/lib/rack');
+  const spread = [{ id: 'A', hp: 2, width: 8 }, { id: 'B', hp: 20, width: 4 }, { id: 'C', hp: 40, width: 10 }];
+  const right = packToSide(spread, 'B', 'right', 84);
+  if (right.get('B') === 70 && right.get('C') === 74 && !right.has('A')) pass('→ packs a panel and everything after it against the right rail, gaps closed');
+  else fail(`packed right from B: ${JSON.stringify([...right])}`);
+  const left = packToSide(spread, 'B', 'left', 84);
+  if (left.get('A') === 0 && left.get('B') === 8 && !left.has('C')) pass('← packs it and everything before it against the left rail');
+  else fail(`packed left from B: ${JSON.stringify([...left])}`);
 }
 
 // ----------------------------------------------------- 7a0. picking in lists

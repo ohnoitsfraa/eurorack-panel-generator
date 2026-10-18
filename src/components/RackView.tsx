@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { conflicts, useStore } from '@/lib/store';
-import { RACK_WIDTHS, panelSlotFill, rowHeightPx, type RackRow } from '@/lib/rack';
+import { RACK_WIDTHS, packToSide, panelSlotFill, rowHeightPx, type Rack, type RackRow } from '@/lib/rack';
 import type { Font } from 'opentype.js';
 import { panelHeightMm, panelWidthMm } from '@/lib/eurorack';
 import type { PanelDesign } from '@/lib/types';
@@ -56,6 +56,30 @@ export function RackView() {
 
   const [zoom, setZoom] = useState(1);
   const [dragging, setDragging] = useState<string | null>(null);
+  /** Where each panel stood when the current drag began, to show which ones it pushed. */
+  const [dragFrom, setDragFrom] = useState<Map<string, { row: string; hp: number }> | null>(null);
+  const packPlacements = useStore((s) => s.packPlacements);
+
+  // A panel that is moved by something else, pushed aside or packed to a
+  // side, jumps to its new place with a small hop, so the move is seen
+  // without a slide that would lag behind the drag.
+  const lastHp = useRef(new Map<string, number>());
+  useEffect(() => {
+    const seen = new Map<string, number>();
+    for (const row of rack.rows) {
+      for (const p of row.placements) {
+        seen.set(p.id, p.hp);
+        const was = lastHp.current.get(p.id);
+        if (was === undefined || was === p.hp || p.id === dragging) continue;
+        const el = document.querySelector<HTMLElement>(`[data-rack-placement="${p.id}"]`);
+        el?.animate(
+          [{ transform: 'translateY(0)' }, { transform: 'translateY(-7px)' }, { transform: 'translateY(0)' }],
+          { duration: 170, easing: 'ease-out' },
+        );
+      }
+    }
+    lastHp.current = seen;
+  }, [rack, dragging]);
 
   // A panel shown large, from its zoom button, to read its lettering
   // without opening it. Esc or a click closes it.
@@ -91,6 +115,8 @@ export function RackView() {
     placementId: string;
     widthHp: number;
     grabOffsetHp: number;
+    /** The rack as it stood when the drag began, which every step is laid out from. */
+    origin: Rack;
   } | null>(null);
 
   const byId = new Map(library.map((d) => [d.id, d]));
@@ -131,10 +157,18 @@ export function RackView() {
     const r = el.getBoundingClientRect();
     const hp = (e.clientX - r.left) / scale - d.grabOffsetHp;
     const clamped = Math.max(0, Math.min(row.widthHp - d.widthHp, Math.round(hp)));
-    movePlacement(d.placementId, row.id, clamped);
+    // The panels already there step aside to make room.
+    movePlacement(d.placementId, row.id, clamped, d.origin);
   };
 
-  const endDrag = () => { drag.current = null; setDragging(null); };
+  const endDrag = () => { drag.current = null; setDragging(null); setDragFrom(null); };
+
+  const pushedCount = dragging && dragFrom
+    ? rack.rows.reduce((n, r) => n + r.placements.filter((p) => {
+      const b = dragFrom.get(p.id);
+      return p.id !== dragging && b && b.row === r.id && b.hp !== p.hp;
+    }).length, 0)
+    : 0;
 
   const totalHp = rack.rows.reduce((n, r) => n + r.widthHp, 0);
   const usedTotal = rack.rows.reduce(
@@ -274,13 +308,29 @@ export function RackView() {
                   // zoom, and a button that overhung it would sit on its
                   // neighbour. Shrinking beats hanging over.
                   const btnPx = Math.max(16, Math.min(28, Math.floor(w) - 8));
+                  // Pushed aside by the panel being dragged: where it began, and which way it went.
+                  const began = dragFrom?.get(p.id);
+                  const pushed = dragging && dragging !== p.id && began && began.row === row.id && began.hp !== p.hp
+                    ? (p.hp > began.hp ? 'right' : 'left') : null;
+                  // What the side arrows would move, so one that would move nothing is shown off.
+                  const layout = row.placements.map((q) => ({ id: q.id, hp: q.hp, width: designWidthHp(q.designId) }));
+                  const wouldMove = (side: 'left' | 'right') =>
+                    [...packToSide(layout, p.id, side, row.widthHp)].some(([id, hp]) => layout.find((q) => q.id === id)?.hp !== hp);
+                  const lifted = dragging === p.id;
                   return (
                     <div
                       key={p.id}
-                      className={`group absolute top-0 h-full overflow-hidden rounded-sm
-                        ${bad.has(p.id) ? 'ring-2 ring-danger' : 'ring-1 ring-ink-600'}
-                        ${dragging === p.id ? 'z-10 opacity-80' : ''}`}
-                      style={{ left: p.hp * scale, width: w, cursor: 'grab' }}
+                      data-rack-placement={p.id}
+                      data-pushed={pushed ?? undefined}
+                      className={`group absolute top-0 h-full rounded-sm
+                        ${lifted ? 'z-20 shadow-[0_10px_24px_rgba(0,0,0,0.55)] ring-2 ring-accent'
+                          : pushed ? 'z-10 ring-2 ring-accent/70'
+                          : bad.has(p.id) ? 'ring-2 ring-danger' : 'ring-1 ring-ink-600'}`}
+                      style={{
+                        left: p.hp * scale, width: w, cursor: lifted ? 'grabbing' : 'grab',
+                        // Lifted off the rail while it is carried.
+                        transform: lifted ? 'translateY(-4px) scale(1.02)' : undefined,
+                      }}
                       onPointerDown={(e) => {
                         e.preventDefault();
                         if (isSecondPress(p.id, e)) {
@@ -296,20 +346,35 @@ export function RackView() {
                           // Keep the grab point under the cursor rather than
                           // snapping the panel's left edge to it.
                           grabOffsetHp: (e.clientX - r.left) / scale,
+                          origin: rack,
                         };
                         setDragging(p.id);
+                        setDragFrom(new Map(rack.rows.flatMap((rr) => rr.placements.map((q) => [q.id, { row: rr.id, hp: q.hp }] as const))));
                       }}
                       title={`${saved.name} · ${saved.design.hp} HP · double-click to edit`}
                       data-rack-panel={saved.name}
                     >
-                      <PanelThumb
-                        design={saved.design}
-                        fonts={fonts}
-                        className="pointer-events-none h-full"
-                        // The panel is a touch narrower than its slot; the
-                        // remainder is the rack clearance, drawn as the seam.
-                        style={{ width: `${panelSlotFill(saved.design.hp) * 100}%` }}
-                      />
+                      <div className="h-full overflow-hidden rounded-sm">
+                        <PanelThumb
+                          design={saved.design}
+                          fonts={fonts}
+                          className="pointer-events-none h-full"
+                          // The panel is a touch narrower than its slot; the
+                          // remainder is the rack clearance, drawn as the seam.
+                          style={{ width: `${panelSlotFill(saved.design.hp) * 100}%` }}
+                        />
+                      </div>
+                      {pushed && (
+                        // Which way it was pushed, while the drag that pushed it lasts.
+                        <div className="pointer-events-none absolute inset-0 rounded-sm bg-accent/15 outline-dashed outline-1 outline-accent">
+                          <span
+                            className="absolute top-1/2 -translate-y-1/2 rounded bg-accent px-1 text-[12px] font-semibold leading-snug text-ink-950"
+                            style={pushed === 'right' ? { left: 2 } : { right: 2 }}
+                          >
+                            {pushed === 'right' ? '→' : '←'}
+                          </span>
+                        </div>
+                      )}
                       <div className="pointer-events-none absolute inset-x-0 bottom-0 hidden bg-ink-950/80 px-1 py-0.5
                                       text-[11px] leading-tight text-ink-100 group-hover:block">
                         {saved.name}
@@ -319,6 +384,27 @@ export function RackView() {
                           enough. The gap between them is deliberate — one
                           opens the design and the last throws it out of the
                           rack, and they are a pointer-width apart. */}
+                      {/* Push this panel and everything beyond it over to a
+                          side. On the edges, halfway down, pointing the way
+                          things will go; hidden while anything is carried. */}
+                      {!dragging && (['left', 'right'] as const).map((side) => (
+                        <div
+                          key={side}
+                          className="absolute top-1/2 hidden -translate-y-1/2 group-hover:block"
+                          style={side === 'left' ? { left: 2 } : { right: 2 }}
+                        >
+                          <PanelAction
+                            size={btnPx}
+                            onClick={() => packPlacements(p.id, side)}
+                            title={side === 'left'
+                              ? `Move ${saved.name} and everything left of it over to the left`
+                              : `Move ${saved.name} and everything right of it over to the right`}
+                            disabled={!wouldMove(side)}
+                          >
+                            {side === 'left' ? <path d="M10 3.5L5.5 8l4.5 4.5" /> : <path d="M6 3.5L10.5 8 6 12.5" />}
+                          </PanelAction>
+                        </div>
+                      ))}
                       <div
                         className="absolute right-1 top-1 hidden flex-col group-hover:flex"
                         style={{ gap: Math.max(2, Math.round(btnPx * 0.14)) }}
@@ -356,9 +442,10 @@ export function RackView() {
         })}
       </div>
 
-      <p className="mt-4 text-[12.5px] text-ink-400">
-        Drag panels to move them between and within rows; they snap to whole HP.
-        Add panels from the library on the right.
+      <p className="mt-4 text-[12.5px] text-ink-400" data-rack-hint="">
+        {dragging && pushedCount > 0
+          ? `Making room: ${pushedCount} panel${pushedCount === 1 ? '' : 's'} moved aside. Let go to drop it here.`
+          : 'Drag panels to move them between and within rows; panels in the way move aside. Hover a panel for arrows that push it and everything beyond it to one side.'}
       </p>
 
       {peek && byId.get(peek) && (
@@ -479,12 +566,13 @@ function RowWidth({ row, onChange }: { row: RackRow; onChange: (hp: number) => v
  * what you aim at, the glyph only has to be recognisable.
  */
 function PanelAction({
-  size, onClick, title, className = '', children,
+  size, onClick, title, className = '', disabled, children,
 }: {
   size: number;
   onClick: () => void;
   title: string;
   className?: string;
+  disabled?: boolean;
   children: React.ReactNode;
 }) {
   return (
@@ -494,10 +582,11 @@ function PanelAction({
       // otherwise steal the click.
       onPointerDown={(e) => e.stopPropagation()}
       onClick={onClick}
+      disabled={disabled}
       title={title}
       aria-label={title}
       style={{ width: size, height: size }}
-      className={`rack-action flex items-center justify-center rounded transition-colors ${className}`}
+      className={`rack-action flex items-center justify-center rounded transition-colors disabled:opacity-35 ${className}`}
     >
       <svg
         viewBox="0 0 16 16"

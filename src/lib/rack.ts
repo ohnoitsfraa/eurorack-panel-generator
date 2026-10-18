@@ -167,3 +167,78 @@ export function saveRack(rack: Rack): void {
     // Not worth interrupting the user over; the rack is rebuildable.
   }
 }
+
+/**
+ * Make room in a row for a panel dropped at `at`.
+ *
+ * The others keep where they stood when the drag began unless the dropped
+ * panel would overlap them; then they step aside, those whose middle is left
+ * of its middle to the left and the rest to the right, each only as far as
+ * it has to and pushing on the next only if it reaches it, so the gaps
+ * between them survive. Worked from where they began rather than where the
+ * last step left them, so dragging on past a panel lets it slide back.
+ *
+ * If one side runs out of rail, the dropped panel moves along until both
+ * sides fit. Null when the row is simply too full for it.
+ */
+export function makeRoom(
+  others: Array<{ id: string; hp: number; width: number }>,
+  width: number,
+  at: number,
+  rowWidth: number,
+): { at: number; positions: Map<string, number> } | null {
+  const total = width + others.reduce((n, o) => n + o.width, 0);
+  if (total > rowWidth) return null;
+  let start = Math.max(0, Math.min(rowWidth - width, Math.round(at)));
+  const mid = start + width / 2;
+  // Which side each goes is decided once, by where it began, so a nudge of
+  // the dropped panel below cannot flip a neighbour to the other side.
+  const left = others.filter((o) => o.hp + o.width / 2 < mid).sort((a, b) => b.hp - a.hp);
+  const right = others.filter((o) => o.hp + o.width / 2 >= mid).sort((a, b) => a.hp - b.hp);
+  const leftWidth = left.reduce((n, o) => n + o.width, 0);
+  const rightWidth = right.reduce((n, o) => n + o.width, 0);
+  // Keep the dropped panel where both sides have the rail they need.
+  start = Math.max(leftWidth, Math.min(rowWidth - rightWidth - width, start));
+
+  const positions = new Map<string, number>();
+  let edge = start;
+  for (const o of left) {
+    const hp = Math.min(o.hp, edge - o.width);
+    positions.set(o.id, hp);
+    edge = hp;
+  }
+  edge = start + width;
+  for (const o of right) {
+    const hp = Math.max(o.hp, edge);
+    positions.set(o.id, hp);
+    edge = hp + o.width;
+  }
+  return { at: start, positions };
+}
+
+/**
+ * Push a panel, and every panel beyond it on that side, over against the
+ * rail on that side: packed side by side, in the order they stand, with the
+ * gaps between them closed. Frees the rest of the row in one go, for a panel
+ * that has to go in somewhere the gaps are scattered.
+ */
+export function packToSide(
+  placements: Array<{ id: string; hp: number; width: number }>,
+  fromId: string,
+  side: 'left' | 'right',
+  rowWidth: number,
+): Map<string, number> {
+  const from = placements.find((p) => p.id === fromId);
+  const out = new Map<string, number>();
+  if (!from) return out;
+  if (side === 'right') {
+    const group = placements.filter((p) => p.hp >= from.hp).sort((a, b) => b.hp - a.hp);
+    let edge = rowWidth;
+    for (const p of group) { edge -= p.width; out.set(p.id, edge); }
+  } else {
+    const group = placements.filter((p) => p.hp <= from.hp).sort((a, b) => a.hp - b.hp);
+    let edge = 0;
+    for (const p of group) { out.set(p.id, edge); edge += p.width; }
+  }
+  return out;
+}
