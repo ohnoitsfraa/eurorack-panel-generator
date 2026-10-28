@@ -652,9 +652,11 @@ interface Box { x: number; y: number; w: number; h: number }
 /**
  * Pick the part of a picture to trace.
  *
- * Drag across the preview to draw a box; drag again to draw another. Edge
- * handles would be the fuller interaction, but redrawing is a single gesture
- * and this is a step people pass through once per image rather than live in.
+ * Drag across the preview to draw a box, then drag its edges, its corners or
+ * the box itself to adjust it. A drag can start in the margin around the
+ * picture and snaps to the border when it comes close, because art that runs
+ * right to the edge is the common case and a pixel short of the edge would
+ * shave a sliver off it.
  *
  * Held as fractions, because the preview is a couple of hundred pixels wide
  * and the file behind it may be four thousand.
@@ -668,17 +670,147 @@ function CropPicker({
   /** A panel-coloured backdrop, for drawings that are dark on nothing. */
   light?: boolean;
 }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const from = useRef<{ x: number; y: number } | null>(null);
-  const [aspect, setAspect] = useState(1.5);
+  const [big, setBig] = useState(false);
 
+  useEffect(() => {
+    if (!big) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setBig(false); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [big]);
+
+  const hint = crop
+    ? 'Only the boxed part is traced. Drag its edges or the box to adjust it, or drag outside it for a new one.'
+    : 'Drag across the picture to trace only part of it. Start outside it to take it right to the edge.';
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="label text-[12px] text-ink-400">Crop</span>
+        <div className="flex gap-3">
+          {crop && (
+            <button
+              type="button"
+              onClick={() => onChange(null)}
+              className="text-[12.5px] text-ink-400 hover:text-ink-100"
+            >
+              Use the whole image
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => setBig(true)}
+            className="text-[12.5px] text-ink-400 hover:text-ink-100"
+          >
+            Enlarge
+          </button>
+        </div>
+      </div>
+      <CropArea src={src} crop={crop} onChange={onChange} light={light} height="16rem" />
+      <p className="text-[12.5px] leading-relaxed text-ink-400">{hint}</p>
+
+      {big && (
+        <div
+          className="fixed inset-0 z-50 grid place-items-center bg-ink-950/70 p-6 backdrop-blur-sm"
+          onClick={() => setBig(false)}
+          role="presentation"
+        >
+          <div
+            role="dialog"
+            aria-label="Crop"
+            onClick={(e) => e.stopPropagation()}
+            className="max-h-full w-full max-w-6xl space-y-3 overflow-y-auto rounded-xl border border-ink-700
+                       bg-ink-900 p-5 shadow-2xl"
+          >
+            <div className="flex items-baseline justify-between gap-4">
+              <h2 className="label text-[13.5px] text-ink-300">Crop</h2>
+              <div className="flex gap-4">
+                {crop && (
+                  <button
+                    type="button"
+                    onClick={() => onChange(null)}
+                    className="text-[12.5px] text-ink-400 hover:text-ink-100"
+                  >
+                    Use the whole image
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setBig(false)}
+                  className="text-[12.5px] text-ink-400 hover:text-ink-100"
+                >
+                  Done
+                </button>
+              </div>
+            </div>
+            <CropArea src={src} crop={crop} onChange={onChange} light={light} height="calc(100vh - 12rem)" />
+            <p className="text-[12.5px] leading-relaxed text-ink-400">{hint}</p>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Which edges of the box a drag moves; all four is the whole box. */
+interface Grab {
+  l: boolean; r: boolean; t: boolean; b: boolean;
+  from: { x: number; y: number };
+  start: Box;
+}
+
+/** How near, in screen pixels, counts as on an edge or at the border. */
+const GRAB_PX = 8;
+
+function CropArea({
+  src, crop, onChange, light, height,
+}: {
+  src: string;
+  crop: Box | null;
+  onChange: (b: Box | null) => void;
+  light?: boolean;
+  /** The tallest the picture may be shown, as a CSS length. */
+  height: string;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const grab = useRef<Grab | null>(null);
+  const [aspect, setAspect] = useState(1.5);
+  const [cursor, setCursor] = useState('crosshair');
+
+  /** Where the pointer is over the picture, unclamped, and the grab tolerance there. */
   const place = (e: React.PointerEvent) => {
     const box = ref.current?.getBoundingClientRect();
-    if (!box) return null;
+    if (!box || !box.width || !box.height) return null;
     return {
-      x: Math.max(0, Math.min(1, (e.clientX - box.left) / box.width)),
-      y: Math.max(0, Math.min(1, (e.clientY - box.top) / box.height)),
+      x: (e.clientX - box.left) / box.width,
+      y: (e.clientY - box.top) / box.height,
+      tx: GRAB_PX / box.width,
+      ty: GRAB_PX / box.height,
     };
+  };
+
+  // Close to the border counts as on it, and past it is held at it.
+  const snap = (v: number, tol: number) => (v < tol ? 0 : v > 1 - tol ? 1 : v);
+
+  /** Which edges of the current box are under the pointer, if any. */
+  const hit = (p: { x: number; y: number; tx: number; ty: number }) => {
+    if (!crop) return null;
+    const x0 = crop.x, x1 = crop.x + crop.w, y0 = crop.y, y1 = crop.y + crop.h;
+    const inX = p.x > x0 - p.tx && p.x < x1 + p.tx;
+    const inY = p.y > y0 - p.ty && p.y < y1 + p.ty;
+    if (!inX || !inY) return null;
+    const l = Math.abs(p.x - x0) < p.tx, r = !l && Math.abs(p.x - x1) < p.tx;
+    const t = Math.abs(p.y - y0) < p.ty, b = !t && Math.abs(p.y - y1) < p.ty;
+    if (l || r || t || b) return { l, r, t, b };
+    return { l: true, r: true, t: true, b: true };
+  };
+
+  const cursorFor = (h: ReturnType<typeof hit>) => {
+    if (!h) return 'crosshair';
+    if (h.l && h.r && h.t && h.b) return 'move';
+    if ((h.l && h.t) || (h.r && h.b)) return 'nwse-resize';
+    if ((h.r && h.t) || (h.l && h.b)) return 'nesw-resize';
+    return h.l || h.r ? 'ew-resize' : 'ns-resize';
   };
 
   const onDown = (e: React.PointerEvent) => {
@@ -686,24 +818,46 @@ function CropPicker({
     if (!p) return;
     e.preventDefault();
     (e.currentTarget as Element).setPointerCapture?.(e.pointerId);
-    from.current = p;
+    const h = hit(p);
+    if (h && crop) {
+      grab.current = { ...h, from: { x: p.x, y: p.y }, start: crop };
+      return;
+    }
+    // A new box, from the corner it starts at; that corner is its fixed one.
+    const x = snap(p.x, p.tx), y = snap(p.y, p.ty);
+    grab.current = { l: false, r: true, t: false, b: true, from: { x, y }, start: { x, y, w: 0, h: 0 } };
     onChange(null);
   };
 
   const onMove = (e: React.PointerEvent) => {
-    const a = from.current;
-    const p = a && place(e);
-    if (!a || !p) return;
+    const p = place(e);
+    if (!p) return;
+    const g = grab.current;
+    if (!g) { setCursor(cursorFor(hit(p))); return; }
+    const s = g.start;
+    if (g.l && g.r && g.t && g.b) {
+      // The whole box, kept inside the picture and drawn to the border near it.
+      let x = s.x + p.x - g.from.x, y = s.y + p.y - g.from.y;
+      x = Math.max(0, Math.min(1 - s.w, x));
+      y = Math.max(0, Math.min(1 - s.h, y));
+      if (x < p.tx) x = 0; else if (x + s.w > 1 - p.tx) x = 1 - s.w;
+      if (y < p.ty) y = 0; else if (y + s.h > 1 - p.ty) y = 1 - s.h;
+      onChange({ x, y, w: s.w, h: s.h });
+      return;
+    }
+    const px = snap(p.x, p.tx), py = snap(p.y, p.ty);
+    const x0 = g.l ? px : s.x, x1 = g.r ? px : s.x + s.w;
+    const y0 = g.t ? py : s.y, y1 = g.b ? py : s.y + s.h;
     onChange({
-      x: Math.min(a.x, p.x),
-      y: Math.min(a.y, p.y),
-      w: Math.abs(p.x - a.x),
-      h: Math.abs(p.y - a.y),
+      x: Math.min(x0, x1),
+      y: Math.min(y0, y1),
+      w: Math.abs(x1 - x0),
+      h: Math.abs(y1 - y0),
     });
   };
 
   const onUp = () => {
-    from.current = null;
+    grab.current = null;
     // A tap rather than a drag means the whole picture, not a sliver of it.
     if (crop && (crop.w < 0.02 || crop.h < 0.02)) onChange(null);
   };
@@ -711,34 +865,28 @@ function CropPicker({
   const pct = (v: number) => `${v * 100}%`;
 
   return (
-    <div className="space-y-1.5">
-      <div className="flex items-baseline justify-between gap-2">
-        <span className="label text-[12px] text-ink-400">Crop</span>
-        {crop && (
-          <button
-            type="button"
-            onClick={() => onChange(null)}
-            className="text-[12.5px] text-ink-400 hover:text-ink-100"
-          >
-            Use the whole image
-          </button>
-        )}
-      </div>
+    // The margin around the picture takes the pointer too, so a drag can start
+    // beyond the edge and the box still lands exactly on it.
+    <div
+      onPointerDown={onDown}
+      onPointerMove={onMove}
+      onPointerUp={onUp}
+      onPointerCancel={onUp}
+      className="select-none p-3"
+      style={{ cursor, touchAction: 'none' }}
+    >
       <div
         ref={ref}
-        onPointerDown={onDown}
-        onPointerMove={onMove}
-        onPointerUp={onUp}
-        onPointerCancel={onUp}
         // Exactly the picture's size, so the box is a fraction of the picture
         // and not of letterboxing around it.
-        className={`relative mx-auto w-fit max-w-full select-none overflow-hidden rounded-md border border-ink-700
+        className={`relative mx-auto overflow-hidden rounded-md border border-ink-700
           ${light ? 'bg-[#e8e6df]' : 'bg-ink-950'}`}
-        style={{ cursor: 'crosshair', touchAction: 'none' }}
+        // As wide as there is room for, up to the given height, in proportion,
+        // however small or large the picture is in its own pixels. Sized here
+        // rather than by the picture, which would never grow past its pixels.
+        style={{ width: `min(100%, calc(${height} * ${aspect}))` }}
         data-crop-picker=""
       >
-        {/* As wide as there is room for, up to 12rem tall, in proportion,
-            however small or large the picture is in its own pixels. */}
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={src} alt="" draggable={false}
@@ -746,8 +894,7 @@ function CropPicker({
             const im = e.currentTarget;
             if (im.naturalWidth && im.naturalHeight) setAspect(im.naturalWidth / im.naturalHeight);
           }}
-          className="block h-auto max-w-full"
-          style={{ width: `min(100%, ${12 * aspect}rem)` }}
+          className="block h-auto w-full"
         />
         {crop && (
           <>
@@ -775,15 +922,19 @@ function CropPicker({
             <div
               className="pointer-events-none absolute border border-accent"
               style={{ left: pct(crop.x), top: pct(crop.y), width: pct(crop.w), height: pct(crop.h) }}
-            />
+            >
+              {/* Corner handles, so it reads as something that can be taken hold of. */}
+              {[[0, 0], [1, 0], [0, 1], [1, 1]].map(([cx, cy]) => (
+                <span
+                  key={`${cx}${cy}`}
+                  className="absolute h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-[1px] bg-accent"
+                  style={{ left: pct(cx), top: pct(cy) }}
+                />
+              ))}
+            </div>
           </>
         )}
       </div>
-      <p className="text-[12.5px] leading-relaxed text-ink-400">
-        {crop
-          ? 'Only the boxed part is traced. Drag again to draw a different box.'
-          : 'Drag across the picture to trace only part of it.'}
-      </p>
     </div>
   );
 }

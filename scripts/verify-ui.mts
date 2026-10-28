@@ -1349,6 +1349,24 @@ async function open(colorScheme: 'light' | 'dark' = 'dark') {
     pass('a crop over half the SVG brings in just that half, square, with its hole');
   } else fail(`cropped SVG: ${(hd.match(/M/g) ?? []).length} rings, ${hb ? (hb.width / hb.height).toFixed(2) : '?'} to 1`);
 
+  // Art that runs to the border: a drag started outside the picture lands on
+  // its edge, and the box's own edge can then be pulled out past the other one.
+  const frame = picker.locator('.border-accent');
+  await page.mouse.move(pb.x - 8, pb.y - 8);
+  await page.mouse.down();
+  await page.mouse.move(pb.x + pb.width * 0.4, pb.y + pb.height * 0.6, { steps: 8 });
+  await page.mouse.up();
+  const drawn = await frame.evaluate((el) => [(el as HTMLElement).style.left, (el as HTMLElement).style.top]);
+  if (drawn[0] === '0%' && drawn[1] === '0%') pass('a crop started outside the picture begins exactly at its corner');
+  else fail(`a crop started outside the picture begins at ${drawn.join(', ')}`);
+  await page.mouse.move(pb.x + pb.width * 0.4, pb.y + pb.height * 0.3);
+  await page.mouse.down();
+  await page.mouse.move(pb.x + pb.width + 10, pb.y + pb.height * 0.3, { steps: 8 });
+  await page.mouse.up();
+  const pulled = await frame.evaluate((el) => (el as HTMLElement).style.width);
+  if (pulled === '100%') pass('and pulling its edge past the picture takes it right to the far edge');
+  else fail(`pulling the crop's edge out left it ${pulled} wide`);
+
   // Tracing is still there for an SVG that is really a picture.
   await page.getByRole('button', { name: 'Trace it as a picture instead', exact: true }).click();
   if (await page.getByRole('button', { name: /Trace to relief/ }).count() === 1) pass('and it can still be traced as a picture instead');
