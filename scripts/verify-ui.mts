@@ -643,6 +643,30 @@ async function open(colorScheme: 'light' | 'dark' = 'dark') {
   if ((await outlines()) === 1) pass('and only what is boxed gets traced');
   else fail(`the cropped half traced to ${await outlines()} outlines, expected 1`);
 
+  // Redo the crop on the placed artwork: back to the whole picture, with the
+  // shape that was already in the box left exactly where it was.
+  const artBox = () => page.evaluate(() => {
+    const b = document.querySelector('[data-decor="art"]')!.getBoundingClientRect();
+    return { x: b.x, y: b.y, w: b.width };
+  });
+  const before = await artBox();
+  await page.getByRole('button', { name: 'Redo the crop or trace' }).click();
+  await page.waitForTimeout(600);
+  const redo = page.locator('[data-art-redo]');
+  if (await redo.locator('img').count() > 0) pass('a traced artwork offers its own picture to crop again');
+  else fail('redoing the crop did not show the picture');
+  await redo.getByRole('button', { name: 'Use the whole image' }).first().click();
+  await redo.getByRole('button', { name: 'Apply' }).click();
+  await page.waitForTimeout(3000);
+  const after = await artBox();
+  if ((await outlines()) === 2) pass('and redoing it on the whole picture brings the other shape back');
+  else fail(`redoing the crop traced ${await outlines()} outlines, expected 2`);
+  if (Math.abs(after.x - before.x) < 2 && Math.abs(after.y - before.y) < 2 && after.w > before.w * 1.5) {
+    pass('with what was already in the box left where it was, at its size');
+  } else {
+    fail(`redoing the crop moved the kept shape: ${JSON.stringify(before)} → ${JSON.stringify(after)}`);
+  }
+
   if (problems.length === 0) pass('no uncaught errors while tracing');
   else fail(`while tracing: ${[...new Set(problems)].join(' | ')}`);
   await page.close();

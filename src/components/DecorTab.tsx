@@ -2,14 +2,16 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { maxEngraveDepthMm, panelHeightMm, panelWidthMm } from '@/lib/eurorack';
-import { uid, type ArtElement, type ReliefMode, type ShapeElement, type TextElement } from '@/lib/types';
+import { uid, type ArtElement, type ArtSource, type Pt, type ReliefMode, type ShapeElement, type TextElement } from '@/lib/types';
 import { newElementAt, useStore } from '@/lib/store';
 import { traceArtwork } from '@/lib/model/trace';
 import { FONT_FAMILIES, nearestWeight, weightsFor } from '@/lib/fonts';
 import { Button, ColorInput, Field, NumberInput, ROTATION_DETENTS, Section, Select, Slider, shared } from './ui';
 import { IconPicker } from './IconPicker';
 import { iconLabel } from '@/lib/icons';
-import { combineSvgShapes, fitRings, isSvgFile, readSvg } from '@/lib/svgImport';
+import { combineSvgShapes, isSvgFile, readSvg } from '@/lib/svgImport';
+import { bbox } from '@/lib/geom/poly';
+import { loadImage, putImage } from '@/lib/storage';
 import { pickInList } from '@/lib/listSelect';
 
 const RELIEF_OPTIONS: Array<{ value: ReliefMode; label: string }> = [
@@ -220,9 +222,10 @@ function DecorEditor({ id }: { id: string }) {
           <p className="text-[12.5px] leading-relaxed text-ink-400">
             {el.icon
               ? <>Icon: {iconLabel(el.icon)}, from {el.icon.split(':')[0]} via Iconify.</>
-              : <>Traced artwork: {el.rings.length} outline{el.rings.length === 1 ? '' : 's'}. Re-trace
-                from the Add section to change the threshold.</>}
+              : <>Traced artwork: {el.rings.length} outline{el.rings.length === 1 ? '' : 's'}.
+                {!el.source && ' Made before pictures were kept, so to crop it, trace the picture again from the Add section.'}</>}
           </p>
+          {!el.icon && el.source && <ArtRedo key={el.id} el={el} />}
           <Field label="Size" hint={`${Math.round(el.scale * 100)}%`}>
             <Slider min={5} max={400} step={1} value={Math.round(el.scale * 100)}
                     onChange={(pct) => update(id, { scale: pct / 100 })} />
@@ -503,88 +506,37 @@ function ArtworkTracer() {
   const preview = useMemo(() => (file ? URL.createObjectURL(file) : null), [file]);
   useEffect(() => () => { if (preview) URL.revokeObjectURL(preview); }, [preview]);
 
-  const run = async () => {
+  const add = async () => {
     if (!file) return;
     setBusy(true);
     try {
-      const rings = await traceArtwork(file, {
-        threshold,
-        invert,
-        crop: crop ?? undefined,
-        simplifyPx: detail,
-        targetWidthMm: panelWidthMm(design.hp) * 0.8,
-        panelWidthMm: panelWidthMm(design.hp),
-        panelHeightMm: panelHeightMm(design.format),
-      });
-      if (!rings.length) {
-        setError('Nothing traced — try moving the threshold or inverting.');
-        return;
-      }
-      const pts = rings.flat();
-      const xs = pts.map((p) => p.x);
-      const ys = pts.map((p) => p.y);
-      const cx = (Math.min(...xs) + Math.max(...xs)) / 2;
-      const cy = (Math.min(...ys) + Math.max(...ys)) / 2;
-      const el: ArtElement = {
-        id: uid('a'),
-        type: 'art',
-        // Stored about its own centre, so scaling and turning it do not have
-        // to rewrite thousands of traced points.
-        rings: rings.map((ring) => ring.map((p) => ({ x: p.x - cx, y: p.y - cy }))),
-        x: cx, y: cy, scale: 1, rotation: 0,
-        // Raised by default, like a new label.
-        color: '#f2f2f0', mode: 'raised', reliefMm: 0.6,
+      const settings: SourceSettings = {
+        kind: svg && !traceSvg ? 'svg' : 'trace', crop: crop ?? undefined, threshold, invert, detail,
       };
-      addDecor(el);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not trace that image');
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const addOutlines = async () => {
-    if (!file) return;
-    setBusy(true);
-    try {
-      // Laid out at the preview's own size, so a crop drawn over the
-      // preview lands on the same part of the drawing.
-      const img = new Image();
-      img.src = preview!;
-      await img.decode();
-      const size = { width: img.naturalWidth || 300, height: img.naturalHeight || 150 };
-      const { shapes, skipped } = readSvg(await file.text(), size);
+      const out = await outlinesOf(file, settings);
+      if ('error' in out) { setError(out.error); return; }
       const W = panelWidthMm(design.hp), H = panelHeightMm(design.format);
-      const clip = crop
-        ? { x: crop.x * size.width, y: crop.y * size.height, w: crop.w * size.width, h: crop.h * size.height }
-        : undefined;
-      const rings = fitRings(combineSvgShapes(shapes, clip), W * 0.8, H * 0.8);
-      const left = [
-        skipped.strokes ? `${skipped.strokes} stroked line${skipped.strokes === 1 ? '' : 's'}` : '',
-        skipped.text ? `${skipped.text} piece${skipped.text === 1 ? '' : 's'} of live text` : '',
-        skipped.other ? `${skipped.other} linked or embedded part${skipped.other === 1 ? '' : 's'}` : '',
-      ].filter(Boolean).join(', ');
-      const fix = 'convert strokes and text to outlines in your editor';
-      if (!rings.length) {
-        setError(crop
-          ? 'Nothing filled inside that crop — draw the box over part of the drawing.'
-          : left
-          ? `Nothing filled to use in that SVG — it has ${left}. Try: ${fix}.`
-          : 'Nothing filled to use in that SVG.');
-        return;
-      }
-      const at = newElementAt({ x: W / 2, y: H / 2 });
+      const b = bbox(out.rings);
+      const w = Math.max(1e-9, b.x1 - b.x0), h = Math.max(1e-9, b.y1 - b.y0);
+      // A trace across most of the panel's width; an SVG fitted inside it.
+      const mmPerPx = settings.kind === 'svg' ? Math.min((W * 0.8) / w, (H * 0.8) / h) : (W * 0.8) / w;
+      const { rings, at } = centred(out.rings, mmPerPx);
+      const pos = settings.kind === 'svg' ? newElementAt({ x: W / 2, y: H / 2 }) : { x: W / 2, y: H / 2 };
+      // Without the picture kept there is nothing to crop again later, but
+      // the artwork itself is still worth having.
+      const imageId = await putImage(file).catch(() => null);
       addDecor({
         id: uid('a'),
         type: 'art',
         rings,
-        x: at.x, y: at.y, scale: 1, rotation: 0,
+        x: pos.x, y: pos.y, scale: 1, rotation: 0,
         // Raised by default, like a new label.
         color: '#f2f2f0', mode: 'raised', reliefMm: 0.6,
+        source: imageId ? { ...settings, imageId, at, mmPerPx } : undefined,
       });
-      if (left) setError(`Added the filled shapes. Left out ${left}: ${fix}.`);
+      if (out.note) setError(out.note);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not read that SVG');
+      setError(e instanceof Error ? e.message : 'Could not use that image');
     } finally {
       setBusy(false);
     }
@@ -605,7 +557,7 @@ function ArtworkTracer() {
       {svg && preview && !traceSvg && (
         <>
           <CropPicker src={preview} crop={crop} onChange={setCrop} light />
-          <Button variant="primary" onClick={() => void addOutlines()} disabled={busy} className="w-full">
+          <Button variant="primary" onClick={() => void add()} disabled={busy} className="w-full">
             {busy ? 'Reading…' : 'Use its outlines'}
           </Button>
           <p className="text-[12.5px] leading-relaxed text-ink-400">
@@ -623,17 +575,11 @@ function ArtworkTracer() {
       {file && preview && (!svg || traceSvg) && (
         <>
           <CropPicker src={preview} crop={crop} onChange={setCrop} />
-          <Field label="Threshold" hint={String(threshold)}>
-            <Slider min={8} max={248} step={1} value={threshold} onChange={setThreshold} />
-          </Field>
-          <Field label="Detail" hint={detail <= 0.3 ? 'fine' : detail >= 1.4 ? 'coarse' : 'medium'}>
-            <Slider min={0.1} max={2.5} step={0.1} value={detail} onChange={setDetail} />
-          </Field>
-          <label className="flex items-center gap-2 text-[12.5px] text-ink-300">
-            <input type="checkbox" checked={invert} onChange={(e) => setInvert(e.target.checked)} />
-            Invert (trace the light areas instead)
-          </label>
-          <Button variant="primary" onClick={() => void run()} disabled={busy} className="w-full">
+          <TraceControls
+            threshold={threshold} detail={detail} invert={invert}
+            onThreshold={setThreshold} onDetail={setDetail} onInvert={setInvert}
+          />
+          <Button variant="primary" onClick={() => void add()} disabled={busy} className="w-full">
             {busy ? 'Tracing…' : 'Trace to relief'}
           </Button>
           <p className="text-[12.5px] leading-relaxed text-ink-400">
@@ -642,6 +588,194 @@ function ArtworkTracer() {
           </p>
         </>
       )}
+    </div>
+  );
+}
+
+function TraceControls({
+  threshold, detail, invert, onThreshold, onDetail, onInvert,
+}: {
+  threshold: number; detail: number; invert: boolean;
+  onThreshold: (v: number) => void; onDetail: (v: number) => void; onInvert: (v: boolean) => void;
+}) {
+  return (
+    <>
+      <Field label="Threshold" hint={String(threshold)}>
+        <Slider min={8} max={248} step={1} value={threshold} onChange={onThreshold} />
+      </Field>
+      <Field label="Detail" hint={detail <= 0.3 ? 'fine' : detail >= 1.4 ? 'coarse' : 'medium'}>
+        <Slider min={0.1} max={2.5} step={0.1} value={detail} onChange={onDetail} />
+      </Field>
+      <label className="flex items-center gap-2 text-[12.5px] text-ink-300">
+        <input type="checkbox" checked={invert} onChange={(e) => onInvert(e.target.checked)} />
+        Invert (trace the light areas instead)
+      </label>
+    </>
+  );
+}
+
+/** How a picture is turned into outlines, short of where they end up. */
+type SourceSettings = Omit<ArtSource, 'imageId' | 'at' | 'mmPerPx'>;
+
+/**
+ * A picture's outlines, in its own pixels.
+ *
+ * The same grid whatever the crop, so a second pass over the picture can be
+ * laid exactly over the first. `note` is something worth telling the user
+ * even though outlines were found.
+ */
+async function outlinesOf(file: Blob, s: SourceSettings): Promise<{ rings: Pt[][]; note?: string } | { error: string }> {
+  if (s.kind === 'trace') {
+    const rings = await traceArtwork(file, {
+      threshold: s.threshold, invert: s.invert, crop: s.crop, simplifyPx: s.detail,
+    });
+    return rings.length ? { rings } : { error: 'Nothing traced — try moving the threshold or inverting.' };
+  }
+  // Laid out at the picture's own size, which is the size the crop preview
+  // shows it at, so a box drawn over the preview lands on the same part.
+  const url = URL.createObjectURL(file);
+  let size: { width: number; height: number };
+  try {
+    const img = new Image();
+    img.src = url;
+    await img.decode();
+    size = { width: img.naturalWidth || 300, height: img.naturalHeight || 150 };
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+  const { shapes, skipped } = readSvg(await file.text(), size);
+  const clip = s.crop
+    ? { x: s.crop.x * size.width, y: s.crop.y * size.height, w: s.crop.w * size.width, h: s.crop.h * size.height }
+    : undefined;
+  const rings = combineSvgShapes(shapes, clip);
+  const left = [
+    skipped.strokes ? `${skipped.strokes} stroked line${skipped.strokes === 1 ? '' : 's'}` : '',
+    skipped.text ? `${skipped.text} piece${skipped.text === 1 ? '' : 's'} of live text` : '',
+    skipped.other ? `${skipped.other} linked or embedded part${skipped.other === 1 ? '' : 's'}` : '',
+  ].filter(Boolean).join(', ');
+  const fix = 'convert strokes and text to outlines in your editor';
+  if (!rings.length) {
+    return {
+      error: s.crop
+        ? 'Nothing filled inside that crop — draw the box over part of the drawing.'
+        : left
+        ? `Nothing filled to use in that SVG — it has ${left}. Try: ${fix}.`
+        : 'Nothing filled to use in that SVG.',
+    };
+  }
+  return { rings, note: left ? `Used the filled shapes. Left out ${left}: ${fix}.` : undefined };
+}
+
+/**
+ * Outlines in picture pixels as an element's own rings: in millimetres and
+ * centred on their middle, which is `at` in the picture.
+ */
+function centred(px: Pt[][], mmPerPx: number): { rings: Pt[][]; at: Pt } {
+  const b = bbox(px);
+  const at = { x: (b.x0 + b.x1) / 2, y: (b.y0 + b.y1) / 2 };
+  return { rings: px.map((r) => r.map((p) => ({ x: (p.x - at.x) * mmPerPx, y: (p.y - at.y) * mmPerPx }))), at };
+}
+
+/**
+ * Crop or trace a placed artwork again, from the picture it was made from.
+ *
+ * What stays in the box stays where it is on the panel and as large, however
+ * the artwork has since been moved, scaled or turned, so redoing a crop reads
+ * as trimming the artwork rather than as replacing it with a new one.
+ */
+function ArtRedo({ el }: { el: ArtElement }) {
+  const update = useStore((s) => s.updateDecor);
+  const setError = useStore((s) => s.setError);
+  const source = el.source!;
+  const [file, setFile] = useState<Blob | null | 'missing'>(null);
+  const [open, setOpen] = useState(false);
+  const [crop, setCrop] = useState<Box | null>(source.crop ?? null);
+  const [threshold, setThreshold] = useState(source.threshold);
+  const [invert, setInvert] = useState(source.invert);
+  const [detail, setDetail] = useState(source.detail);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (!open || file) return;
+    let live = true;
+    void loadImage(source.imageId).then((b) => { if (live) setFile(b ?? 'missing'); });
+    return () => { live = false; };
+  }, [open, file, source.imageId]);
+
+  const preview = useMemo(() => (file instanceof Blob ? URL.createObjectURL(file) : null), [file]);
+  useEffect(() => () => { if (preview) URL.revokeObjectURL(preview); }, [preview]);
+
+  const start = () => {
+    // From what the artwork is now, not from an earlier attempt left unapplied.
+    setCrop(source.crop ?? null);
+    setThreshold(source.threshold);
+    setInvert(source.invert);
+    setDetail(source.detail);
+    setOpen(true);
+  };
+
+  const apply = async () => {
+    if (!(file instanceof Blob)) return;
+    setBusy(true);
+    try {
+      const settings: SourceSettings = { kind: source.kind, crop: crop ?? undefined, threshold, invert, detail };
+      const out = await outlinesOf(file, settings);
+      if ('error' in out) { setError(out.error); return; }
+      const { rings, at } = centred(out.rings, source.mmPerPx);
+      // The new middle is somewhere else in the picture; the element moves by
+      // that much, as placed, so the outlines it keeps do not move at all.
+      const a = (el.rotation * Math.PI) / 180;
+      const dx = (at.x - source.at.x) * source.mmPerPx * el.scale;
+      const dy = (at.y - source.at.y) * source.mmPerPx * el.scale;
+      update(el.id, {
+        rings,
+        x: el.x + dx * Math.cos(a) - dy * Math.sin(a),
+        y: el.y + dx * Math.sin(a) + dy * Math.cos(a),
+        source: { ...source, ...settings, at },
+      });
+      if (out.note) setError(out.note);
+      setOpen(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not use that image');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!open) {
+    return (
+      <Button onClick={start} className="w-full">
+        {source.kind === 'svg' ? 'Redo the crop' : 'Redo the crop or trace'}
+      </Button>
+    );
+  }
+  if (file === 'missing') {
+    return (
+      <p className="text-[12.5px] leading-relaxed text-ink-400">
+        The picture this was made from is not on this device — pictures stay
+        where they were traced and do not travel in backups. Trace it again
+        from the Add section to crop it.{' '}
+        <button type="button" onClick={() => setOpen(false)} className="underline hover:text-ink-200">OK</button>
+      </p>
+    );
+  }
+  if (!preview) return <p className="text-[12.5px] text-ink-400">Loading the picture…</p>;
+
+  return (
+    <div className="space-y-2 rounded-md border border-ink-700 p-2" data-art-redo="">
+      <CropPicker src={preview} crop={crop} onChange={setCrop} light={source.kind === 'svg'} />
+      {source.kind === 'trace' && (
+        <TraceControls
+          threshold={threshold} detail={detail} invert={invert}
+          onThreshold={setThreshold} onDetail={setDetail} onInvert={setInvert}
+        />
+      )}
+      <div className="grid grid-cols-2 gap-1">
+        <Button variant="primary" onClick={() => void apply()} disabled={busy}>
+          {busy ? 'Working…' : 'Apply'}
+        </Button>
+        <Button onClick={() => setOpen(false)} disabled={busy}>Cancel</Button>
+      </div>
     </div>
   );
 }

@@ -212,6 +212,30 @@ export async function putFontFile(font: Omit<StoredFont, 'hash'> & { hash?: stri
 }
 
 /**
+ * A picture traced into artwork, kept so the artwork can be cropped or traced
+ * again later without the file having to be found and picked a second time.
+ *
+ * Stored by what is in it, like a font, so tracing the same picture twice
+ * keeps one copy. A plain key in the meta store rather than a store of its
+ * own, which would mean a schema upgrade for every database already out there.
+ */
+export async function putImage(file: Blob): Promise<string> {
+  const id = await hashFont(await file.arrayBuffer());
+  await tx(META, 'readwrite', (s) => s.put(file, `image:${id}`));
+  return id;
+}
+
+/** The picture stored under this id, or null if it is not on this device. */
+export async function loadImage(id: string): Promise<Blob | null> {
+  try {
+    const b = await tx<unknown>(META, 'readonly', (s) => s.get(`image:${id}`));
+    return b instanceof Blob ? b : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * The work in progress.
  *
  * Written continuously rather than on demand, so a refresh, a crash or a

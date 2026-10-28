@@ -226,10 +226,32 @@ export interface ArtElement {
   color: string;
   mode: ReliefMode;
   reliefMm: number;
-  /** Kept so the UI can re-trace at a different threshold without a re-upload. */
-  source?: { imageId: string; threshold: number };
+  /** Kept so the artwork can be cropped or traced again without a re-upload. */
+  source?: ArtSource;
   /** The Iconify icon it was made from, e.g. "mdi:sine-wave", when it is one. */
   icon?: string;
+}
+
+/**
+ * The picture an artwork came from and how it was turned into outlines.
+ *
+ * The picture itself lives in local storage under `imageId`; a design moved to
+ * another device by a backup keeps the settings but not the picture, and the
+ * artwork is then simply no longer re-croppable there.
+ */
+export interface ArtSource {
+  imageId: string;
+  /** Traced like a picture, or an SVG whose own filled shapes were used. */
+  kind: 'trace' | 'svg';
+  /** As fractions of the picture's width and height; absent means all of it. */
+  crop?: { x: number; y: number; w: number; h: number };
+  threshold: number;
+  invert: boolean;
+  detail: number;
+  /** Where in the picture, in its pixels, the element's own origin is. */
+  at: Pt;
+  /** Millimetres per picture pixel in the element's own frame, before `scale`. */
+  mmPerPx: number;
 }
 
 /** Traced outlines where they actually sit on the panel. */
