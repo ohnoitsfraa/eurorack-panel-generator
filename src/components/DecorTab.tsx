@@ -532,8 +532,8 @@ function ArtworkTracer() {
         // to rewrite thousands of traced points.
         rings: rings.map((ring) => ring.map((p) => ({ x: p.x - cx, y: p.y - cy }))),
         x: cx, y: cy, scale: 1, rotation: 0,
-        // Flush by default, like a new label.
-        color: '#f2f2f0', mode: 'flush', reliefMm: 0.6,
+        // Raised by default, like a new label.
+        color: '#f2f2f0', mode: 'raised', reliefMm: 0.6,
       };
       addDecor(el);
     } catch (e) {
@@ -579,8 +579,8 @@ function ArtworkTracer() {
         type: 'art',
         rings,
         x: at.x, y: at.y, scale: 1, rotation: 0,
-        // Flush by default, like a new label.
-        color: '#f2f2f0', mode: 'flush', reliefMm: 0.6,
+        // Raised by default, like a new label.
+        color: '#f2f2f0', mode: 'raised', reliefMm: 0.6,
       });
       if (left) setError(`Added the filled shapes. Left out ${left}: ${fix}.`);
     } catch (e) {

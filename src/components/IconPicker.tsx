@@ -77,9 +77,9 @@ export function IconPicker() {
         y: at.y,
         scale: 1,
         rotation: 0,
-        // Flush by default, like a new label.
+        // Raised by default, like a new label.
         color: '#f2f2f0',
-        mode: 'flush',
+        mode: 'raised',
         reliefMm: 0.6,
         icon: id,
       };

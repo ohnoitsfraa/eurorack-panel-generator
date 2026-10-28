@@ -2753,8 +2753,8 @@ console.log('\nEditing several labels at once');
   await pause();
   const label = (id: string) => st().design.decor.find((d) => d.id === id)!;
 
-  if (label(a).mode === 'flush' && st().design.decor.find((d) => d.id === line)!.mode === 'raised') {
-    pass('a new label is flush, a new line still raised');
+  if (label(a).mode === 'raised' && st().design.decor.find((d) => d.id === line)!.mode === 'raised') {
+    pass('a new label and a new line both start raised');
   } else {
     fail(`new label is ${label(a).mode}, new line ${label(line).mode}`);
   }
