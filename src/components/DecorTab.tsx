@@ -38,6 +38,8 @@ export function DecorTab() {
   const selected = decor.find((d) => selectedIds.includes(d.id));
   const selectedDecor = decor.filter((d) => selectedIds.includes(d.id));
   const textIds = decor.filter((d) => d.type === 'text').map((d) => d.id);
+  const shapeIds = decor.filter((d) => d.type === 'shape').map((d) => d.id);
+  const iconIds = decor.filter((d) => d.type === 'art' && d.icon).map((d) => d.id);
 
   /** Cmd adds or takes out one; Shift takes the whole run from the last one picked. */
   const listAnchor = useRef<string | null>(null);
@@ -96,10 +98,15 @@ export function DecorTab() {
             ))}
           </ul>
         )}
-        {textIds.length > 1 && (
-          <div className="mt-2 flex items-center justify-between gap-2">
+        {decor.length > 0 && (
+          <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
             <span className="text-[12px] text-ink-400">Shift- or ⌘-click to pick several</span>
-            <Button variant="ghost" onClick={() => select(textIds)}>Select all text</Button>
+            {/* Always there, so they can be found; greyed out with nothing of that kind. */}
+            <div className="flex flex-wrap gap-1">
+              <Button variant="ghost" disabled={!textIds.length} onClick={() => select(textIds)}>Select all text</Button>
+              <Button variant="ghost" disabled={!shapeIds.length} onClick={() => select(shapeIds)}>Select all shapes</Button>
+              <Button variant="ghost" disabled={!iconIds.length} onClick={() => select(iconIds)}>Select all icons</Button>
+            </div>
           </div>
         )}
       </Section>
@@ -226,10 +233,24 @@ function DecorEditor({ id }: { id: string }) {
                 {!el.source && ' Made before pictures were kept, so to crop it, trace the picture again from the Add section.'}</>}
           </p>
           {!el.icon && el.source && <ArtRedo key={el.id} el={el} />}
-          <Field label="Size" hint={`${Math.round(el.scale * 100)}%`}>
+          <Field
+            label="Size"
+            hint={el.scaleY === undefined
+              ? `${Math.round(el.scale * 100)}%`
+              : `${Math.round(el.scale * 100)}% × ${Math.round(el.scaleY * 100)}%`}
+          >
+            {/* Stretched artwork keeps its stretch: both axes grow together. */}
             <Slider min={5} max={400} step={1} value={Math.round(el.scale * 100)}
-                    onChange={(pct) => update(id, { scale: pct / 100 })} />
+                    onChange={(pct) => update(id, {
+                      scale: pct / 100,
+                      ...(el.scaleY !== undefined && { scaleY: Math.round((el.scaleY * pct) / el.scale) / 100 }),
+                    })} />
           </Field>
+          {el.scaleY !== undefined && (
+            <Button variant="ghost" onClick={() => update(id, { scaleY: undefined })} className="w-full">
+              Undo the stretch
+            </Button>
+          )}
         </>
       )}
 
@@ -726,7 +747,7 @@ function ArtRedo({ el }: { el: ArtElement }) {
       // that much, as placed, so the outlines it keeps do not move at all.
       const a = (el.rotation * Math.PI) / 180;
       const dx = (at.x - source.at.x) * source.mmPerPx * el.scale;
-      const dy = (at.y - source.at.y) * source.mmPerPx * el.scale;
+      const dy = (at.y - source.at.y) * source.mmPerPx * (el.scaleY ?? el.scale);
       update(el.id, {
         rings,
         x: el.x + dx * Math.cos(a) - dy * Math.sin(a),

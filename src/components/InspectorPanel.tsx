@@ -609,6 +609,12 @@ export function FeaturesTab() {
             ))}
           </ul>
         )}
+        {features.length > 1 && (
+          <div className="mt-2 flex items-center justify-between gap-2">
+            <span className="text-[12px] text-ink-400">Shift- or ⌘-click to pick several</span>
+            <Button variant="ghost" onClick={() => select(features.map((f) => f.id))}>Select all</Button>
+          </div>
+        )}
       </Section>
 
       {picked.length > 1 && (

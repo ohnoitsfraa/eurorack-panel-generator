@@ -220,8 +220,13 @@ export interface ArtElement {
   rings: Pt[][];
   x: number;
   y: number;
-  /** Multiplier on the traced size. */
+  /** Multiplier on the traced size; across only, when `scaleY` is set. */
   scale: number;
+  /**
+   * Multiplier on the height alone, for artwork stretched on one axis; absent
+   * means the same as `scale`, which is how almost everything stays.
+   */
+  scaleY?: number;
   rotation: number;
   color: string;
   mode: ReliefMode;
@@ -259,10 +264,13 @@ export function artRings(el: ArtElement): Pt[][] {
   const a = (el.rotation * Math.PI) / 180;
   const cos = Math.cos(a);
   const sin = Math.sin(a);
-  const k = el.scale;
+  const kx = el.scale;
+  const ky = el.scaleY ?? el.scale;
+  // Stretched in its own frame, then turned: a squashed logo stays squashed
+  // along its own axes however it is rotated.
   return el.rings.map((ring) => ring.map(({ x, y }): Pt => ({
-    x: el.x + (x * cos - y * sin) * k,
-    y: el.y + (x * sin + y * cos) * k,
+    x: el.x + x * kx * cos - y * ky * sin,
+    y: el.y + x * kx * sin + y * ky * cos,
   })));
 }
 
@@ -308,7 +316,7 @@ export interface PanelDesign {
   holeClearanceMm: number;
   /**
    * Gap raised decor keeps around every cutout, so nuts seat on the panel;
-   * 0 for none. Absent on older designs, which get the default.
+   * 0 for none. Absent on older designs, which keep the 2 mm they had.
    */
   decorKeepoutMm?: number;
   /**

@@ -4,12 +4,12 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { CUTOUT_PRESETS, DECOR_KEEPOUT, MOUNT_SLOT, type CutoutShapeId, decorKeepoutMm, featureKeepoutMm, mountSlotPositions, panelHeightMm, panelWidthMm } from '@/lib/eurorack';
 import { featureRing } from '@/lib/model/build';
 import {
-  artExtent, artRings, type ArtElement, type DecorElement, type Feature, type TextElement,
+  artExtent, artRings, type ArtElement, type DecorElement, type Feature, type ShapeElement, type TextElement,
 } from '@/lib/types';
 import { notePanelPointer, notePanelPress, useStore } from '@/lib/store';
 import { textToRings } from '@/lib/model/text';
 import { bbox, type Ring } from '@/lib/geom/poly';
-import { drawnCutout, drawnLine } from '@/lib/drawCutout';
+import { drawnCutout, drawnLine, lineEnds, nearestLineEnd } from '@/lib/drawCutout';
 import { alignTo, snapToGrid, type AlignTarget, type Guide, type SpacingHint } from '@/lib/align';
 import { cutoutFill } from '@/lib/color';
 import type { Font as OpentypeFont } from 'opentype.js';
@@ -130,7 +130,12 @@ export function PanelCanvas2D() {
   const [drawing, setDrawing] = useState<{
     x0: number; y0: number; x1: number; y1: number;
     square: boolean; fromCentre: boolean; free: boolean; keep: boolean;
+    /** A line's far end is held on the end of another line. */
+    onEnd?: boolean;
   } | null>(null);
+  /** With the line tool, the end of a line the pointer is near, ready to start from. */
+  const [hoverEnd, setHoverEnd] = useState<{ x: number; y: number } | null>(null);
+  useEffect(() => { if (tool !== 'line') setHoverEnd(null); }, [tool]);
   /**
    * An already-selected thing that was clicked with a modifier held.
    *
@@ -184,6 +189,20 @@ export function PanelCanvas2D() {
     (v: number, off: boolean) => (gridMm > 0 && !off ? Math.round(v / gridMm) * gridMm : round2(v)),
     [gridMm],
   );
+
+  /** Where lines already end, for a new one to start or finish on. */
+  const endsOfLines = useMemo(
+    () => decor.flatMap((d) => (d.type === 'shape' && d.shape === 'line' ? lineEnds(d) : [])),
+    [decor],
+  );
+  /**
+   * A point for the line tool: the end of a line within reach, which wins
+   * over the grid, or else the grid. Cmd/Ctrl ignores both.
+   */
+  const snapLinePoint = (p: { x: number; y: number }, free: boolean) => {
+    const end = free ? null : nearestLineEnd(p, endsOfLines, LINE_END_REACH_PX * mmPerPxNow());
+    return end ? { ...end, onEnd: true } : { x: snap(p.x, free), y: snap(p.y, free), onEnd: false };
+  };
 
   // --- dragging ---
 
@@ -300,10 +319,15 @@ export function PanelCanvas2D() {
     if (drawing) {
       const p = toMm(e);
       const free = e.metaKey || e.ctrlKey;
+      const to = tool === 'line' ? snapLinePoint(p, free) : { x: snap(p.x, free), y: snap(p.y, free), onEnd: false };
       setDrawing((dr) => dr && {
-        ...dr, x1: snap(p.x, free), y1: snap(p.y, free), square: e.shiftKey, fromCentre: e.altKey, free,
+        ...dr, x1: to.x, y1: to.y, onEnd: to.onEnd, square: e.shiftKey, fromCentre: e.altKey, free,
       });
       return;
+    }
+    if (tool === 'line') {
+      const end = e.metaKey || e.ctrlKey ? null : nearestLineEnd(over, endsOfLines, LINE_END_REACH_PX * mmPerPxNow());
+      setHoverEnd((h) => (h === end || (h && end && h.x === end.x && h.y === end.y) ? h : end));
     }
     const d = drag.current;
     if (d) {
@@ -365,8 +389,10 @@ export function PanelCanvas2D() {
     }
     if (drawing && tool === 'line') {
       const from = { x: drawing.x0, y: drawing.y0 };
+      // An end held on another line's end stays there; turning it to the
+      // nearest 15° would pull it off again.
       const line = drawnLine(from, { x: drawing.x1, y: drawing.y1 }, {
-        snapAngle: drawing.square, minDragMm: DRAW_CLICK_PX * mmPerPx,
+        snapAngle: drawing.square && !drawing.onEnd, minDragMm: DRAW_CLICK_PX * mmPerPx,
       });
       // A click lays the usual rule across the panel, centred where clicked.
       const half = (W * 0.6) / 2;
@@ -454,7 +480,7 @@ export function PanelCanvas2D() {
     svgRef.current?.setPointerCapture?.(e.pointerId);
     const p = toMm(e);
     const free = e.metaKey || e.ctrlKey;
-    const x = snap(p.x, free), y = snap(p.y, free);
+    const { x, y } = tool === 'line' ? snapLinePoint(p, free) : { x: snap(p.x, free), y: snap(p.y, free) };
     setDrawing({ x0: x, y0: y, x1: x, y1: y, square: false, fromCentre: e.altKey, free, keep: e.shiftKey });
   };
 
@@ -616,6 +642,9 @@ export function PanelCanvas2D() {
   // than a width and a height.
   const soleDecor = selectedIds.length === 1
     ? decor.find((d) => d.id === selectedIds[0] && (d.type === 'text' || d.type === 'art'))
+    : undefined;
+  const soleLine = selectedIds.length === 1
+    ? decor.find((d): d is ShapeElement => d.id === selectedIds[0] && d.type === 'shape' && d.shape === 'line')
     : undefined;
   // Worked out from the panel rather than the theme: a hole has to contrast
   // with the surface it is cut through, whatever colour that has been set to.
@@ -797,6 +826,9 @@ export function PanelCanvas2D() {
         {!tool && !duplicating && soleDecor && (soleDecor.type === 'text' || soleDecor.type === 'art') && (
           <DecorHandles el={soleDecor} handleMm={handleMm} />
         )}
+        {!tool && !duplicating && soleLine && (
+          <LineHandles el={soleLine} handleMm={handleMm} />
+        )}
 
         {/* With a cutout tool, the whole canvas is for drawing: a crosshair
             everywhere, and nothing underneath picked up by mistake. */}
@@ -807,6 +839,13 @@ export function PanelCanvas2D() {
             fill="transparent"
             style={{ cursor: 'crosshair' }}
             onPointerDown={beginDraw}
+          />
+        )}
+        {tool === 'line' && (
+          <LineEndMarks
+            ends={endsOfLines}
+            active={drawing ? (drawing.onEnd ? { x: drawing.x1, y: drawing.y1 } : null) : hoverEnd}
+            mmPerPx={mmPerPx}
           />
         )}
         {drawing && tool === 'line' && (
@@ -847,7 +886,7 @@ export function PanelCanvas2D() {
               + `${gapSummary(guides)} · ⌘/Ctrl to ignore`
             : tool
             ? tool === 'line'
-              ? 'Drag from one end of the line to the other, or click for a rule · Shift for 15° steps · Esc to stop'
+              ? 'Drag from one end of the line to the other, or click for a rule · Starts and ends snap to other lines\' ends · Shift for 15° steps · Esc to stop'
               : `Drag to draw a ${(CUTOUT_PRESETS.find((p) => p.id === tool)?.label ?? 'cutout').toLowerCase()}, or click for the usual size · Alt from the centre · Shift to keep drawing · Esc to stop`
             : 'Scroll or Space drag to move · ⌘/Ctrl scroll to zoom · Alt drag to duplicate · ⌘/Ctrl drag a part to ignore grid'}
         </span>
@@ -1550,6 +1589,38 @@ const PINCH_MAX_DELTA = 50;
 /** Below this many screen pixels, a press with a cutout tool is a click. */
 const DRAW_CLICK_PX = 4;
 
+/** How close, in screen pixels, the pointer has to come to a line's end to land on it. */
+const LINE_END_REACH_PX = 10;
+
+/**
+ * With the line tool, where the other lines end: small rings, and a larger
+ * one on the end the pointer is held on.
+ */
+function LineEndMarks({
+  ends, active, mmPerPx,
+}: {
+  ends: Array<{ x: number; y: number }>;
+  active: { x: number; y: number } | null;
+  mmPerPx: number;
+}) {
+  return (
+    <g pointerEvents="none" data-line-ends="">
+      {ends.map((p, i) => (
+        <circle
+          key={i} cx={p.x} cy={p.y} r={mmPerPx * 3}
+          fill="none" stroke="var(--color-accent)" strokeWidth={mmPerPx} opacity={0.6}
+        />
+      ))}
+      {active && (
+        <circle
+          data-line-end-snap="" cx={active.x} cy={active.y} r={mmPerPx * 6}
+          fill="#ffb45430" stroke="var(--color-accent)" strokeWidth={mmPerPx * 1.5}
+        />
+      )}
+    </g>
+  );
+}
+
 /** The cutout being drawn, outlined, with its size beside it. */
 function DrawPreview({
   tool, drawing, mmPerPx, handleMm,
@@ -1598,12 +1669,12 @@ function DrawPreview({
 function LinePreview({
   drawing, mmPerPx, handleMm,
 }: {
-  drawing: { x0: number; y0: number; x1: number; y1: number; square: boolean };
+  drawing: { x0: number; y0: number; x1: number; y1: number; square: boolean; onEnd?: boolean };
   mmPerPx: number;
   handleMm: number;
 }) {
   const line = drawnLine({ x: drawing.x0, y: drawing.y0 }, { x: drawing.x1, y: drawing.y1 }, {
-    snapAngle: drawing.square, minDragMm: DRAW_CLICK_PX * mmPerPx,
+    snapAngle: drawing.square && !drawing.onEnd, minDragMm: DRAW_CLICK_PX * mmPerPx,
   });
   if (!line) return null;
   const font = handleMm * 1.2;
@@ -1809,10 +1880,11 @@ function TextEditor({
  *
  * Separate from the cutout handles because what "bigger" means differs: a
  * cutout has a width and a height to set in millimetres, a label has a cap
- * height, and artwork has a multiplier on whatever it was traced at. All three
- * are one number here, so the corners scale proportionally and there are no
- * edge handles to stretch one axis — a squashed logo or a condensed label is
- * not something you would arrive at on purpose.
+ * height, and artwork has a multiplier on whatever it was traced at. The
+ * corners scale proportionally. Artwork also has edge handles that stretch
+ * it across or up alone, for an icon that has to fill a slot of another
+ * shape; a label has none, since a condensed label is better had from a
+ * condensed font.
  *
  * The box is measured with the rotation taken out, so the handles sit on the
  * element's own corners and turn with it rather than hugging an upright
@@ -1825,7 +1897,13 @@ function DecorHandles({
   const fonts = useStore((s) => s.fonts);
   const fontVersion = useStore((s) => s.fontVersion);
   const svgRef = useContext(CanvasFrame);
-  const drag = useRef<{ role: 'scale' | 'rotate'; from: number; size: number } | null>(null);
+  const drag = useRef<{
+    role: 'scale' | 'rotate' | 'width' | 'height';
+    /** Distance out from the origin at the press: along the element's own axis for an edge. */
+    from: number;
+    size: number;
+    sizeY?: number;
+  } | null>(null);
 
   const box = useMemo(() => {
     const rings = el.type === 'art'
@@ -1877,26 +1955,42 @@ function DecorHandles({
       return;
     }
 
-    // Proportional, measured from the element's own origin, so the handle
-    // stays under the pointer along the line out from it.
-    const now = Math.hypot(p.x - el.x, p.y - el.y);
+    // Measured from the element's own origin, so the handle stays under the
+    // pointer along the line out from it.
+    const now = reach(d.role, p);
     if (d.from < 1e-6) return;
     const factor = now / d.from;
+    const k = (v: number) => Math.max(0.02, Math.min(30, Math.round(v * factor * 1000) / 1000));
     if (el.type === 'text') {
       updateDecor(el.id, { sizeMm: Math.max(0.6, Math.min(60, round2(d.size * factor))) });
+    } else if (d.role === 'width' || d.role === 'height') {
+      // One axis only; the other is held at what it was, written out so the
+      // stretch is kept. Back level, it is plain proportional artwork again.
+      const sx = d.role === 'width' ? k(d.size) : d.size;
+      const sy = d.role === 'height' ? k(d.sizeY ?? d.size) : (d.sizeY ?? d.size);
+      updateDecor(el.id, { scale: sx, scaleY: Math.abs(sx - sy) < 0.005 ? undefined : sy });
     } else {
-      updateDecor(el.id, { scale: Math.max(0.02, Math.min(30, Math.round(d.size * factor * 1000) / 1000)) });
+      updateDecor(el.id, { scale: k(d.size), ...(d.sizeY !== undefined && { scaleY: k(d.sizeY) }) });
     }
   };
 
-  const begin = (role: 'scale' | 'rotate') => (e: React.PointerEvent) => {
+  /** How far out a point is: straight from the origin, or along one of the element's own axes. */
+  const reach = (role: 'scale' | 'rotate' | 'width' | 'height', p: { x: number; y: number }) => {
+    const dx = p.x - el.x, dy = p.y - el.y;
+    if (role === 'width') return Math.abs(dx * cos + dy * sin);
+    if (role === 'height') return Math.abs(-dx * sin + dy * cos);
+    return Math.hypot(dx, dy);
+  };
+
+  const begin = (role: 'scale' | 'rotate' | 'width' | 'height') => (e: React.PointerEvent) => {
     e.stopPropagation();
     (e.target as Element).setPointerCapture?.(e.pointerId);
     const p = pointAt(e);
     drag.current = {
       role,
-      from: Math.hypot(p.x - el.x, p.y - el.y),
+      from: reach(role, p),
       size: el.type === 'text' ? el.sizeMm : el.scale,
+      sizeY: el.type === 'art' ? el.scaleY : undefined,
     };
   };
   const end = () => { drag.current = null; };
@@ -1908,6 +2002,16 @@ function DecorHandles({
   ] as const;
   const rotateAt = toPanel((box.u0 + box.u1) / 2, box.v0 - handleMm * 1.5);
   const topMid = toPanel((box.u0 + box.u1) / 2, box.v0);
+  const um = (box.u0 + box.u1) / 2, vm = (box.v0 + box.v1) / 2;
+  const edges = el.type === 'art'
+    ? ([
+      { role: 'width', u: box.u1, v: vm }, { role: 'width', u: box.u0, v: vm },
+      { role: 'height', u: um, v: box.v1 }, { role: 'height', u: um, v: box.v0 },
+    ] as const)
+    : [];
+  // The cursor follows the element's turn, near enough.
+  const across = Math.abs(cos) >= Math.abs(sin) ? 'ew-resize' : 'ns-resize';
+  const up = across === 'ew-resize' ? 'ns-resize' : 'ew-resize';
 
   return (
     <g onPointerMove={onMove} onPointerUp={end} onPointerLeave={end}>
@@ -1939,6 +2043,137 @@ function DecorHandles({
           </rect>
         );
       })}
+      {edges.map((hd, i) => {
+        const p = toPanel(hd.u, hd.v);
+        return (
+          <circle
+            key={`e${i}`}
+            data-stretch-handle={hd.role}
+            cx={p.x} cy={p.y} r={r * 0.85}
+            fill="var(--color-accent)" stroke="var(--color-ink-950)" strokeWidth={handleMm * 0.08}
+            style={{ cursor: hd.role === 'width' ? across : up }}
+            onPointerDown={begin(hd.role)}
+          >
+            <title>{hd.role === 'width' ? 'Drag to stretch across' : 'Drag to stretch up and down'}</title>
+          </circle>
+        );
+      })}
+    </g>
+  );
+}
+
+/**
+ * Handles for a selected line: one on each end, and one beside its middle
+ * for the thickness.
+ *
+ * An end is dragged with the other held where it is, which sets the length
+ * and the angle together, the way the line was drawn. Like drawing, an end
+ * let go near the end of another line lands on it, Shift holds 15° steps and
+ * Cmd/Ctrl ignores both the grid and the other lines.
+ */
+function LineHandles({ el, handleMm }: { el: ShapeElement; handleMm: number }) {
+  const updateDecor = useStore((s) => s.updateDecor);
+  const gridMm = useStore((s) => s.gridMm);
+  const decor = useStore((s) => s.design.decor);
+  const svgRef = useContext(CanvasFrame);
+  const drag = useRef<{ role: 'end'; end: 0 | 1; fixed: { x: number; y: number } } | { role: 'thickness' } | null>(null);
+  const [heldOn, setHeldOn] = useState<{ x: number; y: number } | null>(null);
+
+  const others = useMemo(
+    () => decor.flatMap((d) => (d.id !== el.id && d.type === 'shape' && d.shape === 'line' ? lineEnds(d) : [])),
+    [decor, el.id],
+  );
+
+  const r = handleMm * 0.42;
+  // Set out from the line, which is often thinner than a handle.
+  const off = handleMm * 0.9;
+  const rot = (el.rotation * Math.PI) / 180;
+  const cos = Math.cos(rot);
+  const sin = Math.sin(rot);
+  const ends = lineEnds(el);
+  const thickAt = { x: el.x - sin * (el.h / 2 + off), y: el.y + cos * (el.h / 2 + off) };
+
+  const pointAt = (e: React.PointerEvent) => {
+    const svg = svgRef?.current;
+    if (!svg) return { x: 0, y: 0 };
+    return new DOMPoint(e.clientX, e.clientY).matrixTransform(svg.getScreenCTM()!.inverse());
+  };
+  const snap = (v: number, free: boolean) =>
+    gridMm > 0 && !free ? Math.round(v / gridMm) * gridMm : round2(v);
+
+  const onMove = (e: React.PointerEvent) => {
+    const d = drag.current;
+    if (!d) return;
+    const p = pointAt(e);
+    const free = e.metaKey || e.ctrlKey;
+
+    if (d.role === 'thickness') {
+      const out = Math.abs(-(p.x - el.x) * sin + (p.y - el.y) * cos);
+      updateDecor(el.id, { h: Math.max(0.2, Math.min(20, Math.round((out - off) * 20) / 10)) });
+      return;
+    }
+
+    const end = free ? null : nearestLineEnd(p, others, (LINE_END_REACH_PX * handleMm) / HANDLE_PX);
+    setHeldOn(end);
+    const to = end ?? { x: snap(p.x, free), y: snap(p.y, free) };
+    const line = drawnLine(d.fixed, to, { snapAngle: e.shiftKey && !end, minDragMm: 0.5 });
+    if (!line) return;
+    // Measured from the fixed end; dragging the first end, the line still
+    // points from it, as it did.
+    const angle = d.end === 0 ? line.angle + 180 : line.angle;
+    updateDecor(el.id, {
+      x: round2((line.from.x + line.to.x) / 2),
+      y: round2((line.from.y + line.to.y) / 2),
+      w: line.length,
+      rotation: Math.round((((angle + 540) % 360) - 180) * 100) / 100,
+    });
+  };
+
+  const beginEnd = (i: 0 | 1) => (e: React.PointerEvent) => {
+    e.stopPropagation();
+    (e.target as Element).setPointerCapture?.(e.pointerId);
+    drag.current = { role: 'end', end: i, fixed: ends[1 - i] };
+  };
+  const beginThickness = (e: React.PointerEvent) => {
+    e.stopPropagation();
+    (e.target as Element).setPointerCapture?.(e.pointerId);
+    drag.current = { role: 'thickness' };
+  };
+  const end = () => { drag.current = null; setHeldOn(null); };
+
+  return (
+    <g onPointerMove={onMove} onPointerUp={end} onPointerLeave={end}>
+      {heldOn && (
+        <circle
+          data-line-end-snap="" cx={heldOn.x} cy={heldOn.y} r={r * 1.6} pointerEvents="none"
+          fill="#ffb45430" stroke="var(--color-accent)" strokeWidth={handleMm * 0.1}
+        />
+      )}
+      <line
+        x1={el.x} y1={el.y} x2={thickAt.x} y2={thickAt.y}
+        stroke="var(--color-accent)" strokeWidth={handleMm * 0.1} pointerEvents="none"
+      />
+      <rect
+        data-line-handle="thickness"
+        x={thickAt.x - r * 0.8} y={thickAt.y - r * 0.8} width={r * 1.6} height={r * 1.6}
+        fill="var(--color-ink-950)" stroke="var(--color-accent)" strokeWidth={handleMm * 0.12}
+        style={{ cursor: Math.abs(cos) >= Math.abs(sin) ? 'ns-resize' : 'ew-resize' }}
+        onPointerDown={beginThickness}
+      >
+        <title>Drag to set the thickness</title>
+      </rect>
+      {ends.map((p, i) => (
+        <circle
+          key={i}
+          data-line-handle={`end${i}`}
+          cx={p.x} cy={p.y} r={r}
+          fill="var(--color-accent)" stroke="var(--color-ink-950)" strokeWidth={handleMm * 0.08}
+          style={{ cursor: 'move' }}
+          onPointerDown={beginEnd(i as 0 | 1)}
+        >
+          <title>Drag to move this end · snaps to other lines&apos; ends · Shift for 15° steps</title>
+        </circle>
+      ))}
     </g>
   );
 }

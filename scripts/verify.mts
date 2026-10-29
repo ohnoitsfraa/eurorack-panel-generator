@@ -911,7 +911,7 @@ console.log('\nRaised art keeps clear of cutouts');
   else fail(`with no gap, raised art's nearest point is ${(none.near - 3).toFixed(2)} mm from the hole`);
 
   const older = nearest(undefined);
-  if (Math.abs(older.near - kept.near) < 1e-6) pass('a panel from before the setting gets the gap by default');
+  if (Math.abs(older.near - kept.near) < 1e-6) pass('a panel from before the setting keeps the 2 mm gap it was made with');
   else fail(`an older panel kept ${(older.near - 3).toFixed(2)} mm`);
 
   // One cutout can keep a gap of its own; switched off for the panel, none do.
@@ -1319,6 +1319,14 @@ console.log('\nEditor actions');
     pass('dragging artwork moves its origin, leaving the outlines alone');
   } else {
     fail('placeDecor did not move the artwork');
+  }
+
+  // Stretched up alone, then turned a quarter: the stretch goes with it, so
+  // the point 2 mm up its own axis ends up 6 mm across the panel.
+  if (art && art.type === 'art') {
+    const p = ringsOf({ ...art, x: 0, y: 0, scaleY: 3, rotation: 90 })[0][2];
+    if (Math.abs(p.x + 6) < 1e-9 && Math.abs(p.y - 2) < 1e-9) pass('artwork stretched on one axis keeps the stretch along its own axis when turned');
+    else fail(`a stretched, turned point came out at ${p.x}, ${p.y}, expected -6, 2`);
   }
 
   // Where it actually sits is the transform applied to those outlines.

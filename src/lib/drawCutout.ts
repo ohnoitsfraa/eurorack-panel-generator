@@ -62,3 +62,30 @@ export function drawnLine(
   const end = { x: round2(from.x + Math.cos(a) * length), y: round2(from.y + Math.sin(a) * length) };
   return { from, to: end, length: round2(length), angle: Math.round(angle * 100) / 100 };
 }
+
+/** Both ends of a line as it sits on the panel: a bar turned about its middle. */
+export function lineEnds(el: { x: number; y: number; w: number; rotation: number }): Array<{ x: number; y: number }> {
+  const a = (el.rotation * Math.PI) / 180;
+  const dx = (Math.cos(a) * el.w) / 2, dy = (Math.sin(a) * el.w) / 2;
+  return [{ x: round2(el.x - dx), y: round2(el.y - dy) }, { x: round2(el.x + dx), y: round2(el.y + dy) }];
+}
+
+/**
+ * The line end within reach of a point, the nearest if several are.
+ *
+ * A new line drawn from or to the end of another then meets it exactly, so
+ * lines can be joined into an outline without lining them up by eye.
+ */
+export function nearestLineEnd(
+  p: { x: number; y: number },
+  ends: Array<{ x: number; y: number }>,
+  reachMm: number,
+): { x: number; y: number } | null {
+  let best: { x: number; y: number } | null = null;
+  let bestD = reachMm;
+  for (const e of ends) {
+    const d = Math.hypot(e.x - p.x, e.y - p.y);
+    if (d <= bestD) { best = e; bestD = d; }
+  }
+  return best;
+}

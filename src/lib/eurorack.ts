@@ -200,14 +200,18 @@ export const HOLE_CLEARANCE = { min: 0, max: 0.6, default: 0.2 } as const;
  * the hole's edge.
  *
  * A jack or pot is held by a nut tightened down onto the panel face; raised
- * art under it stops the nut seating, and the part wobbles. 2 mm clears the
- * nut of a Thonkiconn jack and of a 9 mm pot. Zero turns it off.
+ * art under it stops the nut seating, and the part wobbles. A new panel
+ * starts at 1.2 mm; a cutout whose nut needs more can be given its own gap.
+ * Zero turns it off.
+ *
+ * Panels from before the setting existed were built with 2 mm and keep it,
+ * so opening one does not quietly change what it exports.
  */
-export const DECOR_KEEPOUT = { min: 0, max: 5, default: 2 } as const;
+export const DECOR_KEEPOUT = { min: 0, max: 5, default: 1.2, legacy: 2 } as const;
 
-/** The keep-out a design asks for; a design from before the setting gets the default. */
+/** The keep-out a design asks for; a design from before the setting keeps the 2 mm it had. */
 export function decorKeepoutMm(design: { decorKeepoutMm?: number }): number {
-  return Math.max(0, design.decorKeepoutMm ?? DECOR_KEEPOUT.default);
+  return Math.max(0, design.decorKeepoutMm ?? DECOR_KEEPOUT.legacy);
 }
 
 /**

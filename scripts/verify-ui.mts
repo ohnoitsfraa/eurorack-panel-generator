@@ -770,6 +770,43 @@ async function open(colorScheme: 'light' | 'dark' = 'dark') {
   if (line && Math.abs(line.x - a.x) < 4 && Math.abs(line.x + line.width - b.x) < 4) pass('and runs from where the drag began to where it ended');
   else fail(`the drawn line spans ${line ? `${Math.round(line.x)}–${Math.round(line.x + line.width)}` : 'nothing'}, the drag ${Math.round(a.x)}–${Math.round(b.x)}`);
 
+  // Starting a few pixels off the first line's end starts on it exactly: a
+  // plumb 20 mm, where the pointer alone would give a slant and odd length.
+  const o = await toScreen(0, 0), one = await toScreen(1, 0);
+  const off = 5 / (one.x - o.x);
+  await page.keyboard.press('l');
+  const near = await toScreen(32 + off * 0.7, 40 + off * 0.7);
+  await page.mouse.move(near.x, near.y);
+  await page.waitForTimeout(100);
+  const hinted = await page.locator('[data-line-end-snap]').count();
+  await page.mouse.down();
+  const down = await toScreen(32, 60);
+  await page.mouse.move(down.x, down.y, { steps: 10 });
+  const fromEnd = ((await page.locator('[data-draw-preview] text').textContent()) ?? '').trim();
+  await page.mouse.up();
+  await page.waitForTimeout(200);
+  if (hinted === 1 && fromEnd === '20 mm') pass('a new line starts on the end of another when begun near it');
+  else fail(`near a line's end: ${hinted} snap marks, and the new line was labelled "${fromEnd}"`);
+
+  // And finishes on one the same way.
+  await page.keyboard.press('l');
+  const start = await toScreen(8, 60);
+  await page.mouse.move(start.x, start.y);
+  await page.mouse.down();
+  const close = await toScreen(8 - off * 0.7, 40 + off * 0.7);
+  await page.mouse.move(close.x, close.y, { steps: 10 });
+  const marked = await page.locator('[data-line-end-snap]').count();
+  const toEnd = ((await page.locator('[data-draw-preview] text').textContent()) ?? '').trim();
+  await page.mouse.up();
+  await page.waitForTimeout(200);
+  if (marked === 1 && toEnd === '20 mm') pass('and ends on one when let go near it');
+  else fail(`ending near a line's end: ${marked} snap marks, and the line was labelled "${toEnd}"`);
+  await page.getByRole('button', { name: 'Text & art', exact: true }).click();
+  await page.getByRole('button', { name: 'Select all shapes', exact: true }).click();
+  await page.waitForTimeout(150);
+  if (await page.locator('[data-batch-editor]').count()) pass('Select all shapes picks up every line');
+  else fail('Select all shapes did not select the lines together');
+
   // From the button, a click lays the usual rule where clicked.
   await page.getByRole('button', { name: 'Text & art', exact: true }).click();
   await page.getByRole('button', { name: 'Line / shape', exact: true }).click();
@@ -778,11 +815,45 @@ async function open(colorScheme: 'light' | 'dark' = 'dark') {
   await page.waitForTimeout(250);
   const rules = await page.locator('[data-decor="shape"] path').count();
   const rule = await page.locator('[data-decor="shape"] path').last().boundingBox();
-  if (rules === 2 && rule && Math.abs(rule.x + rule.width / 2 - c.x) < 4 && Math.abs(rule.y + rule.height / 2 - c.y) < 4) {
+  // The first line, the two joined to it, and this one.
+  if (rules === 4 && rule && Math.abs(rule.x + rule.width / 2 - c.x) < 4 && Math.abs(rule.y + rule.height / 2 - c.y) < 4) {
     pass('the Line button draws too, and a click lays a rule centred where clicked');
   } else fail(`after a click with the line tool: ${rules} lines, the last centred at ${rule ? `${Math.round(rule.x + rule.width / 2)},${Math.round(rule.y + rule.height / 2)}` : 'nowhere'}`);
   if (await page.locator('[data-draw-layer]').count() === 0) pass('after which the tool is put away');
   else fail('the line tool stayed on');
+
+  // The rule just laid is selected: one end dragged moves alone, the other stays.
+  const centreOf = async (sel: string) => {
+    const bb = (await page.locator(sel).boundingBox())!;
+    return { x: bb.x + bb.width / 2, y: bb.y + bb.height / 2 };
+  };
+  const e0 = await centreOf('[data-line-handle="end0"]');
+  const e1 = await centreOf('[data-line-handle="end1"]');
+  const pxPerMm = one.x - o.x;
+  await page.mouse.move(e1.x, e1.y);
+  await page.mouse.down();
+  await page.mouse.move(e1.x, e1.y + 10 * pxPerMm, { steps: 8 });
+  await page.mouse.up();
+  await page.waitForTimeout(150);
+  const e0After = await centreOf('[data-line-handle="end0"]');
+  const e1After = await centreOf('[data-line-handle="end1"]');
+  if (Math.hypot(e0After.x - e0.x, e0After.y - e0.y) < 2 && Math.hypot(e1After.x - e1.x, e1After.y - (e1.y + 10 * pxPerMm)) < 3) {
+    pass('dragging a line\'s end moves that end alone');
+  } else fail(`after dragging one end 10 mm down, the ends moved ${Math.round(e0After.y - e0.y)} and ${Math.round(e1After.y - e1.y)} px`);
+
+  const heightBox = page.locator('label').filter({ has: page.getByText('Height', { exact: true }) }).locator('input');
+  const before = Number(await heightBox.inputValue({ timeout: 2000 }).catch(() => 'NaN'));
+  const th = await centreOf('[data-line-handle="thickness"]');
+  const dir = { x: th.x - (e0After.x + e1After.x) / 2, y: th.y - (e0After.y + e1After.y) / 2 };
+  const len = Math.hypot(dir.x, dir.y);
+  await page.mouse.move(th.x, th.y);
+  await page.mouse.down();
+  await page.mouse.move(th.x + (dir.x / len) * pxPerMm, th.y + (dir.y / len) * pxPerMm, { steps: 6 });
+  await page.mouse.up();
+  await page.waitForTimeout(150);
+  const after = Number(await heightBox.inputValue({ timeout: 2000 }).catch(() => 'NaN'));
+  if (Math.abs(after - before - 2) < 0.25) pass(`the side handle sets its thickness (${before} → ${after} mm)`);
+  else fail(`dragging the thickness handle 1 mm out took it from ${before} to ${after} mm`);
 
   if (problems.length === 0) pass('no uncaught errors drawing lines');
   else fail(`drawing lines: ${[...new Set(problems)].join(' | ')}`);
@@ -913,9 +984,9 @@ async function open(colorScheme: 'light' | 'dark' = 'dark') {
     }, [mx, my] as [number, number]);
   await page.getByRole('button', { name: 'Panel', exact: true }).click();
   const toggle = page.getByRole('switch', { name: 'Keep raised art clear of cutouts' });
-  if ((await toggle.getAttribute('aria-checked')) === 'true' && /2\.0 mm/.test(await page.locator('body').innerText())) {
-    pass('raised art keeps a 2 mm gap round cutouts unless told otherwise');
-  } else fail('the keep-clear gap is not on at 2 mm for a new panel');
+  if ((await toggle.getAttribute('aria-checked')) === 'true' && /1\.2 mm/.test(await page.locator('body').innerText())) {
+    pass('raised art keeps a 1.2 mm gap round cutouts unless told otherwise');
+  } else fail('the keep-clear gap is not on at 1.2 mm for a new panel');
 
   // A jack, and a raised label right beside it.
   await page.getByRole('button', { name: 'Cutouts', exact: true }).click();
@@ -954,7 +1025,7 @@ async function open(colorScheme: 'light' | 'dark' = 'dark') {
   else fail(`after dragging the gap out to about 4 mm the editor shows ${set ?? 'nothing'}`);
   await page.getByRole('button', { name: 'Reset', exact: true }).click();
   await page.waitForTimeout(150);
-  if (/Gap for raised art\s*2\.0 mm, panel default/i.test(await page.locator('body').innerText())) pass('and Reset hands it back to the panel\'s gap');
+  if (/Gap for raised art\s*1\.2 mm, panel default/i.test(await page.locator('body').innerText())) pass('and Reset hands it back to the panel\'s gap');
   else fail('Reset did not return the cutout to the panel gap');
 
   // Several cutouts at once: the shared editor sets the gap for all of them.
@@ -983,8 +1054,13 @@ async function open(colorScheme: 'light' | 'dark' = 'dark') {
   await page.waitForTimeout(150);
   await page.locator('[data-batch-cutouts]').getByRole('button', { name: 'Reset', exact: true }).click();
   await page.waitForTimeout(150);
-  if (/Gap for raised art\s*2\.0 mm, panel default/i.test(await page.locator('[data-batch-cutouts]').innerText())) pass('and handed back to the panel\'s gap together');
+  if (/Gap for raised art\s*1\.2 mm, panel default/i.test(await page.locator('[data-batch-cutouts]').innerText())) pass('and handed back to the panel\'s gap together');
   else fail('Reset on several cutouts did not return them to the panel gap');
+
+  await page.getByRole('button', { name: 'Select all', exact: true }).click();
+  await page.waitForTimeout(150);
+  if (await page.getByText('3 selected', { exact: true }).count()) pass('Select all picks every cutout');
+  else fail('Select all did not pick the three cutouts');
 
   await page.getByRole('button', { name: 'Panel', exact: true }).click();
   await toggle.click();
