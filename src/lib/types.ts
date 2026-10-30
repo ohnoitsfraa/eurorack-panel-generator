@@ -297,6 +297,17 @@ export interface ShapeElement {
   h: number;
   radius: number;
   rotation: number;
+  /**
+   * A line drawn through a point off its straight course: its bend handle.
+   * Measured from the line's middle along it (x) and across it (y), in
+   * lengths of the line, so the bend keeps its shape as the line is moved,
+   * turned or stretched. Absent, the line runs straight.
+   *
+   * The line curves up to it, the handle the top of the curve, and is a true
+   * arc when the handle is in the middle; with `corner` it goes straight to
+   * it and turns there.
+   */
+  bend?: { x: number; y: number; corner?: boolean };
   color: string;
   mode: ReliefMode;
   reliefMm: number;

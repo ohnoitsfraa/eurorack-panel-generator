@@ -216,6 +216,23 @@ function DecorEditor({ id }: { id: string }) {
               <NumberInput value={el.h} onChange={(h) => update(id, { h })} min={0.2} max={300} step={0.1} />
             </Field>
           </div>
+          {el.shape === 'line' && (el.bend ? (
+            <Field label="Bend">
+              <div className="flex items-center gap-2">
+                <Select
+                  value={el.bend.corner ? 'corner' : 'curve'}
+                  onChange={(v) => update(id, { bend: { x: el.bend!.x, y: el.bend!.y, ...(v === 'corner' ? { corner: true } : {}) } })}
+                  options={[
+                    { value: 'curve', label: 'Curve' },
+                    { value: 'corner', label: 'Corner' },
+                  ]}
+                />
+                <Button variant="ghost" onClick={() => update(id, { bend: undefined })}>Straighten</Button>
+              </div>
+            </Field>
+          ) : (
+            <p className="text-[12px] text-ink-400">Drag the diamond in the middle of the line to bend it.</p>
+          ))}
           {el.shape === 'rect' && (
             <Field label="Corner radius" hint="mm">
               <NumberInput value={el.radius} onChange={(radius) => update(id, { radius })} min={0} max={30} step={0.1} />

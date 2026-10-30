@@ -9,11 +9,11 @@ import {
 import { notePanelPointer, notePanelPress, useStore } from '@/lib/store';
 import { textToRings } from '@/lib/model/text';
 import { bbox, type Ring } from '@/lib/geom/poly';
-import { drawnCutout, drawnLine, lineEnds, nearestLineEnd } from '@/lib/drawCutout';
+import { bendAt, bendPoint, drawnCutout, drawnLine, lineEnds, nearestLineEnd } from '@/lib/drawCutout';
 import { alignTo, snapToGrid, type AlignTarget, type Guide, type SpacingHint } from '@/lib/align';
 import { cutoutFill } from '@/lib/color';
 import type { Font as OpentypeFont } from 'opentype.js';
-import { shapeRingsForPreview } from '@/lib/model/preview';
+import { pointAlongLine, shapeRingsForPreview } from '@/lib/model/preview';
 
 /**
  * The 2D editor.
@@ -504,6 +504,15 @@ export function PanelCanvas2D() {
       if (e.key === 'Escape') { setTool(null); setDrawing(null); select([]); return; }
       if (!selectedIds.length) return;
 
+      // Enter types into a selected label, as a double click on it does. Not
+      // while a button has the focus: Enter is already pressing that.
+      if (e.key === 'Enter' && selectedIds.length === 1 && el?.tagName !== 'BUTTON' && el?.tagName !== 'A'
+        && decor.some((d) => d.id === selectedIds[0] && d.type === 'text')) {
+        e.preventDefault();
+        setEditing(selectedIds[0]);
+        return;
+      }
+
       if (e.key === 'Delete' || e.key === 'Backspace') {
         e.preventDefault();
         removeFeatures(selectedIds.filter((id) => features.some((f) => f.id === id)));
@@ -888,6 +897,8 @@ export function PanelCanvas2D() {
             ? tool === 'line'
               ? 'Drag from one end of the line to the other, or click for a rule · Starts and ends snap to other lines\' ends · Shift for 15° steps · Esc to stop'
               : `Drag to draw a ${(CUTOUT_PRESETS.find((p) => p.id === tool)?.label ?? 'cutout').toLowerCase()}, or click for the usual size · Alt from the centre · Shift to keep drawing · Esc to stop`
+            : soleLine
+            ? 'Drag the diamond to bend the line, along it to lean the bend · the round ends to move them · the square to set its thickness'
             : 'Scroll or Space drag to move · ⌘/Ctrl scroll to zoom · Alt drag to duplicate · ⌘/Ctrl drag a part to ignore grid'}
         </span>
       </div>
@@ -2076,8 +2087,12 @@ function LineHandles({ el, handleMm }: { el: ShapeElement; handleMm: number }) {
   const gridMm = useStore((s) => s.gridMm);
   const decor = useStore((s) => s.design.decor);
   const svgRef = useContext(CanvasFrame);
-  const drag = useRef<{ role: 'end'; end: 0 | 1; fixed: { x: number; y: number } } | { role: 'thickness' } | null>(null);
+  const drag = useRef<
+    { role: 'end'; end: 0 | 1; fixed: { x: number; y: number } } | { role: 'thickness' } | { role: 'bend' } | null
+  >(null);
   const [heldOn, setHeldOn] = useState<{ x: number; y: number } | null>(null);
+  const [bendHover, setBendHover] = useState(false);
+  const [bending, setBending] = useState(false);
 
   const others = useMemo(
     () => decor.flatMap((d) => (d.id !== el.id && d.type === 'shape' && d.shape === 'line' ? lineEnds(d) : [])),
@@ -2091,7 +2106,15 @@ function LineHandles({ el, handleMm }: { el: ShapeElement; handleMm: number }) {
   const cos = Math.cos(rot);
   const sin = Math.sin(rot);
   const ends = lineEnds(el);
-  const thickAt = { x: el.x - sin * (el.h / 2 + off), y: el.y + cos * (el.h / 2 + off) };
+  const bendAtNow = bendPoint(el);
+  // Three quarters along, on the outside of any bend: the middle is the bend
+  // handle's, with room either side for its arrows.
+  const thickFrom = pointAlongLine(el, 0.75);
+  const thickAt = {
+    x: thickFrom.x + thickFrom.nx * (el.h / 2 + off),
+    y: thickFrom.y + thickFrom.ny * (el.h / 2 + off),
+  };
+  const reachMm = (LINE_END_REACH_PX * handleMm) / HANDLE_PX;
 
   const pointAt = (e: React.PointerEvent) => {
     const svg = svgRef?.current;
@@ -2108,12 +2131,17 @@ function LineHandles({ el, handleMm }: { el: ShapeElement; handleMm: number }) {
     const free = e.metaKey || e.ctrlKey;
 
     if (d.role === 'thickness') {
-      const out = Math.abs(-(p.x - el.x) * sin + (p.y - el.y) * cos);
+      const out = Math.abs((p.x - thickFrom.x) * thickFrom.nx + (p.y - thickFrom.y) * thickFrom.ny);
       updateDecor(el.id, { h: Math.max(0.2, Math.min(20, Math.round((out - off) * 20) / 10)) });
       return;
     }
 
-    const end = free ? null : nearestLineEnd(p, others, (LINE_END_REACH_PX * handleMm) / HANDLE_PX);
+    if (d.role === 'bend') {
+      updateDecor(el.id, { bend: bendAt(el, p, { reachMm: free ? 0 : reachMm, even: e.shiftKey }) });
+      return;
+    }
+
+    const end = free ? null : nearestLineEnd(p, others, reachMm);
     setHeldOn(end);
     const to = end ?? { x: snap(p.x, free), y: snap(p.y, free) };
     const line = drawnLine(d.fixed, to, { snapAngle: e.shiftKey && !end, minDragMm: 0.5 });
@@ -2139,7 +2167,28 @@ function LineHandles({ el, handleMm }: { el: ShapeElement; handleMm: number }) {
     (e.target as Element).setPointerCapture?.(e.pointerId);
     drag.current = { role: 'thickness' };
   };
-  const end = () => { drag.current = null; setHeldOn(null); };
+  const beginBend = (e: React.PointerEvent) => {
+    e.stopPropagation();
+    (e.target as Element).setPointerCapture?.(e.pointerId);
+    drag.current = { role: 'bend' };
+    setBending(true);
+  };
+  const end = () => { drag.current = null; setHeldOn(null); setBending(false); };
+
+  // Arrows either side of the bend handle, pointing across the line: it is
+  // pulled sideways, and a plain dot in the middle of a line does not say so.
+  const arrow = (dir: 1 | -1) => {
+    const nx = -sin * dir, ny = cos * dir;
+    const at = (out: number, along: number) =>
+      `${fmt(bendAtNow.x + nx * out + cos * along)},${fmt(bendAtNow.y + ny * out + sin * along)}`;
+    return `${at(r * 3.3, 0)} ${at(r * 1.9, r * 1.0)} ${at(r * 1.9, -r * 1.0)}`;
+  };
+  // On hover, a straight line shows the curves it could be pulled into.
+  const ghost = (dir: 1 | -1) => {
+    const q = el.w * 0.3 * dir;
+    return `M ${fmt(ends[0].x)} ${fmt(ends[0].y)} Q ${fmt(el.x - sin * q)} ${fmt(el.y + cos * q)} ${fmt(ends[1].x)} ${fmt(ends[1].y)}`;
+  };
+  const across = Math.abs(sin) >= Math.abs(cos) ? 'ew-resize' : 'ns-resize';
 
   return (
     <g onPointerMove={onMove} onPointerUp={end} onPointerLeave={end}>
@@ -2149,15 +2198,47 @@ function LineHandles({ el, handleMm }: { el: ShapeElement; handleMm: number }) {
           fill="#ffb45430" stroke="var(--color-accent)" strokeWidth={handleMm * 0.1}
         />
       )}
+      {bendHover && !bending && !el.bend && (
+        <g data-bend-ghost="" pointerEvents="none" fill="none" stroke="var(--color-accent)"
+          strokeWidth={handleMm * 0.1} strokeDasharray={`${handleMm * 0.35} ${handleMm * 0.25}`} opacity={0.7}>
+          <path d={ghost(1)} />
+          <path d={ghost(-1)} />
+        </g>
+      )}
+      <g
+        data-line-handle="bend"
+        style={{ cursor: bending ? 'grabbing' : across }}
+        onPointerDown={beginBend}
+        onPointerEnter={() => setBendHover(true)}
+        onPointerLeave={() => setBendHover(false)}
+      >
+        <title>Drag across the line to bend it, along it to lean the bend · back to the middle straightens it · Shift keeps it even · ⌘/Ctrl to place freely</title>
+        {/* A wider target than the diamond, so the arrows grab it too. */}
+        <circle cx={bendAtNow.x} cy={bendAtNow.y} r={r * 3.4} fill="transparent" />
+        {!bending && (
+          <circle cx={bendAtNow.x} cy={bendAtNow.y} r={r * (bendHover ? 1.9 : 1.6)} fill="var(--color-accent)" opacity={0.22} />
+        )}
+        {!bending && (
+          <g fill="var(--color-accent)" stroke="var(--color-ink-950)" strokeWidth={handleMm * 0.06} strokeLinejoin="round">
+            <polygon points={arrow(1)} />
+            <polygon points={arrow(-1)} />
+          </g>
+        )}
+        <rect
+          x={bendAtNow.x - r * 1.1} y={bendAtNow.y - r * 1.1} width={r * 2.2} height={r * 2.2}
+          transform={`rotate(${el.rotation + 45} ${bendAtNow.x} ${bendAtNow.y})`}
+          fill="var(--color-accent)" stroke="var(--color-ink-950)" strokeWidth={handleMm * 0.1}
+        />
+      </g>
       <line
-        x1={el.x} y1={el.y} x2={thickAt.x} y2={thickAt.y}
+        x1={thickFrom.x} y1={thickFrom.y} x2={thickAt.x} y2={thickAt.y}
         stroke="var(--color-accent)" strokeWidth={handleMm * 0.1} pointerEvents="none"
       />
       <rect
         data-line-handle="thickness"
         x={thickAt.x - r * 0.8} y={thickAt.y - r * 0.8} width={r * 1.6} height={r * 1.6}
         fill="var(--color-ink-950)" stroke="var(--color-accent)" strokeWidth={handleMm * 0.12}
-        style={{ cursor: Math.abs(cos) >= Math.abs(sin) ? 'ns-resize' : 'ew-resize' }}
+        style={{ cursor: Math.abs(thickFrom.ny) >= Math.abs(thickFrom.nx) ? 'ns-resize' : 'ew-resize' }}
         onPointerDown={beginThickness}
       >
         <title>Drag to set the thickness</title>

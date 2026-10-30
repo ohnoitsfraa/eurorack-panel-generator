@@ -282,6 +282,16 @@ async function open(colorScheme: 'light' | 'dark' = 'dark') {
   await page.waitForTimeout(300);
   if ((await editor.count()) === 0 && (await named()) === 'CV IN') pass('Escape leaves, keeping it');
   else fail('Escape did not close the editor');
+  // Still selected: Enter types into it again, and Enter leaves without
+  // opening it straight back up.
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(300);
+  const reopened = (await editor.count()) === 1
+    && (await page.evaluate(() => document.activeElement?.getAttribute('aria-label'))) === 'Label text';
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(300);
+  if (reopened && (await editor.count()) === 0 && (await named()) === 'CV IN') pass('Enter on a selected label types into it, and Enter leaves');
+  else fail(`Enter on a selected label: editor ${reopened ? 'opened' : 'did not open'}, then ${await editor.count()} left open`);
   await hit.dblclick();
   await page.waitForTimeout(300);
   await page.mouse.click(1100, 700);
@@ -844,7 +854,8 @@ async function open(colorScheme: 'light' | 'dark' = 'dark') {
   const heightBox = page.locator('label').filter({ has: page.getByText('Height', { exact: true }) }).locator('input');
   const before = Number(await heightBox.inputValue({ timeout: 2000 }).catch(() => 'NaN'));
   const th = await centreOf('[data-line-handle="thickness"]');
-  const dir = { x: th.x - (e0After.x + e1After.x) / 2, y: th.y - (e0After.y + e1After.y) / 2 };
+  // It stands off the line three quarters of the way along.
+  const dir = { x: th.x - (e0After.x + (e1After.x - e0After.x) * 0.75), y: th.y - (e0After.y + (e1After.y - e0After.y) * 0.75) };
   const len = Math.hypot(dir.x, dir.y);
   await page.mouse.move(th.x, th.y);
   await page.mouse.down();
@@ -854,6 +865,40 @@ async function open(colorScheme: 'light' | 'dark' = 'dark') {
   const after = Number(await heightBox.inputValue({ timeout: 2000 }).catch(() => 'NaN'));
   if (Math.abs(after - before - 2) < 0.25) pass(`the side handle sets its thickness (${before} → ${after} mm)`);
   else fail(`dragging the thickness handle 1 mm out took it from ${before} to ${after} mm`);
+
+  // The diamond in the middle bends it, the ends staying put. Hovering it
+  // first shows the curves it could be pulled into.
+  const mid = await centreOf('[data-line-handle="bend"]');
+  await page.mouse.move(mid.x, mid.y);
+  await page.waitForTimeout(100);
+  if (await page.locator('[data-bend-ghost] path').count() === 2) pass('hovering the bend handle shows the curves it could make');
+  else fail('hovering the bend handle showed no hint of a curve');
+  const across = { x: -(e1After.y - e0After.y), y: e1After.x - e0After.x };
+  const acrossLen = Math.hypot(across.x, across.y);
+  const pull = { x: (across.x / acrossLen) * 5 * pxPerMm, y: (across.y / acrossLen) * 5 * pxPerMm };
+  await page.mouse.move(mid.x, mid.y);
+  await page.mouse.down();
+  await page.mouse.move(mid.x + pull.x, mid.y + pull.y, { steps: 8 });
+  await page.mouse.up();
+  await page.waitForTimeout(150);
+  const midAfter = await centreOf('[data-line-handle="bend"]');
+  const e0Bent = await centreOf('[data-line-handle="end0"]');
+  const bendField = page.locator('label').filter({ has: page.getByText('Bend', { exact: true }) });
+  if (Math.hypot(midAfter.x - mid.x - pull.x, midAfter.y - mid.y - pull.y) < 3
+    && Math.hypot(e0Bent.x - e0After.x, e0Bent.y - e0After.y) < 2
+    && await bendField.count() === 1) {
+    pass('the middle handle bends a line, its ends staying where they were');
+  } else fail(`after pulling the bend handle 5 mm: it moved ${Math.round(midAfter.x - mid.x)},${Math.round(midAfter.y - mid.y)} px, wanted ${Math.round(pull.x)},${Math.round(pull.y)}; Bend field ${await bendField.count()}`);
+
+  await bendField.locator('select').selectOption('corner');
+  await page.waitForTimeout(100);
+  const pathCorner = await page.locator('[data-decor="shape"] path').last().getAttribute('d');
+  await page.getByRole('button', { name: 'Straighten', exact: true }).click();
+  await page.waitForTimeout(100);
+  const midStraight = await centreOf('[data-line-handle="bend"]');
+  if (pathCorner && Math.hypot(midStraight.x - mid.x, midStraight.y - mid.y) < 2 && await bendField.count() === 0) {
+    pass('a bend can be cornered, and straightened again');
+  } else fail(`straightening left the bend handle ${Math.round(Math.hypot(midStraight.x - mid.x, midStraight.y - mid.y))} px off the middle`);
 
   if (problems.length === 0) pass('no uncaught errors drawing lines');
   else fail(`drawing lines: ${[...new Set(problems)].join(' | ')}`);

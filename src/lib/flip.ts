@@ -37,5 +37,10 @@ export function turnDecor(d: DecorElement, W: number, H: number): DecorElement {
   if (moved.type === 'text') {
     moved.align = moved.align === 'left' ? 'right' : moved.align === 'right' ? 'left' : 'center';
   }
+  // A line is drawn, not read: a bent one turns with the panel, so it still
+  // curves round whatever it curved round. Its ends already swap places.
+  if (moved.type === 'shape' && moved.bend) {
+    moved.bend = { ...moved.bend, x: -moved.bend.x, y: -moved.bend.y };
+  }
   return moved;
 }

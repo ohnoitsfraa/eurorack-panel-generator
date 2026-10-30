@@ -1994,6 +1994,69 @@ console.log('\nDrawing cutouts');
     pass('a line added by its ends sits between them, as long as they are apart, turned to match');
   } else fail(`line from its ends: ${JSON.stringify(drawnRule)}`);
   st().newDesign();
+
+  // A line bends through its handle, as an arc or at a corner.
+  const { bendAt, bendPoint, lineEnds } = await import('../src/lib/drawCutout');
+  const { shapeRingsForPreview } = await import('../src/lib/model/preview');
+  const { pointInRing, signedArea } = await import('../src/lib/geom/poly');
+  const { turnDecor } = await import('../src/lib/flip');
+  const straight = {
+    id: 'bl', type: 'shape' as const, shape: 'line' as const,
+    x: 20, y: 60, w: 30, h: 1, radius: 0.5, rotation: 30,
+    color: '#ffffff', mode: 'raised' as const, reliefMm: 0.6,
+  };
+  const pulled = { ...straight, rotation: 30 + 90 };
+  const tip = bendPoint({ ...straight, bend: { x: 0, y: 0.2 } });
+  const bend = bendAt(straight, tip, { reachMm: 1 });
+  if (bend && bend.x === 0 && Math.abs(bend.y - 0.2) < 1e-3) pass('dragging the bend handle off a line bends it there');
+  else fail(`bend from its handle: ${JSON.stringify(bend)}`);
+  if (bendAt(straight, { x: 20.2, y: 60.3 }, { reachMm: 1 }) === undefined) pass('and back near the middle straightens it');
+  else fail('a bend handle dropped on the middle left the line bent');
+  if (bendAt(pulled, bendPoint({ ...pulled, bend: { x: 0.25, y: -0.1 } }), { even: true })?.x === 0) pass('Shift keeps the bend square to the line');
+  else fail('Shift let the bend slide along the line');
+
+  const arc = { ...straight, bend: { x: 0, y: 0.2 } };
+  const arcRings = shapeRingsForPreview(arc);
+  // Sagitta 6 over a 30 mm chord: a radius of 21.75 mm.
+  const R = (15 * 15 + 6 * 6) / 12;
+  const arcArea = 2 * Math.asin(15 / R) * R * 1 + Math.PI * 0.25;
+  const area = arcRings.reduce((a, r) => a + Math.abs(signedArea(r)), 0);
+  const [e0, e1] = lineEnds(arc);
+  if (arcRings.length === 1 && Math.abs(area - arcArea) < arcArea * 0.01
+    && pointInRing(tip, arcRings[0]) && pointInRing(e0, arcRings[0]) && pointInRing(e1, arcRings[0])
+    && !pointInRing({ x: arc.x, y: arc.y }, arcRings[0])) {
+    pass('a curved line is an arc through both ends and its handle, as thick as the line');
+  } else fail(`arc: ${arcRings.length} rings, area ${area.toFixed(2)} against ${arcArea.toFixed(2)}`);
+
+  const corner = { ...straight, bend: { x: 0, y: 0.2, corner: true } };
+  const cornerRings = shapeRingsForPreview(corner);
+  const legs = 2 * Math.hypot(15, 6);
+  const cornerArea = cornerRings.reduce((a, r) => a + Math.abs(signedArea(r)), 0);
+  if (cornerRings.length === 1 && pointInRing(tip, cornerRings[0]) && Math.abs(cornerArea - legs) < legs * 0.03) {
+    pass('a cornered line runs straight to its handle and turns there, as one outline');
+  } else fail(`corner: ${cornerRings.length} rings, area ${cornerArea.toFixed(2)} against about ${legs.toFixed(2)}`);
+
+  // Pulled along the line as well as across it, the curve leans that way,
+  // with the handle still its highest point.
+  const leaning = { ...straight, rotation: 0, bend: { x: 0.25, y: -0.2 } };
+  const leanTip = bendPoint(leaning);
+  const leanRing = shapeRingsForPreview(leaning)[0];
+  const top = leanRing.reduce((a, p) => (p.y < a.y ? p : a), leanRing[0]);
+  if (pointInRing(leanTip, leanRing) && Math.abs(top.x - leanTip.x) < 0.3 && Math.abs(top.y - (leanTip.y - 0.5)) < 0.05) {
+    pass('pulled along the line too, the curve leans that way and peaks at its handle');
+  } else fail(`leaning curve peaks at ${top.x.toFixed(2)},${top.y.toFixed(2)}, its handle at ${leanTip.x.toFixed(2)},${leanTip.y.toFixed(2)}`);
+
+  // Bent tight and thick, the band overlaps itself and must still print.
+  const tight = { ...straight, h: 6, w: 8, bend: { x: 0, y: 0.9 } };
+  for (const d of [arc, corner, tight, leaning, { ...leaning, bend: { x: -0.4, y: 0.8 } }, { ...corner, mode: 'engraved' as const }]) {
+    for (const m of buildPanel({ ...BASE, decor: [d] }, { fonts: noFonts }).meshes) checkSolid(m, `bent line / ${m.name}`);
+  }
+
+  const turned = turnDecor(arc, 40, 128.5);
+  const turnedTip = turned.type === 'shape' ? bendPoint(turned) : null;
+  if (turnedTip && Math.abs(turnedTip.x - (40 - tip.x)) < 0.02 && Math.abs(turnedTip.y - (128.5 - tip.y)) < 0.02) {
+    pass('a bent line turns with a flipped panel, bending round the same side');
+  } else fail(`turned bend sits at ${JSON.stringify(turnedTip)}`);
 }
 
 // ------------------------------------------------------------ 6c2. hole colour

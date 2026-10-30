@@ -24,7 +24,7 @@ const GROUPS: Array<{ title: string; keys: Array<[string, string]> }> = [
   {
     title: 'Edit',
     keys: [
-      ['Double-click', 'Type into a label'],
+      ['Double-click or Enter', 'Type into a label'],
       ['Arrows', 'Nudge by the grid pitch'],
       ['Shift + arrows', 'Nudge five steps'],
       ['⌘ D', 'Duplicate'],

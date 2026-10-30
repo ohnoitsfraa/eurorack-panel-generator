@@ -89,3 +89,41 @@ export function nearestLineEnd(
   }
   return best;
 }
+
+type LineLike = { x: number; y: number; w: number; rotation: number; bend?: { x: number; y: number; corner?: boolean } };
+
+/** Where a line's bend handle sits on the panel: its middle, for a straight line. */
+export function bendPoint(el: LineLike): { x: number; y: number } {
+  const a = (el.rotation * Math.PI) / 180;
+  const cos = Math.cos(a), sin = Math.sin(a);
+  const u = (el.bend?.x ?? 0) * el.w, v = (el.bend?.y ?? 0) * el.w;
+  return { x: el.x + u * cos - v * sin, y: el.y + u * sin + v * cos };
+}
+
+/**
+ * The bend that puts a line's bend handle at a point, or undefined for none.
+ *
+ * Within `reachMm` of the middle across the line it lets go of the bend, and
+ * within reach of the middle along it, or always with `even`, the bend sits
+ * square to the line: a symmetrical arc or an even V, which is what is
+ * nearly always meant. The handle is kept short of the ends, where an arc
+ * would have to swing round the whole circle to reach it.
+ */
+export function bendAt(
+  el: LineLike,
+  p: { x: number; y: number },
+  opts: { reachMm?: number; even?: boolean } = {},
+): LineLike['bend'] {
+  if (el.w <= 0) return undefined;
+  const a = (el.rotation * Math.PI) / 180;
+  const cos = Math.cos(a), sin = Math.sin(a);
+  const dx = p.x - el.x, dy = p.y - el.y;
+  const along = dx * cos + dy * sin;
+  const across = -dx * sin + dy * cos;
+  const reach = opts.reachMm ?? 0;
+  if (Math.abs(across) <= Math.max(reach, 0.05)) return undefined;
+  const x = opts.even || Math.abs(along) <= reach ? 0 : Math.max(-0.4, Math.min(0.4, along / el.w));
+  const y = Math.max(-1, Math.min(1, across / el.w));
+  const r4 = (v: number) => Math.round(v * 10000) / 10000;
+  return { x: r4(x), y: r4(y), ...(el.bend?.corner ? { corner: true } : {}) };
+}
