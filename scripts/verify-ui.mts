@@ -1663,6 +1663,61 @@ async function open(colorScheme: 'light' | 'dark' = 'dark') {
   await page.close();
 }
 
+// --- a cutout faded to line it up with the photo ---
+{
+  const { page, problems } = await open();
+  const toScreen = (mx: number, my: number) =>
+    page.evaluate(([x, y]) => {
+      const el = document.querySelector('[data-panel-canvas]') as SVGSVGElement;
+      const p = new DOMPoint(x, y).matrixTransform(el.getScreenCTM()!);
+      return { x: p.x, y: p.y };
+    }, [mx, my] as [number, number]);
+  await page.getByRole('button', { name: 'Cutouts', exact: true }).click();
+  await page.locator('[data-panel-canvas]').hover();
+  await page.keyboard.press('c');
+  const at = await toScreen(20, 100);
+  await page.mouse.click(at.x, at.y);
+  await page.waitForTimeout(250);
+  // Without a photo too: what is under a cutout may be artwork on the panel.
+  const slider = page.locator('[data-see-through] input[type="range"]');
+  if (await slider.count() === 1) pass('a selected cutout has an opacity slider, photo or not');
+  else fail(`no opacity slider for a cutout on a panel with no photo (${await slider.count()})`);
+
+  await page.locator('aside').first().locator('input[type="file"][accept="image/*"]').setInputFiles({
+    name: 'module.png', mimeType: 'image/png', buffer: readFileSync('racktest.png'),
+  });
+  await page.waitForTimeout(4000);
+  // Detection puts its own cutouts in; this one is placed after it.
+  await page.getByRole('button', { name: 'Cutouts', exact: true }).click();
+  await page.locator('[data-panel-canvas]').hover();
+  await page.keyboard.press('c');
+  const spot = await toScreen(30, 64);
+  await page.mouse.click(spot.x, spot.y);
+  await page.waitForTimeout(300);
+  const hole = page.locator('[data-panel-canvas] circle[cx="30"][cy="64"][r="3"]');
+  if (await slider.count() === 1) pass('and over a photo');
+  else fail(`no opacity slider for the selected cutout over a photo (${await slider.count()})`);
+  await slider.focus();
+  await page.keyboard.press('Home');
+  await page.waitForTimeout(150);
+  const faded = await hole.getAttribute('fill-opacity');
+  const others = await page.locator('[data-panel-canvas] circle[fill-opacity="0"]').count();
+  if (faded === '0' && others === 1) pass('dragged down, that cutout alone shows the photo through it');
+  else fail(`faded cutout fill-opacity ${faded}, ${others} cutouts faded`);
+  const stroke = await hole.getAttribute('stroke-width');
+  if (stroke && Number(stroke) > 0) pass('keeping its outline to line up with the hole');
+  else fail('the faded cutout lost its outline');
+
+  await page.locator('[data-see-through]').getByRole('button', { name: 'Solid', exact: true }).click();
+  await page.waitForTimeout(150);
+  if ((await hole.getAttribute('fill-opacity')) === '1') pass('and Solid fills it in again');
+  else fail(`after Solid, fill-opacity ${await hole.getAttribute('fill-opacity')}`);
+
+  if (problems.length === 0) pass('no uncaught errors fading a cutout');
+  else fail(`fading a cutout: ${[...new Set(problems)].join(' | ')}`);
+  await page.close();
+}
+
 // --- several cutouts sized at once ---
 {
   const { page, problems } = await open();

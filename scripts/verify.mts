@@ -2057,6 +2057,18 @@ console.log('\nDrawing cutouts');
   if (turnedTip && Math.abs(turnedTip.x - (40 - tip.x)) < 0.02 && Math.abs(turnedTip.y - (128.5 - tip.y)) < 0.02) {
     pass('a bent line turns with a flipped panel, bending round the same side');
   } else fail(`turned bend sits at ${JSON.stringify(turnedTip)}`);
+
+  // Fading a cutout to see the photo through it is a way of looking, not a
+  // change to the panel.
+  const designBefore = st().design;
+  st().setCutoutOpacity(['h1', 'h2'], 0.2);
+  const faded = st().cutoutOpacity;
+  st().setCutoutOpacity(['h1'], 1);
+  if (faded.h1 === 0.2 && faded.h2 === 0.2 && !('h1' in st().cutoutOpacity) && st().cutoutOpacity.h2 === 0.2
+    && st().design === designBefore) {
+    pass('a cutout can be faded in the editor and made solid again, leaving the design alone');
+  } else fail(`cutout opacity: ${JSON.stringify(faded)} then ${JSON.stringify(st().cutoutOpacity)}`);
+  st().setCutoutOpacity(['h2'], 1);
 }
 
 // ------------------------------------------------------------ 6c2. hole colour

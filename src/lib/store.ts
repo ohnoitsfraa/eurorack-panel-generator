@@ -82,6 +82,12 @@ interface State {
   gridMm: number;
   showSource: boolean;
   sourceOpacity: number;
+  /**
+   * How solid each cutout is drawn in the editor, by id; absent is fully
+   * solid. A cutout faded out shows the photo through it, to line it up with
+   * the hole underneath. Only a way of looking: not saved, not exported.
+   */
+  cutoutOpacity: Record<string, number>;
   fonts: Map<string, Font>;
   fontVersion: number;
   /** Families the user uploaded, offered in the font list after the built-in ones. */
@@ -189,6 +195,7 @@ interface State {
   setGrid: (mm: number) => void;
   setShowSource: (v: boolean) => void;
   setSourceOpacity: (v: number) => void;
+  setCutoutOpacity: (ids: string[], opacity: number) => void;
   setError: (e: string | null) => void;
   ensureFont: (family: string, weight: number) => void;
   /** Read, register and keep a font file. Resolves to its family, or null if it is not a font. */
@@ -303,6 +310,7 @@ export const useStore = create<State>((set, get) => ({
   gridMm: 0,
   showSource: true,
   sourceOpacity: 0.55,
+  cutoutOpacity: {},
   fonts: new Map(),
   fontVersion: 0,
   customFonts: [],
@@ -1157,6 +1165,14 @@ export const useStore = create<State>((set, get) => ({
   setGrid: (gridMm) => set({ gridMm }),
   setShowSource: (showSource) => set({ showSource }),
   setSourceOpacity: (sourceOpacity) => set({ sourceOpacity }),
+  setCutoutOpacity: (ids, opacity) => set((s) => {
+    const next = { ...s.cutoutOpacity };
+    for (const id of ids) {
+      if (opacity >= 1) delete next[id];
+      else next[id] = Math.max(0, opacity);
+    }
+    return { cutoutOpacity: next };
+  }),
   setError: (error) => set({ error }),
 
   ensureFont: (family, weight) => {

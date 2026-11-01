@@ -110,6 +110,7 @@ export function PanelCanvas2D() {
   const gridMm = useStore((s) => s.gridMm);
   const showSource = useStore((s) => s.showSource);
   const sourceOpacity = useStore((s) => s.sourceOpacity);
+  const cutoutOpacity = useStore((s) => s.cutoutOpacity);
   const croppedUrl = useCroppedSourceUrl();
 
   const W = panelWidthMm(design.hp);
@@ -750,6 +751,7 @@ export function PanelCanvas2D() {
             onPointerDown={(e) => beginDrag(e, f.id, false)}
             handleMm={handleMm}
             fill={holeFill}
+            fillOpacity={cutoutOpacity[f.id] ?? 1}
           />
         ))}
 
@@ -967,13 +969,18 @@ function ZoomButton({ children, onClick }: { children: React.ReactNode; onClick:
 }
 
 function FeatureShape({
-  f, selected, onPointerDown, handleMm, fill,
+  f, selected, onPointerDown, handleMm, fill, fillOpacity = 1,
 }: {
   f: Feature;
   selected: boolean;
   onPointerDown: (e: React.PointerEvent) => void;
   handleMm: number;
   fill: string;
+  /**
+   * Faded to line it up with the photo beneath. The outline stays, and so
+   * does the hit area: a fill at any opacity still takes the pointer.
+   */
+  fillOpacity?: number;
 }) {
   const stroke = selected ? 'var(--color-accent)' : 'var(--panel-edge)';
   const sw = selected ? handleMm * 0.28 : handleMm * 0.16;
@@ -983,6 +990,7 @@ function FeatureShape({
 
   const common = {
     fill,
+    fillOpacity,
     stroke: shaky && !selected ? 'var(--color-danger)' : stroke,
     strokeWidth: sw,
     strokeDasharray: shaky && !selected ? `${handleMm * 0.4} ${handleMm * 0.3}` : undefined,

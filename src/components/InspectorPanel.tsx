@@ -81,6 +81,8 @@ function FeatureEditor({ feature: f }: { feature: Feature }) {
         </Field>
       </div>
 
+      <SeeThrough ids={[f.id]} />
+
       {f.shape === 'circle' ? (
         <Field label="Diameter" hint="mm">
           <NumberInput
@@ -324,6 +326,61 @@ function BatchFeatureSize({ features }: { features: Feature[] }) {
             )}
           </div>
         </Field>
+      )}
+      <SeeThrough ids={ids} />
+    </div>
+  );
+}
+
+/**
+ * How solid the cutouts are drawn here, to see what is under them.
+ *
+ * A cutout is filled in, which hides the very hole in the photo it is meant
+ * to sit on, or the artwork drawn round it. Faded out, that shows through
+ * inside its outline, and the two can be lined up exactly. Only the editor's
+ * view: nothing is saved, and the exported panel is the same.
+ */
+function SeeThrough({ ids }: { ids: string[] }) {
+  const hasSource = useStore((s) => s.sourceImage !== null);
+  const showSource = useStore((s) => s.showSource);
+  const setShowSource = useStore((s) => s.setShowSource);
+  const cutoutOpacity = useStore((s) => s.cutoutOpacity);
+  const setCutoutOpacity = useStore((s) => s.setCutoutOpacity);
+  const opacity = shared(ids.map((id) => cutoutOpacity[id] ?? 1));
+  return (
+    <div data-see-through="">
+      <Field
+        label="Opacity on screen"
+        hint={opacity === undefined ? 'mixed' : `${Math.round(opacity * 100)}%`}
+      >
+        <div className="flex items-center gap-2">
+          <Slider
+            min={0} max={1} step={0.05}
+            value={opacity ?? 1}
+            onChange={(v) => setCutoutOpacity(ids, v)}
+          />
+          {opacity !== 1 && (
+            <button
+              type="button"
+              onClick={() => setCutoutOpacity(ids, 1)}
+              className="shrink-0 text-[12px] text-ink-400 hover:text-ink-100"
+              title="Draw solid again"
+            >
+              Solid
+            </button>
+          )}
+        </div>
+      </Field>
+      {!hasSource || showSource ? (
+        <p className="-mt-1 text-[12px] leading-relaxed text-ink-400">
+          Fade it to see what is under it, {hasSource ? 'the photo or ' : ''}artwork on the panel,
+          and line the two up. Only here in the editor; the panel itself is unchanged.
+        </p>
+      ) : (
+        <div className="-mt-1 flex items-center justify-between gap-2 text-[12px] text-ink-400">
+          <span>The photo underlay is hidden.</span>
+          <Button variant="ghost" onClick={() => setShowSource(true)}>Show photo</Button>
+        </div>
       )}
     </div>
   );
