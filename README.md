@@ -4,10 +4,14 @@ Design matching Eurorack faceplates, so a rack of mismatched hardware ends up
 looking like one instrument.
 
 Point it at a module — a photo, or its name on ModularGrid — and it finds the
-jack, pot, LED and slider cutouts for you, and names the panel after it. Restyle the panel, arrange your
-panels into a rack, and export STL or 3MF to print.
+jack, pot, LED and slider cutouts for you, and names the panel after it.
+Letter it, add icons or traced artwork, arrange your panels into a rack, and
+export STL or 3MF to print.
 
-![No screenshot yet — run `npm run dev` and open http://localhost:3000](#)
+**Try it: [panelmate.vercel.app](https://panelmate.vercel.app/)**. It runs in
+your browser, and nothing you make leaves it unless you export it.
+
+![Panelmate with Make Noise Maths loaded from ModularGrid, its jacks, pots and LEDs detected as cutouts over the module photo](docs/screenshot.png)
 
 ## Getting started
 
@@ -38,7 +42,8 @@ on a server.
 | `/api/proxy-image` | reading pixels from a cross-origin image taints the canvas |
 | `/api/modulargrid/module` | cross-origin, and ModularGrid has no API |
 
-So it wants a host that runs Next.js. **Vercel's Hobby plan** is the
+So it wants a host that runs Next.js. The public demo runs on Vercel, and
+deploys itself from `main`. **Vercel's Hobby plan** is the
 straightforward answer: it is Next's own host, free, needs no card, and takes no
 configuration — the defaults are already right.
 
@@ -127,6 +132,14 @@ readings are concentric, while a word's are smeared along its length. On a real
 30 HP panel the two together take the spurious cutouts from 24 down to a
 handful.
 
+That still let a lone round letter through: the O of "OUT", a 0 or an 8, or
+on a dark panel the inside of a D. So the detector now finds the lettering
+before it looks for holes. Letter-sized shapes that line up into a row or a
+column, in either ink colour, are read as text, and a hole reading that is one
+of those letters, or the inside of one, is dropped. A row of LEDs is
+the same size and also lines up, but it cannot start a line of text, so real
+hardware next to a label survives. **Ignore lettering** turns this off.
+
 ### Unsaved changes
 
 A panel counts as changed the moment its design object stops being the one
@@ -205,6 +218,23 @@ that blocks on the network is worse than one missing a label for a moment, but
 an export settles every outstanding font first and rebuilds from fresh state.
 The file is the thing being made.
 
+An uploaded `.ttf` or `.otf` is kept in the local database and listed after
+the built-in families, so lettering set in it still draws after a reload.
+Backups carry the fonts their panels use, and fonts are matched by a hash of
+the file rather than by name: importing a font you already have reuses it, and
+a different file under a taken name arrives as "Name (2)" instead of
+replacing the one your existing lettering uses. The weight list offers only
+the weights a family actually comes in, since a weight the family does not
+have leaves a label that never draws.
+
+### Icons
+
+Icons come from Iconify's public API, limited to filled, openly licensed sets
+(Material Design Icons, Phosphor, Material Symbols), and are placed as artwork
+that moves, scales and builds like traced art. Iconify limits how often one
+visitor may call it, so previews are drawn from one request per set, and
+searches are remembered for the session.
+
 ### Relief, and the flush mode
 
 A piece of decor meets the panel face in one of three ways. `raised` stands
@@ -219,19 +249,55 @@ Flush used to happen by accident: an engraving in a colour other than the
 panel's was filled automatically, and one in the same colour was not. Whether
 a recess got filled should not depend on a colour picked for the drawing, so
 it is a choice now. Designs saved before this have their coloured engravings
-read as flush, which is what they were already being built as.
+read as flush, which is what they were already being built as. New labels,
+artwork, icons and lines all start raised.
+
+Raised art is trimmed back from every cutout and mounting slot, 1.2 mm beyond
+the hole by default, so the nut of a jack or pot tightens down flat instead
+of riding up on a letter. A pot nut wants more room than an LED, so each
+cutout can keep its own gap: a selected cutout shows its gap ring with a
+handle to drag. The panel setting can switch it off, and even then raised art
+is kept off the holes themselves. Flush and engraved art sit in the face, so
+they are left alone.
+
+### Overlays
+
+Thickness goes down to 0.4 mm. Below 1.2 mm the panel is treated as an
+overlay, a printed face laid over a module's own panel when parts such as a
+screen cannot come off it. The floor kept under engraved and flush art is
+0.4 mm on a panel and half the thickness on an overlay, so flush lettering
+still prints on one.
+
+### Upside-down modules
+
+**Flipped** in the Panel tab turns the layout half a turn about the middle of
+the panel, which is where an upside-down board puts every jack and pot.
+Labels, icons and artwork move with their parts but stay the right way up,
+and a label's alignment swaps so it keeps its place beside its part. The
+reference photo turns too.
 
 ### Cropping what gets traced
 
 A picture can be cropped before it is traced, by dragging a box across the
-preview; drag again for a different one. The box is held as fractions of the
-picture's width and height, because the preview is a couple of hundred pixels
-wide and the file behind it may be four thousand, and the crop is applied
-before the resolution cap so the part being traced gets the whole budget
-rather than a share of a picture mostly thrown away.
+preview. The box can then be adjusted by its edges or corners, or moved
+whole, and **Enlarge** shows the picture over most of the screen for finer
+work. A drag can start in the margin around the picture and snaps to the
+border, so art that runs to the edge can be taken whole. The box is held as
+fractions of the picture's width and height, because the preview is a couple
+of hundred pixels wide and the file behind it may be four thousand, and the
+crop is applied before the resolution cap so the part being traced gets the
+whole budget rather than a share of a picture mostly thrown away.
 
-Edge handles would be the fuller interaction. Redrawing is one gesture, and
-this is a step passed through once per image rather than lived in.
+An SVG does not need tracing. Its filled shapes are read directly, through
+stylesheet fills, group transforms and the viewBox, and white shapes cut away
+what lies beneath them. Strokes, live text and linked parts are left out and
+listed. The same crop box applies, and tracing it as a picture is still
+offered.
+
+The source picture is kept on the device with the crop and trace settings it
+was made with, so a selected piece of artwork can be cropped or re-traced
+later without picking the file again, and stays where it was on the panel.
+Artwork from before this, or from a backup, has no picture to go back to.
 
 ### Moving, scaling and turning traced artwork
 
@@ -249,8 +315,9 @@ Double-clicking a label on the canvas opens a box over it. Plain HTML
 positioned from the SVG's own matrix rather than a foreignObject inside it: an
 input within the SVG inherits the panel's transform, and a caret in a rotated,
 scaled coordinate system is an argument with the browser. Every keystroke goes
-straight to the label, so the panel shows what is being written. Enter, Escape
-and clicking away all end it and keep what was typed.
+straight to the label, so the panel shows what is being written. Enter on a
+selected label opens it too. Enter, Escape and clicking away all end it and
+keep what was typed.
 
 The box focuses itself from the node rather than from an effect, because the
 box it sits in is measured in an effect of its own: on the first render there
@@ -262,13 +329,22 @@ moving.
 
 ### Handles
 
-A selected cutout has handles for width, height, corner radius and rotation.
-A label or a piece of traced artwork has four corners and a rotation knob, and
-the corners scale proportionally — there are no edge handles, because a
-squashed logo or a condensed label is not something anyone arrives at on
-purpose. What the corner sets differs by what it is holding: a label's cap
-height, which is the number panels are specified in, and artwork's multiplier
-on whatever it was traced at.
+A selected cutout has handles for width, height, corner radius and rotation,
+plus a ring for the gap it keeps from raised art.
+
+A label has four corners and a rotation knob, and the corners scale
+proportionally: a condensed label is not something anyone arrives at on
+purpose, so it gets no edge handles. Icons and traced artwork add edge handles
+that stretch them across or up and down alone, along their own axes when
+turned, and the inspector can undo the stretch. What a corner sets differs by
+what it is holding: a label's cap height, which is the number panels are
+specified in, and artwork's multiplier on whatever it was traced at.
+
+A line has a handle on each end, which moves that end alone, and one for its
+thickness. Ends snap to the ends of other lines, so shapes can be built from
+lines that meet exactly. The diamond in the middle bends it: pulled across, the
+line becomes a true arc through the handle, and the inspector can turn the
+bend into a corner or straighten it again.
 
 The box is measured with the rotation taken out, so the handles sit on the
 element's own corners and turn with it rather than hugging an upright
@@ -283,13 +359,17 @@ than they save, and the one thing to discover is how to ask.
 | | |
 | --- | --- |
 | `C` `R` `U` `S` | arm a circle, rectangle, roUnded rectangle or slot |
-| `T` `L` | drop in a text label, or a line |
+| `T` | drop in a text label under the pointer |
+| `L` | arm the line tool: drag end to end, or click for a short rule |
+| Enter | type into the selected label |
 | arrows | nudge the selection by the grid pitch, Shift for five |
 | `⌘Z` `⌘⇧Z` | step back and forward |
 | `⌘S` | save to the library |
 | `⌘D` | duplicate |
 | Backspace | delete |
 | Escape | drop the tool and the selection |
+| scroll, Space + drag | move around the canvas |
+| `⌘` + scroll, pinch | zoom about the pointer |
 | `?` | the list of all of them |
 
 Undo covers the panel — its cutouts, decor, settings and name — and not the
@@ -317,6 +397,11 @@ checking pitch.
 The label is drawn from the glyphs with a halo rather than on a box behind
 them, since a box has to be sized from a guess at the text width, and the
 guess clipped "25 mm" the first time it was tried.
+
+Equal spacing snaps too. Once two things in a row or column are some distance
+apart, a third dragged onto that line snaps to the same spacing past either
+end, or halfway between two neighbours, and each equal interval is marked.
+Lining up exactly with something still wins a tie.
 
 ### Branding
 
@@ -378,10 +463,13 @@ Cutouts, text, shapes and traced artwork are all draggable on the canvas.
 | | |
 | --- | --- |
 | drag | move |
-| drag a handle | resize, rotate, or round the corners |
+| drag a handle | resize, rotate, stretch, bend, or round the corners |
+| drag *(with a cutout tool armed)* | draw the cutout corner to corner; **Alt** from the centre, **Shift** square |
 | **Alt** + drag | duplicate — the copy comes with you, badged, while the original stays put |
-| **⌘/Ctrl** + drag | ignore the grid for this move |
+| **⌘/Ctrl** + drag a part | ignore the grid and guides for this move |
+| **⌘/Ctrl** + drag empty space | move around the canvas |
 | **Shift** + click | add to or remove from the selection |
+| **Shift** + click *(in a list)* | select the run from the last item picked |
 | **Shift** + click *(with a tool armed)* | place, and stay armed for the next one |
 | arrows / **Shift** + arrows | nudge by the grid pitch / five steps |
 | **⌘/Ctrl** + D | duplicate |
@@ -410,6 +498,16 @@ the corners. Resizing works about the centre, since where a cutout sits is
 usually the part you placed carefully. Everything is measured in the cutout's
 own frame, so the width handle on a cutout turned 30° widens it along its own
 axis rather than the screen's. Shift snaps rotation to 15° steps.
+
+Selecting several labels or cutouts gives one editor for all of them: font,
+weight, cap height and relief for labels, and size, shape and rotation for
+cutouts. A field they disagree on says so, and setting it is one step for
+undo. The lists have **Select all** buttons by kind, and selecting something
+opens the tab that edits it.
+
+When a photo is underneath, a selected cutout's **Opacity on screen** fades
+its fill so the hole in the photo shows through and the two can be lined up
+exactly. It only changes the view; nothing is saved or exported.
 
 ### Two shapes, and standard sizes
 
@@ -500,15 +598,16 @@ rack is drawn as wide as the window allows rather than at a fixed scale, and
 the zoom multiplies that. Panels in the rack are drawn from the same geometry as the editor, so
 the rack shows what will print.
 
+Dragging a panel over others makes room: they step aside only as far as they
+must, keep their gaps, and slide back once the drag moves on. Hovering a panel
+shows arrows that push it and everything beyond it against that side's rail.
+Each panel has a zoom button that shows it as large as the window allows, and
+a double click or double tap opens it in the editor.
+
 The whole rack exports in one go, with every panel as a separate object
 positioned as it sits in the rack. That is the right arrangement for checking
 the front of a case; it is not a print layout, since an 84 HP row is 427 mm
 wide. Print panels one at a time, or let your slicer rearrange the objects.
-
-The library lives in this browser's localStorage. Reference photos are not
-saved with a design — a data URL runs to megabytes and would fill the quota
-after a few panels, and the photo is a guide for designing rather than part of
-the model.
 
 ### From design to solid
 
@@ -535,8 +634,11 @@ sharing a boundary.
 ### Export
 
 **3MF** is the one to use. It keeps millimetre units, separate objects and
-colours, so a two-material printer picks up a black panel with white legends as
-two objects already assigned to two materials.
+colours. A panel is written as one object with a part per piece, each part
+assigned the filament of its colour, so a two-material printer picks up a
+black panel with white legends ready to print. Separate objects made
+OrcaSlicer ask whether objects at different heights were one, and read a small
+flush label as a model in inches. A rack export keeps one object per panel.
 
 **STL** carries no colour and no object structure. Single merged STL and
 one-STL-per-colour (zipped) are both offered.
@@ -628,14 +730,10 @@ is often padded by a pixel or two, which is enough to read a 30 HP module as
 cached for a week, and rate limited. Uploading a photo, pasting an image URL and
 pasting from the clipboard all work without it.
 
-There is deliberately no search box. ModularGrid publishes no API, and their
-search filters results against a session that only a real browser establishes:
-requesting the listing without one returns all fifteen thousand modules in
-alphabetical order, which a scraper cannot tell from a result set. Rather than
-a search box that quietly returns the wrong modules, typing a name offers a
-link to ModularGrid's own search with the term filled in — search there, paste
-the link back. One request to their servers instead of many, and nothing to
-break when they change their markup.
+ModularGrid's own search is not used. It filters results against a session
+that only a real browser establishes, and requesting the listing without one
+returns all fifteen thousand modules in alphabetical order, which a scraper
+cannot tell from a result set. The sitemap index above avoids that.
 
 Detection is noticeably harder on a ModularGrid render than on a photograph:
 the image is panel artwork, and printed graphics are shaped like holes. Expect
@@ -690,12 +788,18 @@ src/
     geom/             polygons, boolean ops, contour tracing, simplification
     model/            text outlines, mesh building, design -> solid
     export/           STL, 3MF, downloads
-    storage.ts        designs and racks in IndexedDB
+    storage.ts        designs, racks, fonts and source pictures in IndexedDB
     backup.ts         the export file format, and import merging
     rack.ts           rack rows, HP packing, collisions
+    align.ts          alignment and equal-spacing guides
+    icons.ts          Iconify search and fetching
+    svgImport.ts      reading an SVG's filled shapes
+    flip.ts           turning a layout for an upside-down module
   components/         editor, 3D preview, rack, inspector
   app/api/            font resolution, image proxy, ModularGrid
 scripts/verify.mts    self-checks
+scripts/verify-ui.mts browser checks against a running dev server
+docs/                 README images
 panelmate-brand/      the brand kit: tokens, logo files, design artboards
 ```
 
